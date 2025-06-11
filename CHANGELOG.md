@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/Fahmula/nexus-stream/compare/v1.1.0...v1.1.1) (2025-06-11)
+
+
+### Bug Fixes
+
+* **logging:** append to ffmpeg logs and reduce retention to 24h ([#4](https://github.com/Fahmula/nexus-stream/issues/4)) ([63b47ed](https://github.com/Fahmula/nexus-stream/commit/63b47edf19a7b2d4fd4aafdf2d1c8d7d9668ec99))
+
 # [1.1.0](https://github.com/Fahmula/nexus-stream/compare/v1.0.0...v1.1.0) (2025-06-11)
 
 
