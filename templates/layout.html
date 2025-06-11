@@ -72,6 +72,9 @@
                     <li class="nav-item">
                         <a class="nav-link {% if request.endpoint == 'ui_logical_channels_list' or request.endpoint == 'ui_logical_channel_edit' or request.endpoint == 'ui_logical_channel_add' %}active{% endif %}" href="{{ url_for('ui_logical_channels_list') }}">Logical Channels</a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'ui_wishlist_manage' %}active{% endif %}" href="{{ url_for('ui_wishlist_manage') }}">Wishlist</a>
+                    </li>
                 </ul>
                 <form class="d-flex" role="search"
                       hx-post="{{ url_for('reload_configuration') }}"
@@ -88,7 +91,7 @@
     </nav>
 
     <main class="container mt-4 mb-5">
-        <div id="flash-messages-container">
+        <div id="flash-messages-container" hx-trigger="flashMessagesUpdated from:body" hx-get="{{ url_for('ui_flash_messages') }}" hx-swap="innerHTML">
             {% include "_flash_messages.html" %} {# For initial load flash messages #}
         </div>
         {% block content %}{% endblock %}
