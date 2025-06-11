@@ -28,6 +28,7 @@ NexusStream is designed to be run as a Docker container.
 ```bash
 git clone https://github.com/Fahmula/nexus-stream.git
 cd nexus-stream
+```
 
 ### 2. Create the Configuration File
 Copy the example environment file and update variables.
