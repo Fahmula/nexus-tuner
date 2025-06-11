@@ -9,7 +9,7 @@ from typing import Callable, Any
 # Forward-declare Config to avoid circular import issues with type hints
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from config import Config
+    from nexus_stream.config import Config
 
 # --- Constants ---
 FFMPEG_TERMINATE_TIMEOUT = 5  # seconds

@@ -9,7 +9,7 @@ from typing import Any
 # Forward-declare Config to avoid circular import issues with type hints
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from config import Config
+    from nexus_stream.config import Config
 
 # --- Constants ---
 PROVIDER_FETCH_TIMEOUT = 20
