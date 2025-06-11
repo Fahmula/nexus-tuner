@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="htmx-config" content='{"logLevel": "debug"}'>
+    <title>{% block title %}NexusStream{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"
+          integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css"
+          integrity="sha512-z3gLpd7yknf1YoNbCzqRKc4qyor<x_bin_754>A7e0_V_SpNHElnTRKrx-hV1c" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"></script>
+    <style>
+        body { padding-top: 4.5rem; background-color: #f8f9fa; }
+        .htmx-indicator { display: none; }
+        .htmx-request .htmx-indicator { display: inline; }
+        .htmx-request.htmx-indicator { display: inline; }
+        /* Your htmx-modal styles */
+        .htmx-modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.4);
+        }
+        .htmx-modal-content {
+            background-color: #fff;
+            margin: 10% auto; /* Adjusted margin for better centering */
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 600px; /* Slightly wider for forms */
+            border-radius: 0.3rem;
+        }
+        .htmx-modal-close {
+            float: right;
+            font-size: 1.5rem;
+            font-weight: bold;
+            line-height: 1;
+            color: #000;
+            text-shadow: 0 1px 0 #fff;
+            opacity: .5;
+            cursor: pointer;
+        }
+        .htmx-modal-close:hover { opacity: .75; }
+        .table-responsive { margin-top: 1rem; }
+        .card { margin-bottom: 1.5rem; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-md navbar-dark fixed-top bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="{{ url_for('ui_main_dashboard') }}">NexusStream</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse"
+                    aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarCollapse">
+                <ul class="navbar-nav me-auto mb-2 mb-md-0">
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'ui_main_dashboard' %}active{% endif %}" aria-current="page" href="{{ url_for('ui_main_dashboard') }}">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'ui_providers_manage' %}active{% endif %}" href="{{ url_for('ui_providers_manage') }}">Providers</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'ui_source_services_list' %}active{% endif %}" href="{{ url_for('ui_source_services_list') }}">Source Services</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'ui_logical_channels_list' or request.endpoint == 'ui_logical_channel_edit' or request.endpoint == 'ui_logical_channel_add' %}active{% endif %}" href="{{ url_for('ui_logical_channels_list') }}">Logical Channels</a>
+                    </li>
+                </ul>
+                <form class="d-flex" role="search"
+                      hx-post="{{ url_for('reload_configuration') }}"
+                      hx-target="#flash-messages-container"
+                      hx-swap="innerHTML"
+                      hx-indicator="#reload-indicator">
+                    <button class="btn btn-outline-light" type="submit">
+                        <i class="fas fa-sync-alt"></i> Reload Config
+                        <span id="reload-indicator" class="htmx-indicator spinner-border spinner-border-sm ms-1" role="status" aria-hidden="true"></span>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container mt-4 mb-5">
+        <div id="flash-messages-container">
+            {% include "_flash_messages.html" %} {# For initial load flash messages #}
+        </div>
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer mt-auto py-3 bg-body-tertiary border-top">
+        <div class="container text-center">
+            <span class="text-muted">NexusStream © {{ now.year }}</span>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"
+            integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL"
+            crossorigin="anonymous"></script>
+    <script>
+        // HTMX event to re-evaluate Bootstrap components after swap, e.g., for tooltips or popovers
+        document.body.addEventListener('htmx:afterSwap', function(event) {
+            // Example: Reinitialize Bootstrap tooltips if you use them
+            // var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            // var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+            //   return new bootstrap.Tooltip(tooltipTriggerEl);
+            // });
+        });
+        // Pass current year to footer if needed via Jinja context processor
+        // In app.py:
+        // @app.context_processor
+        // def inject_now():
+        //     return {'now': datetime.utcnow}
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

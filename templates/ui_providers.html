@@ -1,0 +1,87 @@
+{% extends "layout.html" %}
+
+{% block title %}Manage Providers - NexusStream{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Manage Providers</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <!-- Future: Button to trigger adding a new provider via a modal or separate form -->
+        <!-- <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#addProviderModal">
+            <i class="fas fa-plus"></i> Add Provider
+        </button> -->
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        Configured M3U Providers
+    </div>
+    <div class="card-body">
+        <p class="text-muted small">
+            Providers are defined in <code>data/providers.json</code>. 
+            You can edit this file directly and then use the "Reload Config" button.
+            Basic editing via this UI is provided below. For adding new providers or deleting,
+            manual JSON editing is currently more robust.
+        </p>
+        <form method="POST" action="{{ url_for('ui_providers_manage') }}"
+              hx-post="{{ url_for('ui_providers_manage') }}"
+              hx-target="body"
+              hx-swap="outerHTML"> {# Full page reload on save to reflect changes everywhere #}
+            
+            {% if providers %}
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Alias (ID)</th>
+                            <th>M3U URL</th>
+                            <th>Max Streams</th>
+                            <th>Active Streams</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for provider in providers %}
+                        <tr>
+                            <td>
+                                <input type="text" class="form-control form-control-sm" 
+                                       name="provider_alias_{{ loop.index0 }}" 
+                                       value="{{ provider.alias }}" readonly 
+                                       title="Alias is read-only here. Edit in JSON to change.">
+                            </td>
+                            <td>
+                                <input type="url" class="form-control form-control-sm" 
+                                       name="provider_url_{{ loop.index0 }}" 
+                                       value="{{ provider.url }}" required>
+                            </td>
+                            <td>
+                                <input type="number" class="form-control form-control-sm" style="width: 80px;"
+                                       name="provider_max_streams_{{ loop.index0 }}" 
+                                       value="{{ provider.max_concurrent_streams }}" min="1" required>
+                            </td>
+                            <td>
+                                <span class="badge {% if provider.active_streams >= provider.max_concurrent_streams %}bg-danger{% elif provider.active_streams > 0 %}bg-warning{% else %}bg-success{% endif %}">
+                                    {{ provider.active_streams }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <button type="submit" class="btn btn-primary mt-3">
+                <i class="fas fa-save"></i> Save Provider Changes
+            </button>
+            <p class="text-muted small mt-2">
+                <strong>Note:</strong> To add or remove providers, or to change a provider's alias (ID),
+                please edit the <code>data/providers.json</code> file directly and then click "Reload Config" in the navigation bar.
+                Saving here only updates URL, Max Streams, and Proxy setting for existing aliases.
+            </p>
+            {% else %}
+            <div class="alert alert-info">No providers configured yet. Please add them to <code>data/providers.json</code> and reload.</div>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+{% endblock %}

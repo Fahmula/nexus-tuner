@@ -1,0 +1,22 @@
+branches:
+  - main
+
+plugins:
+  # 1. Analyze commit messages
+  - '@semantic-release/commit-analyzer'
+
+  # 2. Generate release notes from the commits
+  - '@semantic-release/release-notes-generator'
+
+  # 3. Create/update a CHANGELOG.md file
+  - - '@semantic-release/changelog'
+    - changelogFile: 'CHANGELOG.md'
+
+  # 4. Create a GitHub release
+  - '@semantic-release/github'
+
+  # 5. Commit the updated CHANGELOG.md and create the Git tag
+  - - '@semantic-release/git'
+    - assets:
+        - 'CHANGELOG.md'
+      message: 'chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}'

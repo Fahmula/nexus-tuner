@@ -1,0 +1,34 @@
+# docker-compose.yml
+services:
+  nexus-stream:
+    # Use the image you built and pushed to the GitHub Container Registry.
+    # Docker will automatically pull the 'latest' tag if it's not available locally.
+    image: ghcr.io/fahmula/nexus-stream:latest
+    container_name: nexus-stream
+    
+    # Ensures the container restarts automatically if it crashes or the server reboots,
+    # unless you explicitly stop it yourself.
+    restart: unless-stopped
+    
+    ports:
+      # Maps a port on your host machine to the container's internal port.
+      # The format is "HOST_PORT:CONTAINER_PORT".
+      # The application inside the container runs on port 80.
+      # This example maps port 8080 on your host to port 80 in the container.
+      # You can change 8080 to any other available port on your host (e.g., "5000:80").
+      - "8080:80"
+      
+    volumes:
+      # This is crucial for data persistence. It maps the local './data' directory
+      # on your host to the '/app/data' directory inside the container.
+      # This ensures your JSON configuration files are not lost if the container is removed.
+      - ./data:/app/data
+      
+      # Maps the local './logs' directory to the '/app/logs' directory inside the container,
+      # allowing you to easily access application and FFmpeg logs from your host machine.
+      - ./logs:/app/logs
+      
+    env_file:
+      # Tells Docker Compose to load all environment variables from your .env file.
+      # This is how you provide BASE_URL, API keys, etc., to the application.
+      - .env
