@@ -1,0 +1,23 @@
+<tr id="wishlist-channel-{{ channel_name | replace(' ', '-') }}">
+    <td>
+        {% if is_new %}
+            <span class="badge bg-success me-2">NEW</span>
+        {% endif %}
+        <strong>{{ channel_name }}</strong>
+    </td>
+    <td>
+        <button type="button" class="btn btn-sm btn-outline-primary me-1" title="Edit Channel"
+                hx-get="{{ url_for('ui_wishlist_edit', old_channel_name=channel_name) }}"
+                hx-target="closest tr"
+                hx-swap="outerHTML">
+            <i class="fas fa-edit"></i> Edit
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-danger" title="Delete Channel"
+                hx-delete="{{ url_for('ui_wishlist_delete', channel_name=channel_name) }}"
+                hx-target="closest tr"
+                hx-swap="outerHTML"
+                hx-confirm="Are you sure you want to remove '{{ channel_name }}' from your wishlist?">
+            <i class="fas fa-trash-alt"></i>
+        </button>
+    </td>
+</tr>
