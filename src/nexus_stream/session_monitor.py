@@ -6,9 +6,9 @@ from typing import Set
 # Forward-declare classes to avoid circular import issues with type hints
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from config import Config
-    from handler import ChannelHandler
-    from stream import HLSStreamManager
+    from nexus_stream.config import Config
+    from nexus_stream.handler import ChannelHandler
+    from nexus_stream.stream import HLSStreamManager
 
 # --- Constants ---
 MEDIA_SERVER_API_TIMEOUT = 10
