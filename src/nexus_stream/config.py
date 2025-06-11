@@ -14,8 +14,7 @@ from typing import Any, Callable
 DATA_DIR_NAME = "data"
 HLS_SEGMENT_ROOT_DIR_NAME = "hls_segments"
 LOG_BACKUP_COUNT = 7
-FFMPEG_LOGS_DAYS_TO_KEEP = 7
-SECONDS_IN_A_DAY = 86400
+FFMPEG_LOGS_RETENTION_SECONDS = 86400
 
 class Config:
     """
@@ -96,7 +95,7 @@ class Config:
             self.log_message(f"No FFmpeg logs directory at {self.ffmpeg_logs_dir}. Skipping cleanup.", level="DEBUG")
             return
 
-        cutoff_time = time.time() - (FFMPEG_LOGS_DAYS_TO_KEEP * SECONDS_IN_A_DAY)
+        cutoff_time = time.time() - FFMPEG_LOGS_RETENTION_SECONDS
         files_cleaned_up = False
         for log_file in self.ffmpeg_logs_dir.glob("ffmpeg_*.log"):
             try:
@@ -106,7 +105,7 @@ class Config:
             except OSError as e:
                 self.log_message(f"Error deleting old log file {log_file}: {e}", level="ERROR")
         if files_cleaned_up:
-            self.log_message(f"Cleaned up FFmpeg log files older than {FFMPEG_LOGS_DAYS_TO_KEEP} days.", level="DEBUG")
+            self.log_message(f"Cleaned up FFmpeg log files older than 24 hours.", level="DEBUG")
 
     def _load_json_file(self, file_path: Path, default_content_factory: Callable[[], Any]) -> Any:
         """

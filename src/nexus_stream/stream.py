@@ -125,7 +125,7 @@ class HLSStreamManager:
             log_path = self.config.get_ffmpeg_log_path(lc_user_id, provider_alias)
             
             try:
-                stderr_log_file = open(log_path, 'w', encoding='utf-8')
+                stderr_log_file = open(log_path, 'a', encoding='utf-8')
                 process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=stderr_log_file)
                 self.config.log_message(f"Started FFmpeg for '{provider_alias}' -> '{lc_user_id}' (PID: {process.pid}).", level="INFO")
 
