@@ -38,6 +38,16 @@
         .table-responsive { margin-top: 1rem; }
         .card { margin-bottom: 1.5rem; }
 
+        /* Custom styles for the top status bar */
+        #provider-status-bar {
+            padding: 0.5rem 0;
+            background-color: var(--bs-body-bg); /* Match body background */
+            border-bottom: 1px solid var(--bs-border-color-translucent);
+            position: sticky;
+            top: 4.5rem; /* Height of the fixed navbar */
+            z-index: 1020; /* Below navbar (1030) but above other content */
+        }
+
         /* --- Theme Toggle Button Icons --- */
         #theme-toggle-button .fa-sun { display: none; }
         #theme-toggle-button .fa-moon { display: inline-block; }
@@ -118,6 +128,16 @@
             </div>
         </div>
     </nav>
+
+    </nav>
+
+    <div class="container-fluid"
+         id="provider-status-bar"
+         hx-get="{{ url_for('ui_provider_status') }}"
+         hx-trigger="load, every 5s"
+         hx-swap="innerHTML">
+        <span class="text-muted small">Loading provider status...</span>
+    </div>
 
     <main class="container mt-4 mb-5">
         <div id="flash-messages-container" hx-trigger="flashMessagesUpdated from:body" hx-get="{{ url_for('ui_flash_messages') }}" hx-swap="innerHTML">
