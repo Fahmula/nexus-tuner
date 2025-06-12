@@ -181,7 +181,7 @@ def ui_logical_channels_list() -> str:
 
 @app.route("/ui/source-services")
 def ui_source_services_list() -> str:
-    """Renders a list of all discovered source services."""
+    """RRenders a filterable list of all discovered source services."""
     services = handler.get_all_discovered_source_services_for_ui()
     providers = sorted(list(set(s['provider_alias'] for s in services)))
 
