@@ -45,7 +45,6 @@ class Config:
         self.providers_path: Path = data_dir / "providers.json"
         self.logical_channels_path: Path = data_dir / "logical_channels.json"
         self.channel_mappings_path: Path = data_dir / "channel_mappings.json"
-        self.wishlist_channels_path: Path = data_dir / "wishlist_channels.json"
         
         # --- HLS Segment Directory ---
         self.hls_base_segment_dir: Path = project_root / HLS_SEGMENT_ROOT_DIR_NAME
@@ -226,14 +225,6 @@ class Config:
     def save_channel_mappings_config(self, data: dict[str, Any]) -> bool:
         """Saves the channel mappings to channel_mappings.json."""
         return self._save_json_file(self.channel_mappings_path, data)
-    
-    def get_wishlist_channels_config(self) -> dict[str, Any]:
-        """Loads the wishlist channels from wishlist_channels.json."""
-        return self._load_json_file(self.wishlist_channels_path, dict) 
-    
-    def save_wishlist_channels_config(self, data: dict[str, Any]) -> bool:
-        """Saves the wishlist channels to wishlist_channels.json."""
-        return self._save_json_file(self.wishlist_channels_path, data)
 
     def reload_all_configs(self) -> None:
         """Logs a message indicating that configs should be reloaded by handlers."""
