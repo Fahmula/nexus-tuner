@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/Fahmula/nexus-stream/compare/v1.3.0...v1.4.0) (2025-06-12)
+
+
+### Features
+
+* **ui:** implement provider status bar ([07c0f8a](https://github.com/Fahmula/nexus-stream/commit/07c0f8a18286d0dee277ca53e008ea0d768ac871))
+
 # [1.3.0](https://github.com/Fahmula/nexus-stream/compare/v1.2.0...v1.3.0) (2025-06-12)
 
 
