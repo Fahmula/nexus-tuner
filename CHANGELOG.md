@@ -1,3 +1,10 @@
+# [1.6.0](https://github.com/Fahmula/nexus-stream/compare/v1.5.0...v1.6.0) (2025-06-12)
+
+
+### Features
+
+* **ui:** implement log viewer modal ([#9](https://github.com/Fahmula/nexus-stream/issues/9)) ([2f8f87c](https://github.com/Fahmula/nexus-stream/commit/2f8f87c6e957159e27af06068de480ab47100621))
+
 # [1.5.0](https://github.com/Fahmula/nexus-stream/compare/v1.4.0...v1.5.0) (2025-06-12)
 
 
