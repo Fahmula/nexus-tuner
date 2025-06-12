@@ -1,3 +1,10 @@
+# [1.5.0](https://github.com/Fahmula/nexus-stream/compare/v1.4.0...v1.5.0) (2025-06-12)
+
+
+### Features
+
+* **ui:** aggregate provider status into a single total ([#8](https://github.com/Fahmula/nexus-stream/issues/8)) ([cae132f](https://github.com/Fahmula/nexus-stream/commit/cae132f06658535f3442c5e2c5fa567924ff1b6f))
+
 # [1.4.0](https://github.com/Fahmula/nexus-stream/compare/v1.3.0...v1.4.0) (2025-06-12)
 
 
