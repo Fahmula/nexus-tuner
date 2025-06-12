@@ -1,0 +1,30 @@
+<tr id="provider-{{ provider.alias | replace(' ', '-') }}">
+    <td>
+        {% if is_new %}
+            <span class="badge bg-success me-2">NEW</span>
+        {% endif %}
+        <strong>{{ provider.alias }}</strong>
+    </td>
+    <td>{{ provider.url }}</td>
+    <td>{{ provider.max_concurrent_streams }}</td>
+    <td>
+        <span class="badge {% if provider.active_streams >= provider.max_concurrent_streams %}bg-danger{% elif provider.active_streams > 0 %}bg-warning{% else %}bg-success{% endif %}">
+            {{ provider.active_streams }}
+        </span>
+    </td>
+    <td>
+        <button type="button" class="btn btn-sm btn-outline-primary me-1" title="Edit Provider"
+                hx-get="{{ url_for('ui_provider_edit', alias=provider.alias) }}"
+                hx-target="closest tr"
+                hx-swap="outerHTML">
+            <i class="fas fa-edit"></i> Edit
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-danger" title="Delete Provider"
+                hx-delete="{{ url_for('ui_provider_delete', alias=provider.alias) }}"
+                hx-target="closest tr"
+                hx-swap="outerHTML"
+                hx-confirm="Are you sure you want to delete provider '{{ provider.alias }}'? This cannot be undone.">
+            <i class="fas fa-trash-alt"></i> Delete
+        </button>
+    </td>
+</tr>

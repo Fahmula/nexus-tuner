@@ -6,11 +6,20 @@
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
     <h1 class="h2">Manage Providers</h1>
     <div class="btn-toolbar mb-2 mb-md-0">
-        <!-- Future: Button to trigger adding a new provider via a modal or separate form -->
-        <!-- <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#addProviderModal">
-            <i class="fas fa-plus"></i> Add Provider
-        </button> -->
+        <button type="button" class="btn btn-sm btn-outline-success"
+                hx-get="{{ url_for('ui_provider_add') }}"
+                hx-target="#add-provider-form-container"
+                hx-swap="innerHTML"
+                hx-indicator="#add-form-indicator"
+                hx-on::after-request="document.getElementById('add-provider-form-container').scrollIntoView({ behavior: 'smooth', block: 'start' });">
+            <i class="fas fa-plus"></i> Add New Provider
+            <span id="add-form-indicator" class="htmx-indicator spinner-border spinner-border-sm ms-1" role="status" aria-hidden="true"></span>
+        </button>
     </div>
+</div>
+
+<div id="add-provider-form-container" class="mb-3">
+    <!-- HTMX will load the add form here -->
 </div>
 
 <div class="card">
@@ -19,68 +28,34 @@
     </div>
     <div class="card-body">
         <p class="text-muted small">
-            Providers are defined in <code>data/providers.json</code>. 
-            You can edit this file directly and then use the "Reload Config" button.
-            Basic editing via this UI is provided below. For adding new providers or deleting,
-            manual JSON editing is currently more robust.
+            Manage your M3U source providers. Use the "Add New Provider" button to add a new source.
+            Click "Edit" to modify an existing provider's URL or max streams, or "Delete" to remove it.
         </p>
-        <form method="POST" action="{{ url_for('ui_providers_manage') }}"
-              hx-post="{{ url_for('ui_providers_manage') }}"
-              hx-target="body"
-              hx-swap="outerHTML"> {# Full page reload on save to reflect changes everywhere #}
-            
-            {% if providers %}
-            <div class="table-responsive">
-                <table class="table table-striped">
-                    <thead>
-                        <tr>
-                            <th>Alias (ID)</th>
-                            <th>M3U URL</th>
-                            <th>Max Streams</th>
-                            <th>Active Streams</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for provider in providers %}
-                        <tr>
-                            <td>
-                                <input type="text" class="form-control form-control-sm" 
-                                       name="provider_alias_{{ loop.index0 }}" 
-                                       value="{{ provider.alias }}" readonly 
-                                       title="Alias is read-only here. Edit in JSON to change.">
-                            </td>
-                            <td>
-                                <input type="url" class="form-control form-control-sm" 
-                                       name="provider_url_{{ loop.index0 }}" 
-                                       value="{{ provider.url }}" required>
-                            </td>
-                            <td>
-                                <input type="number" class="form-control form-control-sm" style="width: 80px;"
-                                       name="provider_max_streams_{{ loop.index0 }}" 
-                                       value="{{ provider.max_concurrent_streams }}" min="1" required>
-                            </td>
-                            <td>
-                                <span class="badge {% if provider.active_streams >= provider.max_concurrent_streams %}bg-danger{% elif provider.active_streams > 0 %}bg-warning{% else %}bg-success{% endif %}">
-                                    {{ provider.active_streams }}
-                                </span>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            <button type="submit" class="btn btn-primary mt-3">
-                <i class="fas fa-save"></i> Save Provider Changes
-            </button>
-            <p class="text-muted small mt-2">
-                <strong>Note:</strong> To add or remove providers, or to change a provider's alias (ID),
-                please edit the <code>data/providers.json</code> file directly and then click "Reload Config" in the navigation bar.
-                Saving here only updates URL, Max Streams, and Proxy setting for existing aliases.
-            </p>
-            {% else %}
-            <div class="alert alert-info">No providers configured yet. Please add them to <code>data/providers.json</code> and reload.</div>
-            {% endif %}
-        </form>
+        
+        {% if providers %}
+        <div class="table-responsive">
+            <table class="table table-striped table-hover table-sm">
+                <thead class="table-light">
+                    <tr>
+                        <th>Alias (ID)</th>
+                        <th>M3U URL</th>
+                        <th>Max Streams</th>
+                        <th>Active Streams</th>
+                        <th style="width: 15%;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="providers-table-body">
+                    {% for provider in providers %}
+                        {% include '_provider_row.html' %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="alert alert-info" role="alert">
+            No providers configured yet. Use the "Add New Provider" button to add your first provider.
+        </div>
+        {% endif %}
     </div>
 </div>
 
