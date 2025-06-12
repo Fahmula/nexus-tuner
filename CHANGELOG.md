@@ -1,3 +1,10 @@
+# [1.7.0](https://github.com/Fahmula/nexus-stream/compare/v1.6.1...v1.7.0) (2025-06-12)
+
+
+### Features
+
+* Remove Wishlist functionality ([#12](https://github.com/Fahmula/nexus-stream/issues/12)) ([a4634fc](https://github.com/Fahmula/nexus-stream/commit/a4634fc3c6de19ff2aa27cbbe4fccfe2509ee3ca))
+
 ## [1.6.1](https://github.com/Fahmula/nexus-stream/compare/v1.6.0...v1.6.1) (2025-06-12)
 
 
