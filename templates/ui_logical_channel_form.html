@@ -98,10 +98,12 @@
                     <div id="mappings-container">
                         {# Existing mappings are rendered here by the main route #}
                         {% for mapping in current_mappings %}
-                            {% include '_mapping_row.html' with context %} {# Pass full context #}
-                        {% else %}
-                            <p id="no-mappings-yet" class="text-muted">No sources mapped yet. Click "Add Mapping Row" to start.</p>
+                            {% set current_row_index = loop.index0 %}
+                            {% include '_mapping_row.html' %}
                         {% endfor %}
+                        {% if not current_mappings %}
+                            <p id="no-mappings-yet" class="text-muted">No sources mapped yet. Click "Add Mapping Row" to start.</p>
+                        {% endif %}
                     </div>
                     <hr>
                     <button type="submit" class="btn btn-primary">
