@@ -48,7 +48,6 @@ class ChannelHandler:
         self.providers_data_from_json: dict[str, Any] = {}
         self.logical_channels_data_from_json: list[dict[str, Any]] = []
         self.channel_mappings_data_from_json: dict[str, Any] = {}
-        self.wishlist_channels_config: dict[str, Any] = {}
         
         # In-memory processed data
         self.discovered_source_services: dict[str, dict[str, Any]] = {} 
@@ -73,7 +72,6 @@ class ChannelHandler:
         self.providers_data_from_json = self.config.get_providers_config().get("source_m3u_providers", {})
         self.logical_channels_data_from_json = self.config.get_logical_channels_config()
         self.channel_mappings_data_from_json = self.config.get_channel_mappings_config()
-        self.wishlist_channels_config = self.config.get_wishlist_channels_config()
 
         self.discovered_source_services.clear()
         self.client_facing_channels.clear()
@@ -371,82 +369,7 @@ class ChannelHandler:
         return self.config.save_channel_mappings_config(self.channel_mappings_data_from_json)
 
     def get_all_discovered_source_services_for_ui(self) -> list[dict[str, Any]]:
-        """Gets a list of discovered services, filtered by the wishlist if it exists."""
+        """Gets a list of discovered services."""
         all_services = list(self.discovered_source_services.values())
-        wishlist = self.wishlist_channels_config.get("Wanted", [])
-        
-        if not isinstance(wishlist, list) or not wishlist:
-            self.config.log_message("Wishlist is empty or invalid; returning all discovered services for UI.", level="DEBUG")
-            return sorted(all_services, key=lambda x: (x["provider_alias"], (x.get("original_tvg_name","") or x.get("original_display_name_extinf","")).lower()))
-
-        filtered_services = []
-        lower_wishlist = {name.strip().lower() for name in wishlist if name and isinstance(name, str)}
-
-        for service in all_services:
-            tvg_name = (service.get("original_tvg_name") or "").strip().lower()
-            display_name = (service.get("original_display_name_extinf") or "").strip().lower()
-            for wish_name in lower_wishlist:
-                if (tvg_name and wish_name in tvg_name) or (display_name and wish_name in display_name):
-                    filtered_services.append(service)
-                    break 
-    
-        self.config.log_message(f"Returning {len(filtered_services)} filtered services for UI based on wishlist.", level="DEBUG")
-        return sorted(filtered_services, key=lambda x: (x["provider_alias"], (x.get("original_tvg_name","") or x.get("original_display_name_extinf","")).lower()))
-
-    def get_wishlist_channels_for_ui(self) -> list[str]:
-        """Returns the list of wishlist channels for UI display."""
-        wishlist = self.wishlist_channels_config.get("Wanted", [])
-        return sorted([name for name in wishlist if isinstance(name, str)])
-
-    def add_wishlist_channel(self, channel_name: str) -> bool:
-        """Adds a channel to the wishlist."""
-        channel_name = channel_name.strip()
-        if not channel_name:
-            raise ValueError("Channel name cannot be empty.")
-        
-        wishlist = self.wishlist_channels_config.get("Wanted", [])
-        if channel_name.lower() in {c.lower() for c in wishlist}:
-            raise ValueError(f"'{channel_name}' is already in the wishlist.")
-        
-        wishlist.append(channel_name)
-        self.wishlist_channels_config["Wanted"] = wishlist
-        return self._save_wishlist_channels()
-
-    def update_wishlist_channel(self, old_name: str, new_name: str) -> bool:
-        """Updates an existing channel name in the wishlist."""
-        old_name = old_name.strip()
-        new_name = new_name.strip()
-
-        if not new_name:
-            raise ValueError("New channel name cannot be empty.")
-        
-        wishlist = self.wishlist_channels_config.get("Wanted", [])
-        
-        # Check if new_name already exists (case-insensitive) and is not the old_name itself
-        if new_name.lower() != old_name.lower() and new_name.lower() in {c.lower() for c in wishlist}:
-            raise ValueError(f"'{new_name}' already exists in the wishlist.")
-
-        try:
-            index = next(i for i, name in enumerate(wishlist) if name.lower() == old_name.lower())
-            wishlist[index] = new_name
-            self.wishlist_channels_config["Wanted"] = wishlist
-            return self._save_wishlist_channels()
-        except StopIteration:
-            raise ValueError(f"'{old_name}' not found in the wishlist.")
-
-    def delete_wishlist_channel(self, channel_name: str) -> bool:
-        """Deletes a channel from the wishlist."""
-        channel_name = channel_name.strip()
-        wishlist = self.wishlist_channels_config.get("Wanted", [])
-        original_len = len(wishlist)
-        
-        self.wishlist_channels_config["Wanted"] = [c for c in wishlist if c.lower() != channel_name.lower()]
-        
-        if len(self.wishlist_channels_config["Wanted"]) < original_len:
-            return self._save_wishlist_channels()
-        else:
-            raise ValueError(f"'{channel_name}' not found in the wishlist.")
-
-    def _save_wishlist_channels(self) -> bool:
-        """Saves the current wishlist configuration to file."""
-        return self.config.save_wishlist_channels_config(self.wishlist_channels_config)
+        self.config.log_message(f"Returning {len(all_services)} services for UI.", level="DEBUG")
+        return sorted(all_services, key=lambda x: (x["provider_alias"], (x.get("original_tvg_name","") or x.get("original_display_name_extinf","")).lower()))

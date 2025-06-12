@@ -169,8 +169,7 @@ def ui_main_dashboard() -> str:
     return render_template("ui_dashboard.html",
                            provider_count=len(handler.providers_data_from_json),
                            discovered_services_count=len(handler.discovered_source_services),
-                           logical_channels_count=len(handler.logical_channels_data_from_json),
-                           wishlist_channels_count=len(handler.wishlist_channels_config.get("Wanted", [])))
+                           logical_channels_count=len(handler.logical_channels_data_from_json))
 
 
 @app.route("/ui/logical-channels")
@@ -180,16 +179,9 @@ def ui_logical_channels_list() -> str:
     return render_template("ui_logical_channels.html", channels=channels, handler=handler)
 
 
-@app.route("/ui/wishlist")
-def ui_wishlist_manage() -> str:
-    """Renders the wishlist management page."""
-    wishlist_channels = handler.get_wishlist_channels_for_ui()
-    return render_template("ui_wishlist.html", wishlist_channels=wishlist_channels)
-
-
 @app.route("/ui/source-services")
 def ui_source_services_list() -> str:
-    """Renders a filterable list of all discovered source services."""
+    """Renders a list of all discovered source services."""
     services = handler.get_all_discovered_source_services_for_ui()
     providers = sorted(list(set(s['provider_alias'] for s in services)))
 
@@ -438,69 +430,6 @@ def ui_logical_channel_delete(lc_user_id: str) -> Response:
     else:
         flash(f"Logical Channel with ID '{lc_user_id}' not found.", "warning")
     return redirect(url_for('ui_logical_channels_list'))
-
-
-@app.route("/ui/wishlist/add", methods=["GET", "POST"])
-def ui_wishlist_add() -> str:
-    """Handles adding a new channel to the wishlist or rendering the add form."""
-    if request.method == "POST":
-        channel_name = request.form.get("channel_name", "").strip()
-        try:
-            if handler.add_wishlist_channel(channel_name):
-                flash(f"'{channel_name}' added to wishlist.", "success")
-                response = Response(render_template("_wishlist_row.html", channel_name=channel_name, is_new=True))
-            else:
-                flash(f"Failed to add '{channel_name}' to wishlist.", "error")
-                response = Response(render_template("_wishlist_add_form.html", channel_name=channel_name)) # Re-render form on error
-        except ValueError as e:
-            flash(str(e), "error")
-            response = Response(render_template("_wishlist_add_form.html", channel_name=channel_name)) # Re-render form on error
-        
-        response.headers["HX-Trigger"] = "flashMessagesUpdated"
-        return response
-    else: # GET request
-        return render_template("_wishlist_add_form.html")
-
-
-@app.route("/ui/wishlist/edit/<string:old_channel_name>", methods=["GET", "PUT"])
-def ui_wishlist_edit(old_channel_name: str) -> str:
-    """Handles editing a wishlist channel."""
-    if request.method == "GET":
-        # Render the edit form for HTMX swap
-        return render_template("_wishlist_edit_form.html", old_channel_name=old_channel_name)
-    elif request.method == "PUT":
-        new_channel_name = request.form.get("channel_name", "").strip()
-        try:
-            if handler.update_wishlist_channel(old_channel_name, new_channel_name):
-                flash(f"Wishlist channel updated from '{old_channel_name}' to '{new_channel_name}'.", "success")
-                response = Response(render_template("_wishlist_row.html", channel_name=new_channel_name))
-            else:
-                flash(f"Failed to update '{old_channel_name}'.", "error")
-                response = Response(render_template("_wishlist_edit_form.html", old_channel_name=old_channel_name, new_channel_name=new_channel_name))
-        except ValueError as e:
-            flash(str(e), "error")
-            response = Response(render_template("_wishlist_edit_form.html", old_channel_name=old_channel_name, new_channel_name=new_channel_name))
-        
-        response.headers["HX-Trigger"] = "flashMessagesUpdated"
-        return response
-
-
-@app.route("/ui/wishlist/delete/<string:channel_name>", methods=["DELETE"])
-def ui_wishlist_delete(channel_name: str) -> tuple[str, int]:
-    """Handles deleting a wishlist channel."""
-    try:
-        if handler.delete_wishlist_channel(channel_name):
-            flash(f"'{channel_name}' removed from wishlist.", "success")
-            response = Response("", 200) # HTMX will remove the element
-        else:
-            flash(f"Failed to remove '{channel_name}' from wishlist.", "error")
-            response = Response("", 400) # Indicate failure to HTMX
-    except ValueError as e:
-        flash(str(e), "error")
-        response = Response("", 400) # Indicate failure to HTMX
-    
-    response.headers["HX-Trigger"] = "flashMessagesUpdated"
-    return response
 
 
 @app.route("/ui/logical-channels/new-mapping-row")
