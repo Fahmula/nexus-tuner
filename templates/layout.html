@@ -105,6 +105,15 @@
                     </li>
                     <li class="nav-item">
                         <a class="nav-link {% if request.endpoint == 'ui_wishlist_manage' %}active{% endif %}" href="{{ url_for('ui_wishlist_manage') }}">Wishlist</a>
+                    <li class="nav-item">
+                        <a class="nav-link"
+                        href="#"
+                        hx-get="/ui/logs/modal"
+                        hx-target="#modal-log-content"
+                        data-bs-toggle="modal"
+                        data-bs-target="#modal-logs">
+                        Logs
+                        </a>
                     </li>
                 </ul>
                 <div class="d-flex align-items-center">
@@ -175,5 +184,15 @@
         });
     </script>
     {% block extra_js %}{% endblock %}
+    <div id="modal-logs" class="modal fade" tabindex="-1" aria-labelledby="modal-logs-label" aria-hidden="true">
+        <div id="modal-log-content" class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" role="document">
+            <!-- HTMX will load the modal's content here -->
+            <div class="modal-content">
+                <div class="modal-body">
+                    Loading logs...
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

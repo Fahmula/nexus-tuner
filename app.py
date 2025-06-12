@@ -12,6 +12,7 @@ HLSStreamManager, GhostSessionMonitor) and defines all the web routes for:
 import os
 import time
 from datetime import datetime, UTC
+from collections import deque
 
 from flask import (Flask, Response, abort, flash, redirect, render_template,
                    request, send_from_directory, url_for)
@@ -520,6 +521,23 @@ def ui_get_new_mapping_row() -> str:
 def ui_remove_mapping_row_placeholder() -> tuple[str, int]:
     """Returns an empty response for HTMX to remove a mapping row."""
     return "", 200
+
+
+@app.route("/ui/logs/modal")
+def ui_logs_modal():
+    """Renders the inner content for the log viewer modal."""
+    log_lines = []
+    log_file_path = config.logs_dir / 'app.log'
+    try:
+        with open(log_file_path, 'r') as f:
+            # Efficiently read the last 200 lines of the file
+            log_lines = list(deque(f, 200))
+    except FileNotFoundError:
+        log_lines = [f"Error: Log file not found at '{log_file_path}'."]
+    except Exception as e:
+        log_lines = [f"An error occurred while reading the log file: {e}"]
+
+    return render_template("_logs_modal_content.html", log_lines=log_lines)
 
 
 if __name__ == "__main__":

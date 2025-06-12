@@ -1,0 +1,20 @@
+<!-- templates/_logs_modal_content.html -->
+<div class="modal-content">
+  <div class="modal-header">
+    <h5 class="modal-title" id="modal-logs-label">Application Logs (Last 200 Lines)</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+  </div>
+  <div class="modal-body">
+    <!-- The <pre> tag is essential for preserving log formatting -->
+    <pre class="bg-dark text-white p-3" style="font-size: 0.8rem; line-height: 1.4;"><code>
+    {%- for line in log_lines -%}
+        {{- line -}}
+    {%- else -%}
+        No log entries found.
+    {%- endfor -%}
+    </code></pre>
+  </div>
+  <div class="modal-footer">
+    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+  </div>
+</div>
