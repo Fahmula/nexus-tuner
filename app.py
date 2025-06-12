@@ -325,6 +325,13 @@ def ui_provider_delete(alias: str) -> tuple[str, int]:
     return response
 
 
+@app.route("/ui/provider-status")
+def ui_provider_status() -> str:
+    """Renders the provider stream status bar partial."""
+    provider_statuses = handler.get_provider_stream_status()
+    return render_template("_provider_status_bar.html", statuses=provider_statuses)
+
+
 @app.route("/ui/logical-channels/add", methods=["GET", "POST"])
 def ui_logical_channel_add() -> Response | str:
     """Handles the creation of a new logical channel."""
