@@ -274,6 +274,55 @@ class ChannelHandler:
             return False 
         return self.config.save_providers_config(new_providers_data)
 
+    def add_provider(self, alias: str, url: str, max_streams: int) -> bool:
+        """Adds a new provider to the configuration."""
+        alias = alias.strip()
+        if not alias:
+            raise ValueError("Provider alias cannot be empty.")
+        if not url:
+            raise ValueError("Provider URL cannot be empty.")
+        if max_streams < 1:
+            raise ValueError("Max concurrent streams must be at least 1.")
+
+        # Check for existing alias (case-insensitive)
+        if alias.lower() in {a.lower() for a in self.providers_data_from_json.keys()}:
+            raise ValueError(f"Provider with alias '{alias}' already exists.")
+
+        self.providers_data_from_json[alias] = {
+            "url": url,
+            "max_concurrent_streams": max_streams
+        }
+        return self.config.save_providers_config({"source_m3u_providers": self.providers_data_from_json})
+
+    def update_provider(self, alias: str, url: str, max_streams: int) -> bool:
+        """Updates an existing provider's configuration."""
+        alias = alias.strip()
+        if not alias:
+            raise ValueError("Provider alias cannot be empty.")
+        if not url:
+            raise ValueError("Provider URL cannot be empty.")
+        if max_streams < 1:
+            raise ValueError("Max concurrent streams must be at least 1.")
+
+        if alias not in self.providers_data_from_json:
+            raise ValueError(f"Provider with alias '{alias}' not found.")
+
+        self.providers_data_from_json[alias]["url"] = url
+        self.providers_data_from_json[alias]["max_concurrent_streams"] = max_streams
+        return self.config.save_providers_config({"source_m3u_providers": self.providers_data_from_json})
+
+    def delete_provider(self, alias: str) -> bool:
+        """Deletes a provider from the configuration."""
+        alias = alias.strip()
+        if not alias:
+            raise ValueError("Provider alias cannot be empty.")
+
+        if alias not in self.providers_data_from_json:
+            raise ValueError(f"Provider with alias '{alias}' not found.")
+        
+        del self.providers_data_from_json[alias]
+        return self.config.save_providers_config({"source_m3u_providers": self.providers_data_from_json})
+
     def get_all_logical_channels_for_ui(self) -> list[dict[str, Any]]:
         return sorted(self.logical_channels_data_from_json, key=lambda x: x.get("display_name","").lower())
 

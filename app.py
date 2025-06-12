@@ -179,6 +179,152 @@ def ui_logical_channels_list() -> str:
     return render_template("ui_logical_channels.html", channels=channels, handler=handler)
 
 
+@app.route("/ui/wishlist")
+def ui_wishlist_manage() -> str:
+    """Renders the wishlist management page."""
+    wishlist_channels = handler.get_wishlist_channels_for_ui()
+    return render_template("ui_wishlist.html", wishlist_channels=wishlist_channels)
+
+
+@app.route("/ui/source-services")
+def ui_source_services_list() -> str:
+    """Renders a filterable list of all discovered source services."""
+    services = handler.get_all_discovered_source_services_for_ui()
+    providers = sorted(list(set(s['provider_alias'] for s in services)))
+
+    filter_provider = request.args.get('provider_alias', '')
+    filter_name = request.args.get('name_filter', '').lower()
+
+    if filter_provider:
+        services = [s for s in services if s['provider_alias'] == filter_provider]
+    if filter_name:
+        services = [s for s in services if filter_name in s.get('original_tvg_name', '').lower() or filter_name in s.get('original_display_name_extinf', '').lower()]
+
+    return render_template("ui_source_services.html",
+                           services=services,
+                           providers=providers,
+                           current_provider=filter_provider,
+                           current_name_filter=filter_name)
+
+
+@app.route("/ui/providers", methods=["GET"])
+def ui_providers_manage() -> str:
+    """Renders the provider management page."""
+    all_providers = handler.get_all_providers_for_ui()
+    providers_display = [
+        {
+            "alias": alias,
+            "url": details.get("url", ""),
+            "max_concurrent_streams": details.get("max_concurrent_streams", 1),
+            "active_streams": handler.active_streams_per_provider.get(alias, 0)
+        } for alias, details in sorted(all_providers.items())
+    ]
+    return render_template("ui_providers.html", providers=providers_display)
+
+
+# --- HTMX Partial Routes ---
+
+@app.route("/ui/providers/add", methods=["GET", "POST"])
+def ui_provider_add() -> Response | str:
+    """Handles adding a new provider or rendering the add form."""
+    if request.method == "POST":
+        alias = request.form.get("alias", "").strip()
+        url = request.form.get("url", "").strip()
+        max_streams_str = request.form.get("max_concurrent_streams", "1")
+        
+        try:
+            max_streams = int(max_streams_str)
+            if handler.add_provider(alias, url, max_streams):
+                flash(f"Provider '{alias}' added successfully.", "success")
+                # Return the new row for HTMX to append
+                new_provider_data = {
+                    "alias": alias,
+                    "url": url,
+                    "max_concurrent_streams": max_streams,
+                    "active_streams": 0 # Newly added provider has 0 active streams
+                }
+                response = Response(render_template("_provider_row.html", provider=new_provider_data, is_new=True))
+            else:
+                flash(f"Failed to add provider '{alias}'.", "error")
+                response = Response(render_template("_provider_add_form.html", alias=alias, url=url, max_concurrent_streams=max_streams_str))
+        except ValueError as e:
+            flash(str(e), "error")
+            response = Response(render_template("_provider_add_form.html", alias=alias, url=url, max_concurrent_streams=max_streams_str))
+        
+        response.headers["HX-Trigger"] = "flashMessagesUpdated"
+        return response
+    else: # GET request
+        return render_template("_provider_add_form.html")
+
+
+@app.route("/ui/providers/edit/<string:alias>", methods=["GET", "PUT"])
+def ui_provider_edit(alias: str) -> str:
+    """Handles editing a provider."""
+    provider = handler.get_all_providers_for_ui().get(alias)
+    if not provider:
+        flash(f"Provider '{alias}' not found.", "error")
+        return "" # HTMX will remove the row if not found
+
+    if request.method == "GET":
+        # Render the edit form for HTMX swap
+        provider_display = {
+            "alias": alias,
+            "url": provider.get("url", ""),
+            "max_concurrent_streams": provider.get("max_concurrent_streams", 1),
+            "active_streams": handler.active_streams_per_provider.get(alias, 0)
+        }
+        return render_template("_provider_edit_form.html", provider=provider_display)
+    elif request.method == "PUT":
+        url = request.form.get("url", "").strip()
+        max_streams_str = request.form.get("max_concurrent_streams", "1")
+        
+        try:
+            max_streams = int(max_streams_str)
+            if handler.update_provider(alias, url, max_streams):
+                flash(f"Provider '{alias}' updated successfully.", "success")
+                # Return the updated row for HTMX to swap
+                updated_provider_data = {
+                    "alias": alias,
+                    "url": url,
+                    "max_concurrent_streams": max_streams,
+                    "active_streams": handler.active_streams_per_provider.get(alias, 0)
+                }
+                response = Response(render_template("_provider_row.html", provider=updated_provider_data))
+            else:
+                flash(f"Failed to update provider '{alias}'.", "error")
+                response = Response(render_template("_provider_edit_form.html", provider={
+                    "alias": alias, "url": url, "max_concurrent_streams": max_streams_str,
+                    "active_streams": handler.active_streams_per_provider.get(alias, 0)
+                }))
+        except ValueError as e:
+            flash(str(e), "error")
+            response = Response(render_template("_provider_edit_form.html", provider={
+                "alias": alias, "url": url, "max_concurrent_streams": max_streams_str,
+                "active_streams": handler.active_streams_per_provider.get(alias, 0)
+            }))
+        
+        response.headers["HX-Trigger"] = "flashMessagesUpdated"
+        return response
+
+
+@app.route("/ui/providers/delete/<string:alias>", methods=["DELETE"])
+def ui_provider_delete(alias: str) -> tuple[str, int]:
+    """Handles deleting a provider."""
+    try:
+        if handler.delete_provider(alias):
+            flash(f"Provider '{alias}' deleted successfully.", "success")
+            response = Response("", 200) # HTMX will remove the element
+        else:
+            flash(f"Failed to delete provider '{alias}'.", "error")
+            response = Response("", 400) # Indicate failure to HTMX
+    except ValueError as e:
+        flash(str(e), "error")
+        response = Response("", 400) # Indicate failure to HTMX
+    
+    response.headers["HX-Trigger"] = "flashMessagesUpdated"
+    return response
+
+
 @app.route("/ui/logical-channels/add", methods=["GET", "POST"])
 def ui_logical_channel_add() -> Response | str:
     """Handles the creation of a new logical channel."""
@@ -284,86 +430,6 @@ def ui_logical_channel_delete(lc_user_id: str) -> Response:
     return redirect(url_for('ui_logical_channels_list'))
 
 
-@app.route("/ui/wishlist")
-def ui_wishlist_manage() -> str:
-    """Renders the wishlist management page."""
-    wishlist_channels = handler.get_wishlist_channels_for_ui()
-    return render_template("ui_wishlist.html", wishlist_channels=wishlist_channels)
-
-
-@app.route("/ui/source-services")
-def ui_source_services_list() -> str:
-    """Renders a filterable list of all discovered source services."""
-    services = handler.get_all_discovered_source_services_for_ui()
-    providers = sorted(list(set(s['provider_alias'] for s in services)))
-
-    filter_provider = request.args.get('provider_alias', '')
-    filter_name = request.args.get('name_filter', '').lower()
-
-    if filter_provider:
-        services = [s for s in services if s['provider_alias'] == filter_provider]
-    if filter_name:
-        services = [s for s in services if filter_name in s.get('original_tvg_name', '').lower() or filter_name in s.get('original_display_name_extinf', '').lower()]
-
-    return render_template("ui_source_services.html",
-                           services=services,
-                           providers=providers,
-                           current_provider=filter_provider,
-                           current_name_filter=filter_name)
-
-
-@app.route("/ui/providers", methods=["GET", "POST"])
-def ui_providers_manage() -> Response | str:
-    """Handles viewing and updating provider configurations."""
-    if request.method == "POST":
-        new_providers_config = {"source_m3u_providers": {}}
-        idx = 0
-        while True:
-            alias = request.form.get(f"provider_alias_{idx}")
-            if alias is None:
-                break
-
-            url = request.form.get(f"provider_url_{idx}", "").strip()
-            max_streams_str = request.form.get(f"provider_max_streams_{idx}", "1")
-
-            try:
-                max_streams = int(max_streams_str)
-                if not url or max_streams < 0:
-                    flash(f"Invalid data for provider '{alias}'. URL must not be empty and streams must be non-negative.", "error")
-                    idx += 1
-                    continue
-            except (ValueError, TypeError):
-                flash(f"Max streams for '{alias}' must be a whole number.", "error")
-                idx += 1
-                continue
-
-            new_providers_config["source_m3u_providers"][alias.strip()] = {
-                "url": url,
-                "max_concurrent_streams": max_streams,
-            }
-            idx += 1
-
-        if handler.save_providers_for_ui(new_providers_config):
-            flash("Providers configuration updated.", "success")
-            handler.reload_handler_config()
-        else:
-            flash("Error saving providers configuration.", "error")
-        return redirect(url_for('ui_providers_manage'))
-
-    all_providers = handler.get_all_providers_for_ui()
-    providers_display = [
-        {
-            "alias": alias,
-            "url": details.get("url", ""),
-            "max_concurrent_streams": details.get("max_concurrent_streams", 1),
-            "active_streams": handler.active_streams_per_provider.get(alias, 0)
-        } for alias, details in sorted(all_providers.items())
-    ]
-    return render_template("ui_providers.html", providers=providers_display)
-
-
-# --- HTMX Partial Routes ---
-
 @app.route("/ui/wishlist/add", methods=["GET", "POST"])
 def ui_wishlist_add() -> str:
     """Handles adding a new channel to the wishlist or rendering the add form."""
@@ -384,6 +450,7 @@ def ui_wishlist_add() -> str:
         return response
     else: # GET request
         return render_template("_wishlist_add_form.html")
+
 
 @app.route("/ui/wishlist/edit/<string:old_channel_name>", methods=["GET", "PUT"])
 def ui_wishlist_edit(old_channel_name: str) -> str:
@@ -407,6 +474,7 @@ def ui_wishlist_edit(old_channel_name: str) -> str:
         response.headers["HX-Trigger"] = "flashMessagesUpdated"
         return response
 
+
 @app.route("/ui/wishlist/delete/<string:channel_name>", methods=["DELETE"])
 def ui_wishlist_delete(channel_name: str) -> tuple[str, int]:
     """Handles deleting a wishlist channel."""
@@ -423,6 +491,7 @@ def ui_wishlist_delete(channel_name: str) -> tuple[str, int]:
     
     response.headers["HX-Trigger"] = "flashMessagesUpdated"
     return response
+
 
 @app.route("/ui/logical-channels/new-mapping-row")
 def ui_get_new_mapping_row() -> str:
@@ -442,6 +511,7 @@ def ui_get_new_mapping_row() -> str:
 def ui_remove_mapping_row_placeholder() -> tuple[str, int]:
     """Returns an empty response for HTMX to remove a mapping row."""
     return "", 200
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=80, debug=True, use_reloader=False)
