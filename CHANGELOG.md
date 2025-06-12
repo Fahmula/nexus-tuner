@@ -1,3 +1,10 @@
+## [1.7.1](https://github.com/Fahmula/nexus-stream/compare/v1.7.0...v1.7.1) (2025-06-12)
+
+
+### Bug Fixes
+
+* Restore correct docstring for ui_source_services_list ([#13](https://github.com/Fahmula/nexus-stream/issues/13)) ([211d660](https://github.com/Fahmula/nexus-stream/commit/211d6609eb945a8db14bcb5ec98f027a0e8aca4f))
+
 # [1.7.0](https://github.com/Fahmula/nexus-stream/compare/v1.6.1...v1.7.0) (2025-06-12)
 
 
