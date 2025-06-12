@@ -1,3 +1,10 @@
+## [1.6.1](https://github.com/Fahmula/nexus-stream/compare/v1.6.0...v1.6.1) (2025-06-12)
+
+
+### Bug Fixes
+
+* **ui:** Prevent loss of subsequent mappings on update ([#10](https://github.com/Fahmula/nexus-stream/issues/10)) ([b28f4a2](https://github.com/Fahmula/nexus-stream/commit/b28f4a2b17506f6abeff61cb3e6fc8d996804828))
+
 # [1.6.0](https://github.com/Fahmula/nexus-stream/compare/v1.5.0...v1.6.0) (2025-06-12)
 
 
