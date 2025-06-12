@@ -5,49 +5,70 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="htmx-config" content='{"logLevel": "debug"}'>
     <title>{% block title %}NexusStream{% endblock %}</title>
+
+    <script>
+        // Immediately-invoked function to set the theme on initial load to prevent FOUC.
+        (() => {
+            const getStoredTheme = () => localStorage.getItem('theme');
+            const getPreferredTheme = () => {
+                const storedTheme = getStoredTheme();
+                if (storedTheme) {
+                    return storedTheme;
+                }
+                return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            };
+            const setTheme = theme => {
+                document.documentElement.setAttribute('data-bs-theme', theme);
+            };
+            setTheme(getPreferredTheme());
+        })();
+    </script>
+
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"
           integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css"
-          integrity="sha512-z3gLpd7yknf1YoNbCzqRKc4qyor<x_bin_754>A7e0_V_SpNHElnTRKrx-hV1c" crossorigin="anonymous" referrerpolicy="no-referrer" />
+          integrity="sha512-z3gLpd7yknf1YoNbCzqRKc4qyor8gaKU1qmn+CShxbuBusANI9QpRohGBreCFkKxLhei6S9CQXFEbbKuqLg0DA=="
+          crossorigin="anonymous" referrerpolicy="no-referrer" />
     <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"></script>
     <style>
-        body { padding-top: 4.5rem; background-color: #f8f9fa; }
+        body { padding-top: 4.5rem; }
         .htmx-indicator { display: none; }
         .htmx-request .htmx-indicator { display: inline; }
         .htmx-request.htmx-indicator { display: inline; }
-        /* Your htmx-modal styles */
-        .htmx-modal {
-            display: none;
-            position: fixed;
-            z-index: 1000;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0,0,0,0.4);
-        }
-        .htmx-modal-content {
-            background-color: #fff;
-            margin: 10% auto; /* Adjusted margin for better centering */
-            padding: 20px;
-            border: 1px solid #888;
-            width: 80%;
-            max-width: 600px; /* Slightly wider for forms */
-            border-radius: 0.3rem;
-        }
-        .htmx-modal-close {
-            float: right;
-            font-size: 1.5rem;
-            font-weight: bold;
-            line-height: 1;
-            color: #000;
-            text-shadow: 0 1px 0 #fff;
-            opacity: .5;
-            cursor: pointer;
-        }
-        .htmx-modal-close:hover { opacity: .75; }
         .table-responsive { margin-top: 1rem; }
         .card { margin-bottom: 1.5rem; }
+
+        /* --- Theme Toggle Button Icons --- */
+        #theme-toggle-button .fa-sun { display: none; }
+        #theme-toggle-button .fa-moon { display: inline-block; }
+
+        [data-bs-theme="dark"] #theme-toggle-button .fa-sun { display: inline-block; }
+        [data-bs-theme="dark"] #theme-toggle-button .fa-moon { display: none; }
+
+        /* --- Custom Dark Mode Overrides --- */
+        /* Style for the "Quick Actions" box */
+        [data-bs-theme="dark"] .bg-white {
+            background-color: var(--bs-body-bg) !important;
+        }
+
+        /* Override dashboard card colors for dark mode */
+        [data-bs-theme="dark"] .card.bg-primary,
+        [data-bs-theme="dark"] .card.bg-success,
+        [data-bs-theme="dark"] .card.bg-info,
+        [data-bs-theme="dark"] .card.bg-warning {
+            background-color: var(--bs-tertiary-bg) !important;
+            border-color: var(--bs-border-color-translucent) !important;
+            color: var(--bs-body-color) !important; /* Overrides .text-white */
+        }
+
+        /* Style card headers for a slightly different look */
+        [data-bs-theme="dark"] .card.bg-primary .card-header,
+        [data-bs-theme="dark"] .card.bg-success .card-header,
+        [data-bs-theme="dark"] .card.bg-info .card-header,
+        [data-bs-theme="dark"] .card.bg-warning .card-header {
+            background-color: var(--bs-secondary-bg);
+            color: var(--bs-emphasis-color);
+        }
     </style>
 </head>
 <body>
@@ -76,23 +97,31 @@
                         <a class="nav-link {% if request.endpoint == 'ui_wishlist_manage' %}active{% endif %}" href="{{ url_for('ui_wishlist_manage') }}">Wishlist</a>
                     </li>
                 </ul>
-                <form class="d-flex" role="search"
-                      hx-post="{{ url_for('reload_configuration') }}"
-                      hx-target="#flash-messages-container"
-                      hx-swap="innerHTML"
-                      hx-indicator="#reload-indicator">
-                    <button class="btn btn-outline-light" type="submit">
-                        <i class="fas fa-sync-alt"></i> Reload Config
-                        <span id="reload-indicator" class="htmx-indicator spinner-border spinner-border-sm ms-1" role="status" aria-hidden="true"></span>
+                <div class="d-flex align-items-center">
+                    <!-- Dark Mode Toggle Button -->
+                    <button class="btn btn-outline-light me-2" type="button" id="theme-toggle-button" title="Toggle theme">
+                        <i class="fas fa-moon"></i>
+                        <i class="fas fa-sun"></i>
                     </button>
-                </form>
+
+                    <form class="d-flex" role="search"
+                          hx-post="{{ url_for('reload_configuration') }}"
+                          hx-target="#flash-messages-container"
+                          hx-swap="innerHTML"
+                          hx-indicator="#reload-indicator">
+                        <button class="btn btn-outline-light" type="submit">
+                            <i class="fas fa-sync-alt"></i> Reload Config
+                            <span id="reload-indicator" class="htmx-indicator spinner-border spinner-border-sm ms-1" role="status" aria-hidden="true"></span>
+                        </button>
+                    </form>
+                </div>
             </div>
         </div>
     </nav>
 
     <main class="container mt-4 mb-5">
         <div id="flash-messages-container" hx-trigger="flashMessagesUpdated from:body" hx-get="{{ url_for('ui_flash_messages') }}" hx-swap="innerHTML">
-            {% include "_flash_messages.html" %} {# For initial load flash messages #}
+            {% include "_flash_messages.html" %}
         </div>
         {% block content %}{% endblock %}
     </main>
@@ -107,19 +136,23 @@
             integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL"
             crossorigin="anonymous"></script>
     <script>
-        // HTMX event to re-evaluate Bootstrap components after swap, e.g., for tooltips or popovers
         document.body.addEventListener('htmx:afterSwap', function(event) {
-            // Example: Reinitialize Bootstrap tooltips if you use them
-            // var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-            // var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-            //   return new bootstrap.Tooltip(tooltipTriggerEl);
-            // });
+            // Re-initialize Bootstrap tooltips after an HTMX swap
+            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            tooltipTriggerList.map(function (tooltipTriggerEl) {
+              return new bootstrap.Tooltip(tooltipTriggerEl);
+            });
         });
-        // Pass current year to footer if needed via Jinja context processor
-        // In app.py:
-        // @app.context_processor
-        // def inject_now():
-        //     return {'now': datetime.utcnow}
+
+        // Event listener for the theme toggle button
+        document.getElementById('theme-toggle-button').addEventListener('click', () => {
+            const htmlEl = document.documentElement;
+            const currentTheme = htmlEl.getAttribute('data-bs-theme');
+            // Determine the new theme and save it to localStorage
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            localStorage.setItem('theme', newTheme);
+            htmlEl.setAttribute('data-bs-theme', newTheme);
+        });
     </script>
     {% block extra_js %}{% endblock %}
 </body>
