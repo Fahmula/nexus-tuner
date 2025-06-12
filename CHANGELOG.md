@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/Fahmula/nexus-stream/compare/v1.2.0...v1.3.0) (2025-06-12)
+
+
+### Features
+
+* **ui:** Implement dark mode theme switcher ([#6](https://github.com/Fahmula/nexus-stream/issues/6)) ([00816b0](https://github.com/Fahmula/nexus-stream/commit/00816b03ac1a08ba2a1e157c6d16857c01ebb545))
+
 # [1.2.0](https://github.com/Fahmula/nexus-stream/compare/v1.1.1...v1.2.0) (2025-06-12)
 
 
