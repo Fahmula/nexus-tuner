@@ -265,17 +265,14 @@ class ChannelHandler:
         """Public method to trigger a full reload of the handler's configuration."""
         self._load_and_process_configurations()
 
-    def get_provider_stream_status(self) -> list[dict[str, Any]]:
-        """Returns a list of providers with their stream usage."""
-        statuses = []
+    def get_provider_stream_status(self) -> tuple[int, int]:
+        """Returns a tuple of all providers active and max streams."""
+        total_active_streams = sum(self.active_streams_per_provider.values())
         all_providers = self.get_all_providers_for_ui()
-        for alias, details in sorted(all_providers.items()):
-            statuses.append({
-                "alias": alias,
-                "active_streams": self.active_streams_per_provider.get(alias, 0),
-                "max_concurrent_streams": details.get("max_concurrent_streams", 1)
-            })
-        return statuses
+        max_total_streams = sum(
+            details.get("max_concurrent_streams", 1) for details in all_providers.values()
+        )
+        return total_active_streams, max_total_streams
 
     # --- UI Interaction Methods ---
     def get_all_providers_for_ui(self) -> dict[str, Any]:

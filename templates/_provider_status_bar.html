@@ -1,10 +1,8 @@
 <div class="d-flex justify-content-center align-items-center gap-3 flex-wrap">
-    {% if statuses %}
-        {% for status in statuses %}
-        <div class="provider-status-item" title="Provider: {{ status.alias }}">
-            <span class="badge text-bg-secondary">{{ status.alias }}: {{ status.active_streams }} / {{ status.max_concurrent_streams }}</span>
-        </div>
-        {% endfor %}
+    {% if max_total_streams > 0 %}
+        <span class="badge text-bg-secondary" title="Total active streams across all providers">
+            Active Streams: {{ active_streams }} / {{ max_total_streams }}
+        </span>
     {% else %}
         <span class="text-muted small">No providers configured.</span>
     {% endif %}
