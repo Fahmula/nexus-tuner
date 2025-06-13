@@ -11,6 +11,7 @@ HLSStreamManager, GhostSessionMonitor) and defines all the web routes for:
 
 import os
 import time
+import math
 from datetime import datetime, UTC
 from collections import deque
 
@@ -181,23 +182,44 @@ def ui_logical_channels_list() -> str:
 
 @app.route("/ui/source-services")
 def ui_source_services_list() -> str:
-    """RRenders a filterable list of all discovered source services."""
-    services = handler.get_all_discovered_source_services_for_ui()
-    providers = sorted(list(set(s['provider_alias'] for s in services)))
+    """Renders a filterable list of all discovered source services."""
+    
+    per_page = request.args.get('per_page', 100, type=int)
+    if per_page not in [100, 250, 500, 1000]:
+        per_page = 100
+
+    page = request.args.get('page', 1, type=int)
+
+    services_unfiltered = handler.get_all_discovered_source_services_for_ui()
+    providers = sorted(list(set(s['provider_alias'] for s in services_unfiltered)))
 
     filter_provider = request.args.get('provider_alias', '')
     filter_name = request.args.get('name_filter', '').lower()
 
+    services_filtered = services_unfiltered
     if filter_provider:
-        services = [s for s in services if s['provider_alias'] == filter_provider]
+        services_filtered = [s for s in services_filtered if s['provider_alias'] == filter_provider]
     if filter_name:
-        services = [s for s in services if filter_name in s.get('original_tvg_name', '').lower() or filter_name in s.get('original_display_name_extinf', '').lower()]
+        services_filtered = [s for s in services_filtered if filter_name in s.get('original_tvg_name', '').lower() or filter_name in s.get('original_display_name_extinf', '').lower()]
+
+    total_items = len(services_filtered)
+    total_pages = math.ceil(total_items / per_page)
+    
+    start_index = (page - 1) * per_page
+    end_index = start_index + per_page
+    
+    services_for_page = services_filtered[start_index:end_index]
+    services_for_page = services_filtered[start_index:end_index]
 
     return render_template("ui_source_services.html",
-                           services=services,
+                           services=services_for_page,
                            providers=providers,
                            current_provider=filter_provider,
-                           current_name_filter=filter_name)
+                           current_name_filter=filter_name,
+                           current_page=page,
+                           total_pages=total_pages,
+                           total_items=total_items,
+                           per_page=per_page)
 
 
 @app.route("/ui/providers", methods=["GET"])
