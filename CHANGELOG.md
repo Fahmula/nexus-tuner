@@ -1,3 +1,10 @@
+# [1.8.0](https://github.com/Fahmula/nexus-stream/compare/v1.7.1...v1.8.0) (2025-06-13)
+
+
+### Features
+
+* add pagination and limit controls to Source Services ([#14](https://github.com/Fahmula/nexus-stream/issues/14)) ([c9260d5](https://github.com/Fahmula/nexus-stream/commit/c9260d5220cd8f6fdae1a7c06c928aae0ef17024))
+
 ## [1.7.1](https://github.com/Fahmula/nexus-stream/compare/v1.7.0...v1.7.1) (2025-06-12)
 
 
