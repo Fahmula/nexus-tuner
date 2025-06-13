@@ -35,12 +35,7 @@ app.secret_key = os.urandom(24)
 try:
     config = Config()
     handler = ChannelHandler(config)
-    hls_manager = HLSStreamManager(
-        config,
-        handler.check_provider_capacity,
-        handler.increment_stream_count_for_provider,
-        handler.decrement_stream_count_for_provider
-    )
+    hls_manager = HLSStreamManager(config, handler)
     GhostSessionMonitor(config, handler, hls_manager)
 except ValueError as e:
     # A fatal error during startup should be logged and cause an exit.
