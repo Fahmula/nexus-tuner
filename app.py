@@ -38,11 +38,11 @@ try:
     hls_manager = HLSStreamManager(config, handler)
     GhostSessionMonitor(config, handler, hls_manager)
 except ValueError as e:
-    # A fatal error during startup should be logged and cause an exit.
-    print(f"FATAL: Could not initialize application due to a configuration error: {e}")
+    # A fatal error during startup should be logged and cause an exit
+    config.log_message(f"FATAL: Could not initialize application due to a configuration error: {e}", level="FATAL")
     exit(1)
 except Exception as e:
-    print(f"FATAL: An unexpected error occurred during application startup: {e}")
+    config.log_message(f"FATAL: An unexpected error occurred during application startup: {e}", level="FATAL")
     exit(1)
 
 
@@ -54,8 +54,8 @@ def inject_now() -> dict[str, datetime]:
 
 # --- Core Streaming and Playlist Endpoints ---
 
-@app.route('/hls/<string:lc_user_id>/playlist.m3u8')
-def serve_hls_playlist(lc_user_id: str) -> Response:
+@app.route('/hls/<string:logical_channel_id>/playlist.m3u8')
+def serve_hls_playlist(logical_channel_id: str) -> Response:
     """
     Serves the HLS playlist for a channel.
     
@@ -63,41 +63,41 @@ def serve_hls_playlist(lc_user_id: str) -> Response:
     the HLSStreamManager to start the FFmpeg process if it's not already running.
     It then waits for the playlist file to become available before serving it.
     """
-    hls_manager.record_hls_access(lc_user_id)
+    hls_manager.record_hls_access(logical_channel_id)
 
     with hls_manager.hls_process_lock:
-        is_running = lc_user_id in hls_manager.hls_ffmpeg_processes and \
-                     hls_manager.hls_ffmpeg_processes[lc_user_id]['process'].poll() is None
+        is_running = logical_channel_id in hls_manager.hls_ffmpeg_processes and \
+                     hls_manager.hls_ffmpeg_processes[logical_channel_id]['process'].poll() is None
 
     if not is_running:
-        sources_to_try = handler.get_sources_for_client_facing_channel(lc_user_id)
+        sources_to_try = handler.get_sources_for_client_facing_channel(logical_channel_id)
         if not sources_to_try:
-            abort(404, f"Logical channel '{lc_user_id}' not found or has no sources.")
+            abort(404, f"Logical channel '{logical_channel_id}' not found or has no sources.")
 
         started_successfully = False
         for source in sources_to_try:
             if hls_manager.ensure_stream_is_active(
-                lc_user_id=lc_user_id,
+                logical_channel_id=logical_channel_id,
                 actual_url=source['actual_stream_url'],
                 provider_alias=source['provider_alias']
             ):
                 started_successfully = True
                 break
-            config.log_message(f"Failed to start '{lc_user_id}' from provider '{source['provider_alias']}'. Trying next source.", level="WARN")
+            config.log_message(f"Failed to start '{logical_channel_id}' from provider '{source['provider_alias']}'. Trying next source.", level="WARN")
 
         if not started_successfully:
-            abort(503, f"Could not start HLS stream for '{lc_user_id}' with any available source.")
+            abort(503, f"Could not start HLS stream for '{logical_channel_id}' with any available source.")
 
-    playlist_path = hls_manager.get_hls_playlist_path(lc_user_id)
+    playlist_path = hls_manager.get_hls_playlist_path(logical_channel_id)
     if not playlist_path:
         abort(500, "Internal error: HLS playlist path not found after activation.")
 
     start_wait = time.monotonic()
     while time.monotonic() - start_wait < config.ffmpeg_start_timeout:
         with hls_manager.hls_process_lock:
-            if lc_user_id not in hls_manager.hls_ffmpeg_processes or hls_manager.hls_ffmpeg_processes[lc_user_id]['process'].poll() is not None:
-                config.log_message(f"FFmpeg for '{lc_user_id}' terminated while waiting for playlist.", level="ERROR")
-                hls_manager.stop_hls_ffmpeg_process(lc_user_id)
+            if logical_channel_id not in hls_manager.hls_ffmpeg_processes or hls_manager.hls_ffmpeg_processes[logical_channel_id]['process'].poll() is not None:
+                config.log_message(f"FFmpeg for '{logical_channel_id}' terminated while waiting for playlist.", level="ERROR")
+                hls_manager.stop_hls_ffmpeg_process(logical_channel_id)
                 abort(503, "HLS stream generation failed; the process terminated unexpectedly.")
 
         if playlist_path.exists() and playlist_path.stat().st_size > 0:
@@ -115,13 +115,13 @@ def serve_hls_playlist(lc_user_id: str) -> Response:
     abort(408, "HLS playlist was not available after the timeout period.")
 
 
-@app.route('/hls/<string:lc_user_id>/<path:segment_filename>')
-def serve_hls_segment(lc_user_id: str, segment_filename: str) -> Response:
+@app.route('/hls/<string:logical_channel_id>/<path:segment_filename>')
+def serve_hls_segment(logical_channel_id: str, segment_filename: str) -> Response:
     """Serves an HLS video segment (.ts file)."""
     if not segment_filename.endswith(".ts") or ".." in segment_filename:
         abort(400, "Invalid segment filename.")
     
-    segment_path = hls_manager.get_hls_segment_path(lc_user_id, segment_filename)
+    segment_path = hls_manager.get_hls_segment_path(logical_channel_id, segment_filename)
     if not segment_path or not segment_path.is_file():
         config.log_message(f"HLS segment not found: {segment_path}", level="WARN")
         abort(404)
@@ -173,6 +173,103 @@ def ui_logical_channels_list() -> str:
     """Renders the list of all configured logical channels."""
     channels = handler.get_all_logical_channels_for_ui()
     return render_template("ui_logical_channels.html", channels=channels, handler=handler)
+
+@app.route("/ui/logical-channels/form", methods=["GET", "POST"])
+@app.route("/ui/logical-channels/form/<string:logical_channel_id>", methods=["GET", "POST"])
+def ui_logical_channel_form(logical_channel_id: str | None = None):
+    """Handles both adding and editing a logical channel and its mappings."""
+
+    if request.method == "GET":
+        channel = {}
+        if logical_channel_id:
+            channel = handler.get_logical_channel_by_id(logical_channel_id)
+            if not channel:
+                flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
+                return redirect(url_for('ui_logical_channels_list'))
+
+        all_services = handler.get_all_discovered_source_services_for_ui()
+        
+        filter_query = channel.get('display_name', '').lower().strip()
+        
+        suggested_services = []
+        if filter_query:
+            for service in all_services:
+                name_to_check = service.get('original_tvg_name', '').lower()
+                extinf_name_to_check = service.get('original_display_name_extinf', '').lower()
+
+                if filter_query in name_to_check or filter_query in extinf_name_to_check:
+                    suggested_services.append(service)
+        
+        current_mappings = []
+        if logical_channel_id:
+            current_mappings = handler.get_mappings_for_logical_channel(logical_channel_id)
+
+        action_url = url_for('ui_logical_channel_form', logical_channel_id=logical_channel_id) if logical_channel_id else url_for('ui_logical_channel_form')
+
+        return render_template("ui_logical_channel_form.html", 
+                               channel=channel,
+                               all_services=all_services,
+                               suggested_services=suggested_services,
+                               current_mappings=current_mappings,
+                               action_url=action_url)
+
+    if request.method == "POST":
+        
+        lc_data = {
+            "display_name": request.form.get("display_name", "").strip(),
+            "channel_num": request.form.get("channel_num", "").strip(),
+            "group_title": request.form.get("group_title", "Uncategorized").strip(),
+            "tvg_id": request.form.get("tvg_id", "").strip(),
+            "tvg_logo": request.form.get("tvg_logo", "").strip()
+        }
+
+        if not lc_data['display_name'] or not lc_data['channel_num']:
+            flash("Display Name and Channel Number are required.", "error")
+            return render_template("ui_logical_channel_form.html", channel=lc_data)
+
+        if logical_channel_id:  # This is an UPDATE of an existing channel
+            lc_data['logical_channel_id'] = logical_channel_id
+            if not handler.update_logical_channel(logical_channel_id, lc_data):
+                flash("Error updating channel details.", "error")
+                return redirect(url_for('ui_logical_channel_form', logical_channel_id=logical_channel_id))
+
+            mappings_from_form = []
+            
+            # Getlist to get all submitted values for these names in order
+            service_ids = request.form.getlist('mapping_service_id')
+            priorities = request.form.getlist('mapping_priority')
+
+            # Zip the lists together to process them as pairs
+            for service_id_str, priority_str in zip(service_ids, priorities):
+                if not service_id_str:
+                    continue
+
+                try:
+                    mappings_from_form.append({
+                        'source_service_id': service_id_str,
+                        'priority': int(priority_str)
+                    })
+                except (ValueError, TypeError):
+                    flash(f"Skipping a mapping row with invalid data (service_id: '{service_id_str}').", "warning")
+                    continue
+            
+            handler.update_mappings_for_logical_channel(logical_channel_id, mappings_from_form)
+
+            flash(f"Channel '{lc_data['display_name']}' and its mappings were updated successfully.", "success")
+            handler.reload_handler_config()
+            return redirect(url_for('ui_logical_channel_form', logical_channel_id=logical_channel_id))
+        
+        else: 
+            new_id = handler.add_logical_channel(lc_data)
+            if new_id:
+                flash(f"Channel '{lc_data['display_name']}' added. You can now map its sources.", "success")
+                handler.reload_handler_config()
+                return redirect(url_for('ui_logical_channel_form', logical_channel_id=new_id))
+            else:
+                flash("Error adding channel. A channel with that number may already exist.", "error")
+                return render_template("ui_logical_channel_form.html", channel=lc_data)
+
+    return redirect(url_for('ui_logical_channels_list'))
 
 
 @app.route("/ui/source-services")
@@ -246,12 +343,11 @@ def ui_provider_add() -> Response | str:
             max_streams = int(max_streams_str)
             if handler.add_provider(alias, url, max_streams):
                 flash(f"Provider '{alias}' added successfully.", "success")
-                # Return the new row for HTMX to append
                 new_provider_data = {
                     "alias": alias,
                     "url": url,
                     "max_concurrent_streams": max_streams,
-                    "active_streams": 0 # Newly added provider has 0 active streams
+                    "active_streams": 0 
                 }
                 response = Response(render_template("_provider_row.html", provider=new_provider_data, is_new=True))
             else:
@@ -344,122 +440,77 @@ def ui_provider_status() -> str:
                            max_total_streams=max_total)
 
 
-@app.route("/ui/logical-channels/add", methods=["GET", "POST"])
-def ui_logical_channel_add() -> Response | str:
-    """Handles the creation of a new logical channel."""
-    if request.method == "POST":
-        user_id = request.form.get("user_defined_id", "").strip().lower().replace(" ", "-")
-        display_name = request.form.get("display_name", "").strip()
-
-        if not user_id or not display_name:
-            flash("User Defined ID and Display Name are required.", "error")
-        else:
-            lc_data = {
-                "user_defined_id": user_id, "display_name": display_name,
-                "group_title": request.form.get("group_title", "Uncategorized").strip(),
-                "tvg_id": request.form.get("tvg_id", "").strip(),
-                "tvg_logo": request.form.get("tvg_logo", "").strip(),
-                "channel_num": request.form.get("channel_num", "").strip(),
-            }
-            try:
-                if handler.add_logical_channel(lc_data):
-                    flash(f"Logical Channel '{display_name}' added. Now map its sources.", "success")
-                    handler.reload_handler_config()
-                    return redirect(url_for('ui_logical_channel_edit', lc_user_id=user_id))
-                else:
-                    flash("Error saving logical channel.", "error")
-            except ValueError as e:
-                flash(str(e), "error")
-
-    return render_template("ui_logical_channel_form.html",
-                           action_url=url_for('ui_logical_channel_add'),
-                           channel={},
-                           form_action_label="Add Logical Channel")
+@app.route("/ui/channels/suggest", methods=["GET"])
+def ui_channel_suggest() -> str:
+    """Provides channel suggestions based on user input for HTMX active search."""
+    query = request.args.get('display_name', '')
+    if len(query) < 2:
+        return ""
+    suggestions = handler.search_predefined_channels(query)
+    return render_template("_channel_suggestions.html", suggestions=suggestions)
 
 
-@app.route("/ui/logical-channels/edit/<string:lc_user_id>", methods=["GET", "POST"])
-def ui_logical_channel_edit(lc_user_id: str) -> Response | str:
-    """Handles editing a logical channel's details and its source mappings."""
-    channel = handler.get_logical_channel_by_user_id(lc_user_id)
-    if not channel:
-        flash(f"Logical Channel with ID '{lc_user_id}' not found.", "error")
-        return redirect(url_for('ui_logical_channels_list'))
+@app.route("/ui/channels/select-suggestion")
+def ui_channel_select_suggestion() -> str:
+    """Returns a pre-filled form partial when a user selects a suggestion."""
+    num = request.args.get('num', '')
+    name = request.args.get('name', '')
+    group = request.args.get('group', 'Uncategorized')
+    
+    prefilled_data = {
+        'display_name': name,
+        'channel_num': num,
+        'group_title': group,
+        'tvg_logo': ''
+    }
 
-    if request.method == "POST":
-        action = request.form.get("form_action")
-        if action == "update_details":
-            updated_lc_data = {
-                "display_name": request.form.get("display_name", "").strip(),
-                "group_title": request.form.get("group_title", "").strip(),
-                "tvg_id": request.form.get("tvg_id", "").strip(),
-                "tvg_logo": request.form.get("tvg_logo", "").strip(),
-                "channel_num": request.form.get("channel_num", "").strip()
-            }
-            if handler.update_logical_channel(lc_user_id, updated_lc_data):
-                flash(f"Logical Channel '{updated_lc_data['display_name']}' details updated.", "success")
-                handler.reload_handler_config()
-            else:
-                flash("Error updating logical channel details.", "error")
+    form_html = render_template("_logical_channel_form_fields.html", channel=prefilled_data)
+    clear_suggestions_html = '<div id="suggestion-box" hx-swap-oob="true"></div>'
 
-        elif action == "update_mappings":
-            new_mappings = []
-            for key in request.form:
-                if key.startswith("mapping_service_id_"):
-                    suffix = key.split("mapping_service_id_")[-1]
-                    service_id = request.form.get(key)
-                    priority_str = request.form.get(f"mapping_priority_{suffix}")
-                    if service_id and priority_str:
-                        try:
-                            priority = int(priority_str)
-                            new_mappings.append({"source_service_id": service_id, "priority": priority})
-                        except (ValueError, TypeError):
-                            flash(f"Invalid priority for service '{service_id}'. Must be a whole number.", "error")
-            
-            new_mappings.sort(key=lambda x: x.get("priority", 0))
-            if handler.update_mappings_for_logical_channel(lc_user_id, new_mappings):
-                flash("Channel source mappings updated.", "success")
-                handler.reload_handler_config()
-            else:
-                flash("Error updating channel source mappings.", "error")
-
-        return redirect(url_for('ui_logical_channel_edit', lc_user_id=lc_user_id))
-
-    all_services = handler.get_all_discovered_source_services_for_ui()
-    current_mappings = handler.get_mappings_for_logical_channel(lc_user_id)
-    return render_template("ui_logical_channel_form.html",
-                           action_url=url_for('ui_logical_channel_edit', lc_user_id=lc_user_id),
-                           channel=channel,
-                           all_services=all_services,
-                           current_mappings=current_mappings,
-                           form_action_label="Update Channel")
+    return form_html + clear_suggestions_html
 
 
-@app.route("/ui/logical-channels/delete/<string:lc_user_id>", methods=["POST"])
-def ui_logical_channel_delete(lc_user_id: str) -> Response:
+@app.route("/ui/logical-channels/delete/<string:logical_channel_id>", methods=["POST"])
+def ui_logical_channel_delete(logical_channel_id: str) -> Response:
     """Handles the deletion of a logical channel and its mappings."""
-    channel = handler.get_logical_channel_by_user_id(lc_user_id)
+    channel = handler.get_logical_channel_by_id(logical_channel_id)
     if channel:
-        if handler.delete_logical_channel(lc_user_id):
+        if handler.delete_logical_channel(logical_channel_id):
             flash(f"Logical Channel '{channel['display_name']}' deleted.", "success")
             handler.reload_handler_config()
         else:
             flash(f"Error deleting logical channel '{channel['display_name']}'.", "error")
     else:
-        flash(f"Logical Channel with ID '{lc_user_id}' not found.", "warning")
+        flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "warning")
     return redirect(url_for('ui_logical_channels_list'))
 
 
 @app.route("/ui/logical-channels/new-mapping-row")
 def ui_get_new_mapping_row() -> str:
     """Returns an HTML partial for a new, empty mapping row for the UI."""
-    channel_id = request.args.get('channel_id')
-    current_channel = handler.get_logical_channel_by_user_id(channel_id)
+    logical_channel_id = request.args.get('logical_channel_id', "")
+    current_channel = {}
+    if logical_channel_id:
+        current_channel = handler.get_logical_channel_by_id(logical_channel_id)
+    
     all_services = handler.get_all_discovered_source_services_for_ui()
-    row_idx_for_names = int(time.time() * 1000) # Pseudo-unique index for field names
+    filter_query = current_channel.get('display_name', '').lower().strip()
+    
+    suggested_services = []
+    if filter_query:
+        for service in all_services:
+            name_to_check = service.get('original_tvg_name', '').lower()
+            extinf_name_to_check = service.get('original_display_name_extinf', '').lower()
+            if filter_query in name_to_check or filter_query in extinf_name_to_check:
+                suggested_services.append(service)
+    
+    row_idx_for_names = int(time.time() * 1000)
+    
     return render_template('_mapping_row.html',
                            current_row_index=row_idx_for_names,
                            mapping=None,
                            all_services=all_services,
+                           suggested_services=suggested_services,
                            channel=current_channel)
 
 

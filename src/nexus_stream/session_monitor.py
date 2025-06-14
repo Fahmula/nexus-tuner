@@ -51,7 +51,7 @@ class GhostSessionMonitor:
 
     def _build_name_to_id_map(self) -> None:
         """
-        Creates a mapping from a channel's display name to its user_defined_id.
+        Creates a mapping from a channel's display name to its logical_channel_id.
         This is crucial for linking a media server session back to a stream process.
         """
         self.config.log_message("Monitor: Building channel name to stream ID map...", level="DEBUG")

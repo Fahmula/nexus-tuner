@@ -1,0 +1,39 @@
+<div id="form-content-wrapper">
+    <div class="mb-3" style="position: relative;">
+        <label for="display_name" class="form-label">Display Name</label>
+        <input type="text" class="form-control" id="display_name" name="display_name"
+            value="{{ channel.display_name if channel else '' }}" required
+            hx-get="{{ url_for('ui_channel_suggest') }}"
+            hx-trigger="input changed delay:500ms, search"
+            hx-target="#suggestion-box"
+            hx-indicator="#search-indicator"
+            autocomplete="off"
+            hx-sync="this:replace"
+            {# JS to update the other card's header live #}
+            oninput="document.getElementById('channel-name-header').textContent = this.value">
+        <div class="form-text">Start typing to search for a channel. <span id="search-indicator" class="htmx-indicator spinner-border spinner-border-sm"></span></div>
+        <div id="suggestion-box" class="list-group mt-1 position-absolute" style="z-index: 1000;"></div>
+    </div>
+
+    <div class="mb-3">
+        <label for="channel_num" class="form-label">Channel Number</label>
+        <input type="text" class="form-control" id="channel_num" name="channel_num"
+            value="{{ channel.channel_num if channel else '' }}" required>
+    </div>
+
+    <div class="mb-3">
+        <label for="group_title" class="form-label">Group Title</label>
+        <input type="text" class="form-control" id="group_title" name="group_title"
+            value="{{ channel.group_title if channel else 'Uncategorized' }}">
+    </div>
+    <div class="mb-3">
+        <label for="tvg_id" class="form-label">EPG ID (tvg-id) (Optional)</label>
+        <input type="text" class="form-control" id="tvg_id" name="tvg_id"
+            value="{{ channel.tvg_id if channel else '' }}">
+    </div>
+    <div class="mb-3">
+        <label for="tvg_logo" class="form-label">Logo URL (Optional)</label>
+        <input type="url" class="form-control" id="tvg_logo" name="tvg_logo"
+            value="{{ channel.tvg_logo if channel else '' }}">
+    </div>
+</div>

@@ -30,7 +30,7 @@ class ChannelHandler:
     Key Data Structures:
     - `discovered_source_services`: A dictionary mapping a unique service ID to a
       dict of its parsed M3U data (e.g., name, logo, group, original URL).
-    - `client_facing_channels`: A dictionary mapping a user-defined ID to a
+    - `client_facing_channels`: A dictionary mapping a logical_channel_id to a
       fully-processed logical channel, including its list of prioritized source URLs.
     """
     def __init__(self, config: 'Config'):
@@ -48,6 +48,7 @@ class ChannelHandler:
         self.providers_data_from_json: dict[str, Any] = {}
         self.logical_channels_data_from_json: list[dict[str, Any]] = []
         self.channel_mappings_data_from_json: dict[str, Any] = {}
+        self.predefined_channel_list: dict[str, Any] = {}
         
         # In-memory processed data
         self.discovered_source_services: dict[str, dict[str, Any]] = {} 
@@ -82,6 +83,7 @@ class ChannelHandler:
 
         self.logical_channels_data_from_json = self.config.get_logical_channels_config()
         self.channel_mappings_data_from_json = self.config.get_channel_mappings_config()
+        self.predefined_channel_list = self.config.get_channel_list_config()
 
         self.discovered_source_services.clear()
         self.client_facing_channels.clear()
@@ -175,12 +177,12 @@ class ChannelHandler:
         self.client_facing_channels.clear()
 
         for lc_def in self.logical_channels_data_from_json:
-            lc_user_id = lc_def.get("user_defined_id")
-            if not lc_user_id:
+            logical_channel_id = lc_def.get("logical_channel_id")
+            if not logical_channel_id:
                 self.config.log_message(f"Skipping logical channel with missing ID: {lc_def.get('display_name', 'N/A')}", level="WARN")
                 continue
 
-            mapped_sources_for_lc = self.channel_mappings_data_from_json.get(lc_user_id, [])
+            mapped_sources_for_lc = self.channel_mappings_data_from_json.get(logical_channel_id, [])
             processed_sources = []
             for mapping in sorted(mapped_sources_for_lc, key=lambda x: x.get("priority", 0)):
                 source_id = mapping.get("source_service_id")
@@ -191,12 +193,12 @@ class ChannelHandler:
                         "actual_stream_url": discovered_service["actual_stream_url"],
                     })
                 else:
-                    self.config.log_message(f"Mapped source '{source_id}' for LC '{lc_user_id}' not found in discovered services.", level="WARN")
+                    self.config.log_message(f"Mapped source '{source_id}' for LC '{logical_channel_id}' not found in discovered services.", level="WARN")
 
             if processed_sources:
-                self.client_facing_channels[lc_user_id] = {
-                    "user_defined_id": lc_user_id,
-                    "display_name": lc_def.get("display_name", lc_user_id),
+                self.client_facing_channels[logical_channel_id] = {
+                    "logical_channel_id": logical_channel_id,
+                    "display_name": lc_def.get("display_name", logical_channel_id),
                     "group_title": lc_def.get("group_title", "Uncategorized"),
                     "tvg_id": lc_def.get("tvg_id", ""),
                     "tvg_logo": lc_def.get("tvg_logo", ""),
@@ -204,7 +206,7 @@ class ChannelHandler:
                     "sources": processed_sources
                 }
             else:
-                 self.config.log_message(f"No valid mapped sources for LC '{lc_user_id}'. It will not be included in the client M3U.", level="WARN")
+                 self.config.log_message(f"No valid mapped sources for LC '{logical_channel_id}'. It will not be included in the client M3U.", level="WARN")
         self.config.log_message(f"Built {len(self.client_facing_channels)} client-facing channels.", level="INFO")
 
     def generate_master_client_m3u(self) -> None:
@@ -227,14 +229,14 @@ class ChannelHandler:
             if group := lc_data.get("group_title"): extinf_parts.append(f'group-title="{group}"')
             
             m3u_lines.append(f"#EXTINF:-1 {' '.join(extinf_parts)},{name}")
-            m3u_lines.append(f"{self.base_url}/hls/{lc_data['user_defined_id']}/playlist.m3u8")
+            m3u_lines.append(f"{self.base_url}/hls/{lc_data['logical_channel_id']}/playlist.m3u8")
         
         self.master_m3u_content = "\n".join(m3u_lines) + "\n"
         self.config.log_message(f"Generated master client M3U with {len(self.client_facing_channels)} channels.", level="INFO")
 
-    def get_sources_for_client_facing_channel(self, lc_user_defined_id: str) -> list[dict[str, str]]:
+    def get_sources_for_client_facing_channel(self, logical_channel_id: str) -> list[dict[str, str]]:
         """Retrieves the list of source stream URLs for a given client-facing channel ID."""
-        channel_data = self.client_facing_channels.get(lc_user_defined_id)
+        channel_data = self.client_facing_channels.get(logical_channel_id)
         return channel_data.get("sources", []) if channel_data else []
 
     def _get_max_streams_for_provider(self, provider_alias: str) -> int:
@@ -273,6 +275,39 @@ class ChannelHandler:
         return total_active_streams, max_total_streams
 
     # --- UI Interaction Methods ---
+    def search_predefined_channels(self, query: str) -> list[dict[str, Any]]:
+        """Searches the predefined channel list"""
+        if not query:
+            return []
+        
+        query = query.lower()
+        matches = []
+        for group, channels in self.predefined_channel_list.items():
+            for channel in channels:
+                if query in channel.get('name', '').lower():
+                    matches.append({**channel, 'group': group})
+        # Sort matches by how early the query appears in the name
+        matches.sort(key=lambda x: x['name'].lower().find(query))
+        return matches[:10] # Return a max of 10 suggestions
+
+    def _generate_next_logical_channel_id(self) -> str:
+        """Generates the next available auto-incrementing ID as a string, starting at '1000'."""
+        
+        existing_id_strings = [
+            lc.get('logical_channel_id') 
+            for lc in self.logical_channels_data_from_json 
+            if lc.get('logical_channel_id') is not None
+        ]
+        
+        if not existing_id_strings:
+            return '1000'
+
+        numeric_ids = [int(id_str) for id_str in existing_id_strings]
+        
+        next_id_as_int = max(numeric_ids) + 1
+        
+        return str(next_id_as_int)
+
     def get_all_providers_for_ui(self) -> dict[str, Any]:
         return self.providers_data_from_json
 
@@ -331,41 +366,51 @@ class ChannelHandler:
         return self.config.save_providers_config({"source_m3u_providers": self.providers_data_from_json})
 
     def get_all_logical_channels_for_ui(self) -> list[dict[str, Any]]:
+        """Gets a list of all logical channels."""
         return sorted(self.logical_channels_data_from_json, key=lambda x: x.get("display_name","").lower())
 
-    def get_logical_channel_by_user_id(self, user_defined_id: str) -> dict[str, Any] | None:
-        return next((lc for lc in self.logical_channels_data_from_json if lc.get("user_defined_id") == user_defined_id), None)
+    def get_logical_channel_by_id(self, logical_channel_id: str) -> dict[str, Any] | None:
+        """Gets a logical channel by its internal ID."""
+        return next((lc for lc in self.logical_channels_data_from_json if lc.get("logical_channel_id") == logical_channel_id), None)
 
     def add_logical_channel(self, lc_data: dict[str, Any]) -> bool:
-        if self.get_logical_channel_by_user_id(lc_data["user_defined_id"]):
-            raise ValueError(f"Logical channel with ID '{lc_data['user_defined_id']}' already exists.")
+        """Adds a new logical channel to the configuration and returns its internal ID."""
+        new_id = self._generate_next_logical_channel_id()
+        lc_data['logical_channel_id'] = new_id
         self.logical_channels_data_from_json.append(lc_data)
-        return self.config.save_logical_channels_config(self.logical_channels_data_from_json)
+        self.config.save_logical_channels_config(self.logical_channels_data_from_json)
+        return new_id
 
-    def update_logical_channel(self, user_defined_id: str, updated_lc_data: dict[str, Any]) -> bool:
+    def update_logical_channel(self, logical_channel_id: str, updated_lc_data: dict[str, Any]) -> bool:
+        """Updates a logical channel in the configuration."""
         for i, lc in enumerate(self.logical_channels_data_from_json):
-            if lc.get("user_defined_id") == user_defined_id:
-                updated_lc_data["user_defined_id"] = user_defined_id 
+            if lc.get("logical_channel_id") == logical_channel_id:
+                updated_lc_data["logical_channel_id"] = logical_channel_id 
                 self.logical_channels_data_from_json[i] = updated_lc_data
                 return self.config.save_logical_channels_config(self.logical_channels_data_from_json)
         return False
 
-    def delete_logical_channel(self, user_defined_id: str) -> bool:
+    def delete_logical_channel(self, logical_channel_id: str) -> bool:
+        """Deletes a logical channel from the configuration."""
         original_len = len(self.logical_channels_data_from_json)
-        self.logical_channels_data_from_json = [lc for lc in self.logical_channels_data_from_json if lc.get("user_defined_id") != user_defined_id]
+        self.logical_channels_data_from_json = [lc for lc in self.logical_channels_data_from_json if lc.get("logical_channel_id") != logical_channel_id]
         
         # Also remove any associated mappings
-        if user_defined_id in self.channel_mappings_data_from_json:
-            del self.channel_mappings_data_from_json[user_defined_id]
+        if logical_channel_id in self.channel_mappings_data_from_json:
+            del self.channel_mappings_data_from_json[logical_channel_id]
             self.config.save_channel_mappings_config(self.channel_mappings_data_from_json)
         
         return len(self.logical_channels_data_from_json) < original_len and self.config.save_logical_channels_config(self.logical_channels_data_from_json)
 
-    def get_mappings_for_logical_channel(self, user_defined_id: str) -> list[dict[str, Any]]:
-        return self.channel_mappings_data_from_json.get(user_defined_id, [])
+    def get_mappings_for_logical_channel(self, logical_channel_id: str) -> list[dict[str, Any]]:
+        """Retrieves the mappings for a logical channel."""
+        return self.channel_mappings_data_from_json.get(logical_channel_id, [])
 
-    def update_mappings_for_logical_channel(self, user_defined_id: str, new_mappings_list: list[dict[str, Any]]) -> bool:
-        self.channel_mappings_data_from_json[user_defined_id] = new_mappings_list
+    def update_mappings_for_logical_channel(self, logical_channel_id: str, new_mappings_list: list[dict[str, Any]]) -> bool:
+        """Updates the mappings for a logical channel."""
+        if logical_channel_id in self.channel_mappings_data_from_json:
+            del self.channel_mappings_data_from_json[logical_channel_id]
+        self.channel_mappings_data_from_json[logical_channel_id] = new_mappings_list
         return self.config.save_channel_mappings_config(self.channel_mappings_data_from_json)
 
     def get_all_discovered_source_services_for_ui(self) -> list[dict[str, Any]]:
