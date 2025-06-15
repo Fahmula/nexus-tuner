@@ -6,7 +6,7 @@
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
     <h1 class="h2">Logical Channels</h1>
     <div class="btn-toolbar mb-2 mb-md-0">
-        <a href="{{ url_for('ui_logical_channel_add') }}" class="btn btn-sm btn-outline-success">
+        <a href="{{ url_for('ui_logical_channel_form') }}" class="btn btn-sm btn-outline-success">
             <i class="fas fa-plus"></i> Add New Logical Channel
         </a>
     </div>
@@ -19,7 +19,7 @@
             <tr>
                 <th>Display Name</th>
                 <th>Chanel Number</th>
-                <th>User ID (Slug)</th>
+                <th>Internal ID (Slug)</th>
                 <th>Group Title</th>
                 <th>EPG ID (tvg-id)</th>
                 <th>Logo</th>
@@ -32,7 +32,7 @@
             <tr>
                 <td><strong>{{ channel.display_name }}</strong></td>
                 <td>{{ channel.channel_num if channel.channel_num else '-' }}</td>
-                <td><small class="text-muted">{{ channel.user_defined_id }}</small></td>
+                <td><small class="text-muted">{{ channel.logical_channel_id }}</small></td>
                 <td>{{ channel.group_title if channel.group_title else '-' }}</td>
                 <td>{{ channel.tvg_id if channel.tvg_id else '-' }}</td>
                 <td>
@@ -44,17 +44,14 @@
                     {% endif %}
                 </td>
                 <td>
-                    {# We need to get the count of mapped sources for this channel #}
-                    {# This requires passing mapping counts from the Python route or doing another query/lookup #}
-                    {# For now, placeholder. We'll enhance this. #}
-                    {% set mapping_count = handler.get_mappings_for_logical_channel(channel.user_defined_id)|length %}
+                    {% set mapping_count = handler.get_mappings_for_logical_channel(channel.logical_channel_id)|length %}
                     <span class="badge bg-info">{{ mapping_count }}</span>
                 </td>
                 <td>
-                    <a href="{{ url_for('ui_logical_channel_edit', lc_user_id=channel.user_defined_id) }}" class="btn btn-sm btn-outline-primary me-1" title="Edit & Map Sources">
+                    <a href="{{ url_for('ui_logical_channel_form', logical_channel_id=channel.logical_channel_id) }}" class="btn btn-sm btn-outline-primary me-1" title="Edit & Map Sources">
                         <i class="fas fa-edit"></i> Edit
                     </a>
-                    <form method="POST" action="{{ url_for('ui_logical_channel_delete', lc_user_id=channel.user_defined_id) }}" style="display: inline;"
+                    <form method="POST" action="{{ url_for('ui_logical_channel_delete', logical_channel_id=channel.logical_channel_id) }}" style="display: inline;"
                           onsubmit="return confirm('Are you sure you want to delete logical channel \'{{ channel.display_name }}\'? This cannot be undone.');">
                         <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
                             <i class="fas fa-trash-alt"></i>
@@ -69,7 +66,7 @@
 {% else %}
 <div class="alert alert-info" role="alert">
     No logical channels have been defined yet. 
-    <a href="{{ url_for('ui_logical_channel_add') }}" class="alert-link">Click here to add your first logical channel.</a>
+    <a href="{{ url_for('ui_logical_channel_form') }}" class="alert-link">Click here to add your first logical channel.</a>
 </div>
 {% endif %}
 

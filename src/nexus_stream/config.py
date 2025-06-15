@@ -45,6 +45,7 @@ class Config:
         self.providers_path: Path = data_dir / "providers.json"
         self.logical_channels_path: Path = data_dir / "logical_channels.json"
         self.channel_mappings_path: Path = data_dir / "channel_mappings.json"
+        self.channel_list_path: Path = data_dir / "channel_list.json"
         
         # --- HLS Segment Directory ---
         self.hls_base_segment_dir: Path = project_root / HLS_SEGMENT_ROOT_DIR_NAME
@@ -221,6 +222,10 @@ class Config:
     def get_channel_mappings_config(self) -> dict[str, Any]:
         """Loads the channel mappings from channel_mappings.json."""
         return self._load_json_file(self.channel_mappings_path, dict)
+    
+    def get_channel_list_config(self) -> dict[str, Any]:
+        """Loads the predefined channel list from channel_list.json."""
+        return self._load_json_file(self.channel_list_path, dict)
 
     def save_channel_mappings_config(self, data: dict[str, Any]) -> bool:
         """Saves the channel mappings to channel_mappings.json."""

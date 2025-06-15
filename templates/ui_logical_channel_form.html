@@ -1,102 +1,64 @@
 {% extends "layout.html" %}
 
-{% block title %}{{ form_action_label }} Logical Channel - NexusStream{% endblock %}
+{% block title %}{{ "Add" if not channel.logical_channel_id else "Edit" }} Logical Channel{% endblock %}
 
 {% block content %}
-
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-    <h1 class="h2">{{ form_action_label }} Logical Channel</h1>
+    <h1 class="h2">{{ "Add" if not channel.logical_channel_id else "Edit" }} Logical Channel</h1>
     <a href="{{ url_for('ui_logical_channels_list') }}" class="btn btn-sm btn-outline-secondary">
         <i class="fas fa-arrow-left"></i> Back to List
     </a>
 </div>
 
-<div class="row">
-    <div class="col-md-6">
-        <div class="card mb-4">
-            <div class="card-header">
-                Logical Channel Details
-            </div>
-            <div class="card-body">
-                {# This form will submit to the main edit/add route for channel details #}
-                {# For HTMX, we could also make this an hx-post that targets a specific div for feedback #}
-                <form method="POST" action="{{ action_url }}">
-                    <input type="hidden" name="form_action" value="update_details">
+<form method="POST" action="{{ action_url }}">
 
-                    <div class="mb-3">
-                        <label for="user_defined_id" class="form-label">User Defined ID (Slug)</label>
-                        <input type="text" class="form-control" id="user_defined_id" name="user_defined_id"
-                               value="{{ channel.user_defined_id if channel else '' }}"
-                               {% if channel.user_defined_id %}readonly{% endif %} required
-                               pattern="^[a-z0-9]+(?:-[a-z0-9]+)*$"
-                               title="Lowercase letters, numbers, hyphens. No spaces. e.g., my-channel-hd">
-                        {% if not channel.user_defined_id %}
-                        <div class="form-text">Cannot be changed after creation.</div>
-                        {% endif %}
-                    </div>
+    {# If we are editing, we need to pass the ID and an action hint #}
+    {% if channel.logical_channel_id %}
+        <input type="hidden" name="logical_channel_id" value="{{ channel.logical_channel_id }}">
+        {# This tells the backend to expect both details and mappings #}
+        <input type="hidden" name="form_action" value="update_all">
+    {% endif %}
 
-                    <div class="mb-3">
-                        <label for="display_name" class="form-label">Display Name (for M3U)</label>
-                        <input type="text" class="form-control" id="display_name" name="display_name"
-                               value="{{ channel.display_name if channel else '' }}" required>
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header">
+                    Logical Channel Details
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small">
+                        Start by typing a channel name to get suggestions, or fill out the form manually.
+                    </p>
+                    <div id="form-content-wrapper">
+                        {# This include will now contain ONLY the input fields, NOT a form tag #}
+                        {% include '_logical_channel_form_fields.html' %}
                     </div>
-
-                    <div class="mb-3">
-                        <label for="channel_num" class="form-label">Channel number (for M3U)</label>
-                        <input type="text" class="form-control" id="channel_num" name="channel_num"
-                               value="{{ channel.channel_num if channel else '' }}" required>
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="group_title" class="form-label">Group Title (for M3U)</label>
-                        <input type="text" class="form-control" id="group_title" name="group_title"
-                               value="{{ channel.group_title if channel else 'Uncategorized' }}">
-                    </div>
-                    <div class="mb-3">
-                        <label for="tvg_id" class="form-label">EPG ID (tvg-id)</label>
-                        <input type="text" class="form-control" id="tvg_id" name="tvg_id"
-                               value="{{ channel.tvg_id if channel else '' }}">
-                    </div>
-                    <div class="mb-3">
-                        <label for="tvg_logo" class="form-label">Logo URL (tvg-logo)</label>
-                        <input type="url" class="form-control" id="tvg_logo" name="tvg_logo"
-                               value="{{ channel.tvg_logo if channel else '' }}">
-                    </div>
-
-                    <button type="submit" class="btn btn-primary">
-                        <i class="fas fa-save"></i> {{ form_action_label }} Details
-                    </button>
-                </form>
+                </div>
             </div>
         </div>
-    </div>
 
-    {% if channel.user_defined_id %} {# Only show mapping if we are editing an existing channel #}
-    <div class="col-md-6">
-        {# Main card for mapping services to this logical channel #}
-        <div class="card">
-            <div class="card-header">
-                Map Source Services to "{{ channel.display_name }}"
-            </div>
-            <div class="card-body">
-                <div class="mb-3 text-end"> {# Wrapper for alignment #}
-                    <but type="button" class="btn btn-sm btn-success"
-                            id="add-mapping-button" 
-                            hx-get="{{ url_for('ui_get_new_mapping_row', channel_id=channel.user_defined_id) }}"
-                            hx-target="#mappings-container"
-                            hx-swap="beforeend"
-                            hx-indicator="#add-row-indicator">
-                        <i class="fas fa-plus"></i> Add Mapping Row
-                        <span id="add-row-indicator" class="htmx-indicator spinner-border spinner-border-sm ms-1" role="status" aria-hidden="true"></span>
-                    </button>
+        {% if channel.logical_channel_id %} {# Only show mapping if we are editing an existing channel #}
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    Map Source Services to "<span id="channel-name-header">{{ channel.display_name }}</span>"
                 </div>
-                {# This form will submit ALL mappings. HTMX will help add new rows. #}
-                <form method="POST" action="{{ action_url }}">
-                    <input type="hidden" name="form_action" value="update_mappings">
+                <div class="card-body">
+                    <div class="mb-3 text-end">
+                        <button type="button" class="btn btn-sm btn-success"
+                                id="add-mapping-button"
+                                hx-get="{{ url_for('ui_get_new_mapping_row', logical_channel_id=channel.logical_channel_id) }}"
+                                hx-target="#mappings-container"
+                                hx-swap="beforeend"
+                                hx-include="#display_name"
+                                hx-indicator="#add-row-indicator">
+                            <i class="fas fa-plus"></i> Add Mapping Row
+                            <span id="add-row-indicator" class="htmx-indicator spinner-border spinner-border-sm ms-1" role="status" aria-hidden="true"></span>
+                        </button>
+                    </div>
+
                     <p class="small text-muted">Select discovered services and set priority (0 is highest). Empty rows will be ignored on save.</p>
-                    
                     <div id="mappings-container">
-                        {# Existing mappings are rendered here by the main route #}
                         {% for mapping in current_mappings %}
                             {% set current_row_index = loop.index0 %}
                             {% include '_mapping_row.html' %}
@@ -105,15 +67,20 @@
                             <p id="no-mappings-yet" class="text-muted">No sources mapped yet. Click "Add Mapping Row" to start.</p>
                         {% endif %}
                     </div>
-                    <hr>
-                    <button type="submit" class="btn btn-primary">
-                        <i class="fas fa-link"></i> Save All Mappings
-                    </button>
-                </form>
+                </div>
             </div>
         </div>
+        {% endif %}
     </div>
-    {% endif %}
-</div>
+
+    <hr>
+    <div class="mt-3">
+        <button type="submit" class="btn btn-primary btn-lg">
+            <i class="fas fa-save"></i> 
+            {{ "Create Channel" if not channel.logical_channel_id else "Save All Changes" }}
+        </button>
+    </div>
+
+</form>
 
 {% endblock %}

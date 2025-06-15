@@ -29,7 +29,7 @@ class HLSStreamManager:
 
     The `hls_ffmpeg_processes` dictionary has the following structure:
     {
-        "lc_user_id": {
+        "logical_channel_id": {
             "process": subprocess.Popen,
             "last_access": datetime,
             "provider_alias": str,
@@ -57,9 +57,9 @@ class HLSStreamManager:
         self.cleanup_thread = threading.Thread(target=self._hls_cleanup_loop, daemon=True)
         self.cleanup_thread.start()
 
-    def _get_hls_ffmpeg_command(self, input_url: str, lc_user_id: str) -> tuple[list[str], Path]:
+    def _get_hls_ffmpeg_command(self, input_url: str, logical_channel_id: str) -> tuple[list[str], Path]:
         """Constructs the FFmpeg command list and creates the necessary HLS directory."""
-        channel_hls_dir = self.hls_base_dir / lc_user_id
+        channel_hls_dir = self.hls_base_dir / logical_channel_id
         channel_hls_dir.mkdir(parents=True, exist_ok=True)
         
         playlist_path = channel_hls_dir / "playlist.m3u8"
@@ -83,22 +83,24 @@ class HLSStreamManager:
         ]
         return command, channel_hls_dir
 
-    def ensure_stream_is_active(self, lc_user_id: str, actual_url: str, provider_alias: str) -> bool:
+    def ensure_stream_is_active(self, logical_channel_id: str, actual_url: str, provider_alias: str) -> bool:
         """
         Ensures an HLS stream is running for a given channel.
         This is now managed by a semaphore for thread-safe capacity checking.
         """
+        logical_channel_name = self.handler.get_logical_channel_by_id(logical_channel_id)['display_name']
+
         with self.hls_process_lock:
             # Check if a healthy process already exists
-            if lc_user_id in self.hls_ffmpeg_processes:
-                process_obj = self.hls_ffmpeg_processes[lc_user_id]['process']
+            if logical_channel_id in self.hls_ffmpeg_processes:
+                process_obj = self.hls_ffmpeg_processes[logical_channel_id]['process']
                 if process_obj.poll() is None:
-                    self.hls_ffmpeg_processes[lc_user_id]['last_access'] = datetime.now()
+                    self.hls_ffmpeg_processes[logical_channel_id]['last_access'] = datetime.now()
                     return True
                 else:
-                    self.config.log_message(f"Found dead HLS process for {lc_user_id}. Cleaning up before restart.", level="INFO")
+                    self.config.log_message(f"Found dead HLS process for {logical_channel_name}. Cleaning up before restart.", level="INFO")
                     # We call the internal stop method, which will release the semaphore if it was held.
-                    self._stop_hls_ffmpeg_process_internal(lc_user_id)
+                    self._stop_hls_ffmpeg_process_internal(logical_channel_id)
 
         provider_semaphore = self.handler.provider_semaphores.get(provider_alias)
         if not provider_semaphore:
@@ -116,20 +118,20 @@ class HLSStreamManager:
         
         started_successfully = False
         try:
-            command, channel_hls_dir = self._get_hls_ffmpeg_command(actual_url, lc_user_id)
-            log_path = self.config.get_ffmpeg_log_path(lc_user_id, provider_alias)
+            command, channel_hls_dir = self._get_hls_ffmpeg_command(actual_url, logical_channel_id)
+            log_path = self.config.get_ffmpeg_log_path(logical_channel_name, provider_alias)
             
             stderr_log_file = open(log_path, 'a', encoding='utf-8')
             process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=stderr_log_file)
-            self.config.log_message(f"Started FFmpeg for '{provider_alias}' -> '{lc_user_id}' (PID: {process.pid}).", level="INFO")
+            self.config.log_message(f"Started FFmpeg for '{provider_alias}' -> '{logical_channel_name}' (PID: {process.pid}).", level="INFO")
 
             start_time = time.monotonic()
             while time.monotonic() - start_time < self.config.ffmpeg_start_timeout:
                 if process.poll() is not None:
-                    raise ChildProcessError(f"FFmpeg process for {lc_user_id} exited prematurely (Code: {process.returncode}).")
+                    raise ChildProcessError(f"FFmpeg process for {logical_channel_name} exited prematurely (Code: {process.returncode}).")
                 if any(channel_hls_dir.glob('*.ts')):
                     with self.hls_process_lock:
-                        self.hls_ffmpeg_processes[lc_user_id] = {
+                        self.hls_ffmpeg_processes[logical_channel_id] = {
                             'process': process,
                             'last_access': datetime.now(),
                             'provider_alias': provider_alias,
@@ -141,10 +143,10 @@ class HLSStreamManager:
                     return True
                 time.sleep(STARTUP_POLL_INTERVAL)
             
-            raise TimeoutError(f"FFmpeg process for {lc_user_id} started but did not produce segments in time.")
+            raise TimeoutError(f"FFmpeg process for {logical_channel_name} started but did not produce segments in time.")
 
         except (ChildProcessError, TimeoutError, OSError, ValueError) as e:
-            self.config.log_message(f"Failed to start or validate FFmpeg for {lc_user_id}: {e}", level="ERROR")
+            self.config.log_message(f"Failed to start or validate FFmpeg for {logical_channel_name}: {e}", level="ERROR")
             if 'process' in locals() and process.poll() is None:
                 process.kill()
             if 'stderr_log_file' in locals():
@@ -154,34 +156,36 @@ class HLSStreamManager:
             return False
         finally:
             if not started_successfully:
-                self.config.log_message(f"FFmpeg failed to start for '{lc_user_id}'. Releasing capacity slot for '{provider_alias}'.", level="WARN")
+                self.config.log_message(f"FFmpeg failed to start for '{logical_channel_name}'. Releasing capacity slot for '{provider_alias}'.", level="WARN")
                 provider_semaphore.release()
 
-    def record_hls_access(self, lc_user_id: str) -> None:
+    def record_hls_access(self, logical_channel_id: str) -> None:
         """Updates the last access time for an active stream to keep it alive."""
         with self.hls_process_lock:
-            if lc_user_id in self.hls_ffmpeg_processes:
-                self.hls_ffmpeg_processes[lc_user_id]['last_access'] = datetime.now()
+            if logical_channel_id in self.hls_ffmpeg_processes:
+                self.hls_ffmpeg_processes[logical_channel_id]['last_access'] = datetime.now()
 
-    def get_hls_playlist_path(self, lc_user_id: str) -> Path | None:
+    def get_hls_playlist_path(self, logical_channel_id: str) -> Path | None:
         """Returns the path to the HLS playlist if the stream is active."""
         with self.hls_process_lock:
-            if lc_user_id in self.hls_ffmpeg_processes:
-                data = self.hls_ffmpeg_processes[lc_user_id]
+            if logical_channel_id in self.hls_ffmpeg_processes:
+                data = self.hls_ffmpeg_processes[logical_channel_id]
                 return data['channel_hls_dir'] / "playlist.m3u8"
         return None
         
-    def get_hls_segment_path(self, lc_user_id: str, segment_filename: str) -> Path | None:
+    def get_hls_segment_path(self, logical_channel_id: str, segment_filename: str) -> Path | None:
         """Returns the path to a specific HLS segment file if the stream is active."""
         with self.hls_process_lock:
-            if lc_user_id in self.hls_ffmpeg_processes:
-                return self.hls_ffmpeg_processes[lc_user_id]['channel_hls_dir'] / segment_filename
+            if logical_channel_id in self.hls_ffmpeg_processes:
+                return self.hls_ffmpeg_processes[logical_channel_id]['channel_hls_dir'] / segment_filename
         return None
 
-    def _stop_hls_ffmpeg_process_internal(self, lc_user_id: str) -> None:
+    def _stop_hls_ffmpeg_process_internal(self, logical_channel_id: str) -> None:
         """Stops an FFmpeg process, decrements provider count, and cleans up files."""
         with self.hls_process_lock:
-            if (data := self.hls_ffmpeg_processes.pop(lc_user_id, None)) is None:
+            logical_channel_name = self.handler.get_logical_channel_by_id(logical_channel_id)['display_name']
+
+            if (data := self.hls_ffmpeg_processes.pop(logical_channel_id, None)) is None:
                 return
 
             process, provider, hls_dir, log_file = (
@@ -189,19 +193,19 @@ class HLSStreamManager:
             )
 
             if process.poll() is None:
-                self.config.log_message(f"Stopping FFmpeg HLS for '{lc_user_id}' (PID: {process.pid}).", level="INFO")
+                self.config.log_message(f"Stopping FFmpeg HLS for '{logical_channel_name}' (PID: {process.pid}).", level="INFO")
                 process.terminate()
                 try:
                     process.wait(timeout=FFMPEG_TERMINATE_TIMEOUT)
                 except subprocess.TimeoutExpired:
-                    self.config.log_message(f"Killing unresponsive FFmpeg process for '{lc_user_id}' (PID: {process.pid}).", level="WARN")
+                    self.config.log_message(f"Killing unresponsive FFmpeg process for '{logical_channel_name}' (PID: {process.pid}).", level="WARN")
                     process.kill()
             
             if log_file:
                 try:
                     log_file.close()
                 except Exception as e:
-                    self.config.log_message(f"Error closing FFmpeg log file for '{lc_user_id}': {e}", level="ERROR")
+                    self.config.log_message(f"Error closing FFmpeg log file for '{logical_channel_name}': {e}", level="ERROR")
 
             self.handler.decrement_stream_count_for_provider(provider)
             self.config.cleanup_ffmpeg_logs_by_age()
@@ -228,15 +232,17 @@ class HLSStreamManager:
                 now = datetime.now()
                 for lc_id, data in self.hls_ffmpeg_processes.items():
                     if data['process'].poll() is not None:
-                        self.config.log_message(f"Cleanup: Found dead process for '{lc_id}' (PID: {data['process'].pid}).", level="INFO")
+                        logical_channel_name = self.handler.get_logical_channel_by_id(lc_id)['display_name']
+                        self.config.log_message(f"Cleanup: Found dead process for '{logical_channel_name}' (PID: {data['process'].pid}).", level="INFO")
                         inactive_ids.add(lc_id)
                     elif now - data['last_access'] > timedelta(seconds=self.config.ffmpeg_hls_inactivity_timeout):
-                        self.config.log_message(f"Cleanup: Stream '{lc_id}' timed out due to inactivity (PID: {data['process'].pid}).", level="INFO")
+                        logical_channel_name = self.handler.get_logical_channel_by_id(lc_id)['display_name']
+                        self.config.log_message(f"Cleanup: Stream '{logical_channel_name}' timed out due to inactivity (PID: {data['process'].pid}).", level="INFO")
                         inactive_ids.add(lc_id)
             
             for lc_id_to_stop in inactive_ids:
                 self.stop_hls_ffmpeg_process(lc_id_to_stop)
 
-    def stop_hls_ffmpeg_process(self, lc_user_id: str) -> None:
+    def stop_hls_ffmpeg_process(self, logical_channel_id: str) -> None:
         """Public method to stop an HLS stream and its associated process."""
-        self._stop_hls_ffmpeg_process_internal(lc_user_id)
+        self._stop_hls_ffmpeg_process_internal(logical_channel_id)
