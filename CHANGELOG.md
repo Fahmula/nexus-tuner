@@ -1,3 +1,10 @@
+# [1.9.0](https://github.com/Fahmula/nexus-stream/compare/v1.8.0...v1.9.0) (2025-06-15)
+
+
+### Features
+
+* Implement assisted logical channel creation workflow ([#16](https://github.com/Fahmula/nexus-stream/issues/16)) ([bc303a0](https://github.com/Fahmula/nexus-stream/commit/bc303a0a2042f4367645909a018e6fcede16c01c))
+
 # [1.8.0](https://github.com/Fahmula/nexus-stream/compare/v1.7.1...v1.8.0) (2025-06-13)
 
 
