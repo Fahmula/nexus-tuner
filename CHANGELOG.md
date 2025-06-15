@@ -1,3 +1,10 @@
+## [1.9.1](https://github.com/Fahmula/nexus-stream/compare/v1.9.0...v1.9.1) (2025-06-15)
+
+
+### Bug Fixes
+
+* **hls:** Prevent stream startup race condition with atomic lock ([#17](https://github.com/Fahmula/nexus-stream/issues/17)) ([8523ec1](https://github.com/Fahmula/nexus-stream/commit/8523ec139f64090e0fcff760b66cb5d1e190fcd6))
+
 # [1.9.0](https://github.com/Fahmula/nexus-stream/compare/v1.8.0...v1.9.0) (2025-06-15)
 
 
