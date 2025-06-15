@@ -85,79 +85,61 @@ class HLSStreamManager:
 
     def ensure_stream_is_active(self, logical_channel_id: str, actual_url: str, provider_alias: str) -> bool:
         """
-        Ensures an HLS stream is running for a given channel.
-        This is now managed by a semaphore for thread-safe capacity checking.
+        Ensures an HLS stream is running using a high-performance, concurrent-startup safe method.
+        It allows multiple new streams to start up in parallel without blocking each other.
         """
         logical_channel_name = self.handler.get_logical_channel_by_id(logical_channel_id)['display_name']
 
+        if logical_channel_id in self.hls_ffmpeg_processes:
+            process_obj = self.hls_ffmpeg_processes[logical_channel_id]['process']
+            if process_obj.poll() is None:
+                return True
+
         with self.hls_process_lock:
-            # Check if a healthy process already exists
-            if logical_channel_id in self.hls_ffmpeg_processes:
-                process_obj = self.hls_ffmpeg_processes[logical_channel_id]['process']
-                if process_obj.poll() is None:
-                    self.hls_ffmpeg_processes[logical_channel_id]['last_access'] = datetime.now()
-                    return True
-                else:
-                    self.config.log_message(f"Found dead HLS process for {logical_channel_name}. Cleaning up before restart.", level="INFO")
-                    # We call the internal stop method, which will release the semaphore if it was held.
-                    self._stop_hls_ffmpeg_process_internal(logical_channel_id)
-
-        provider_semaphore = self.handler.provider_semaphores.get(provider_alias)
-        if not provider_semaphore:
-            self.config.log_message(f"Semaphore not found for provider '{provider_alias}'. Cannot start stream.", level="ERROR")
-            return False
-
-        self.config.log_message(f"Attempting to acquire capacity slot for '{provider_alias}'...", level="DEBUG")
-        slot_acquired = provider_semaphore.acquire(blocking=False)
-
-        if not slot_acquired:
-            self.config.log_message(f"Provider '{provider_alias}' is at full capacity. Cannot acquire slot.", level="INFO")
-            return False
-        
-        self.config.log_message(f"Capacity slot for '{provider_alias}' acquired successfully.", level="INFO")
-        
-        started_successfully = False
-        try:
-            command, channel_hls_dir = self._get_hls_ffmpeg_command(actual_url, logical_channel_id)
-            log_path = self.config.get_ffmpeg_log_path(logical_channel_name, provider_alias)
+            if logical_channel_id in self.hls_ffmpeg_processes and self.hls_ffmpeg_processes[logical_channel_id]['process'].poll() is None:
+                return True
             
-            stderr_log_file = open(log_path, 'a', encoding='utf-8')
-            process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=stderr_log_file)
-            self.config.log_message(f"Started FFmpeg for '{provider_alias}' -> '{logical_channel_name}' (PID: {process.pid}).", level="INFO")
+            provider_semaphore = self.handler.provider_semaphores.get(provider_alias)
+            if not provider_semaphore or not provider_semaphore.acquire(blocking=False):
+                self.config.log_message(f"Provider '{provider_alias}' is at full capacity. Cannot start {logical_channel_name}.", level="INFO")
+                return False
 
+            try:
+                command, channel_hls_dir = self._get_hls_ffmpeg_command(actual_url, logical_channel_id)
+                log_path = self.config.get_ffmpeg_log_path(logical_channel_name, provider_alias)
+                stderr_log_file = open(log_path, 'a', encoding='utf-8')
+                process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=stderr_log_file)
+                
+                self.hls_ffmpeg_processes[logical_channel_id] = {
+                    'process': process,
+                    'last_access': datetime.now(),
+                    'provider_alias': provider_alias,
+                    'channel_hls_dir': channel_hls_dir,
+                    'stderr_log_file_obj': stderr_log_file
+                }
+                self.config.log_message(f"Claimed slot and started FFmpeg for '{logical_channel_name}' (PID: {process.pid}).", level="INFO")
+            except Exception as e:
+                self.config.log_message(f"Immediate Popen failure for {logical_channel_name}: {e}", level="CRITICAL")
+                provider_semaphore.release()
+                return False
+
+        try:
             start_time = time.monotonic()
             while time.monotonic() - start_time < self.config.ffmpeg_start_timeout:
                 if process.poll() is not None:
-                    raise ChildProcessError(f"FFmpeg process for {logical_channel_name} exited prematurely (Code: {process.returncode}).")
+                    raise ChildProcessError(f"FFmpeg process for {logical_channel_name} (PID: {process.pid}) exited prematurely.")
                 if any(channel_hls_dir.glob('*.ts')):
-                    with self.hls_process_lock:
-                        self.hls_ffmpeg_processes[logical_channel_id] = {
-                            'process': process,
-                            'last_access': datetime.now(),
-                            'provider_alias': provider_alias,
-                            'channel_hls_dir': channel_hls_dir,
-                            'stderr_log_file_obj': stderr_log_file
-                        }
                     self.handler.increment_stream_count_for_provider(provider_alias)
-                    started_successfully = True
+                    self.config.log_message(f"FFmpeg for '{logical_channel_name}' (PID: {process.pid}) is now healthy.", level="INFO")
                     return True
                 time.sleep(STARTUP_POLL_INTERVAL)
             
-            raise TimeoutError(f"FFmpeg process for {logical_channel_name} started but did not produce segments in time.")
+            raise TimeoutError(f"FFmpeg for {logical_channel_name} (PID: {process.pid}) timed out waiting for segments.")
 
-        except (ChildProcessError, TimeoutError, OSError, ValueError) as e:
-            self.config.log_message(f"Failed to start or validate FFmpeg for {logical_channel_name}: {e}", level="ERROR")
-            if 'process' in locals() and process.poll() is None:
-                process.kill()
-            if 'stderr_log_file' in locals():
-                stderr_log_file.close()
-            if 'channel_hls_dir' in locals():
-                shutil.rmtree(channel_hls_dir, ignore_errors=True)
+        except (ChildProcessError, TimeoutError) as e:
+            self.config.log_message(f"Validation failed for {logical_channel_name}: {e}. Cleaning up.", level="ERROR")
+            self._stop_hls_ffmpeg_process_internal(logical_channel_id)
             return False
-        finally:
-            if not started_successfully:
-                self.config.log_message(f"FFmpeg failed to start for '{logical_channel_name}'. Releasing capacity slot for '{provider_alias}'.", level="WARN")
-                provider_semaphore.release()
 
     def record_hls_access(self, logical_channel_id: str) -> None:
         """Updates the last access time for an active stream to keep it alive."""
@@ -181,46 +163,46 @@ class HLSStreamManager:
         return None
 
     def _stop_hls_ffmpeg_process_internal(self, logical_channel_id: str) -> None:
-        """Stops an FFmpeg process, decrements provider count, and cleans up files."""
+        """Stops an FFmpeg process and cleans up all associated resources."""
+        
+        data_to_cleanup = None
         with self.hls_process_lock:
-            logical_channel_name = self.handler.get_logical_channel_by_id(logical_channel_id)['display_name']
-
             if (data := self.hls_ffmpeg_processes.pop(logical_channel_id, None)) is None:
                 return
+            data_to_cleanup = data
 
-            process, provider, hls_dir, log_file = (
-                data['process'], data['provider_alias'], data['channel_hls_dir'], data.get('stderr_log_file_obj')
-            )
+        if data_to_cleanup:
+            process = data_to_cleanup['process']
+            provider = data_to_cleanup['provider_alias']
+            hls_dir = data_to_cleanup['channel_hls_dir']
+            log_file = data_to_cleanup.get('stderr_log_file_obj')
+            logical_channel_name = self.handler.get_logical_channel_by_id(logical_channel_id)['display_name']
 
             if process.poll() is None:
-                self.config.log_message(f"Stopping FFmpeg HLS for '{logical_channel_name}' (PID: {process.pid}).", level="INFO")
                 process.terminate()
                 try:
                     process.wait(timeout=FFMPEG_TERMINATE_TIMEOUT)
                 except subprocess.TimeoutExpired:
-                    self.config.log_message(f"Killing unresponsive FFmpeg process for '{logical_channel_name}' (PID: {process.pid}).", level="WARN")
+                    self.config.log_message(f"Killing unresponsive FFmpeg process for '{logical_channel_name}'.", level="WARN")
                     process.kill()
             
-            if log_file:
+            if log_file and not log_file.closed:
                 try:
                     log_file.close()
                 except Exception as e:
                     self.config.log_message(f"Error closing FFmpeg log file for '{logical_channel_name}': {e}", level="ERROR")
 
             self.handler.decrement_stream_count_for_provider(provider)
-            self.config.cleanup_ffmpeg_logs_by_age()
-            
+
             try:
                 if hls_dir.exists():
                     shutil.rmtree(hls_dir)
             except OSError as e:
                 self.config.log_message(f"Failed to clean HLS directory {hls_dir}: {e}", level="ERROR")
+                
+            self.config.cleanup_ffmpeg_logs_by_age()
 
-            if provider_semaphore := self.handler.provider_semaphores.get(provider):
-                provider_semaphore.release()
-                self.config.log_message(f"Released capacity slot for provider '{provider}'.", level="INFO")
-            else:
-                self.config.log_message(f"Could not find semaphore for provider '{provider}' during cleanup.", level="WARN")
+            self.config.log_message(f"Successfully stopped and cleaned up all resources for '{logical_channel_name}'.", level="INFO")
 
     def _hls_cleanup_loop(self) -> None:
         """Background thread loop to find and stop inactive or dead HLS streams."""
