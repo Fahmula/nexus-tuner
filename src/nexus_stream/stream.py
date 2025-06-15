@@ -129,8 +129,9 @@ class HLSStreamManager:
                 if process.poll() is not None:
                     raise ChildProcessError(f"FFmpeg process for {logical_channel_name} (PID: {process.pid}) exited prematurely.")
                 if any(channel_hls_dir.glob('*.ts')):
-                    self.handler.increment_stream_count_for_provider(provider_alias)
                     self.config.log_message(f"FFmpeg for '{logical_channel_name}' (PID: {process.pid}) is now healthy.", level="INFO")
+                    provider_streams = self.handler.get_active_stream_status_for_logging(provider_alias)
+                    self.config.log_message(f"{provider_alias} stream count: {provider_streams}", level="INFO")
                     return True
                 time.sleep(STARTUP_POLL_INTERVAL)
             
@@ -192,7 +193,11 @@ class HLSStreamManager:
                 except Exception as e:
                     self.config.log_message(f"Error closing FFmpeg log file for '{logical_channel_name}': {e}", level="ERROR")
 
-            self.handler.decrement_stream_count_for_provider(provider)
+            provider_semaphore = self.handler.provider_semaphores.get(provider)
+            provider_semaphore.release()
+
+            provider_streams = self.handler.get_active_stream_status_for_logging(provider)
+            self.config.log_message(f"{provider} stream count: {provider_streams}", level="INFO")
 
             try:
                 if hls_dir.exists():

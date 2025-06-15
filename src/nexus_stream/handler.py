@@ -53,7 +53,6 @@ class ChannelHandler:
         # In-memory processed data
         self.discovered_source_services: dict[str, dict[str, Any]] = {} 
         self.client_facing_channels: dict[str, dict[str, Any]] = {}
-        self.active_streams_per_provider: dict[str, int] = {}
         self.master_m3u_content: str = "#EXTM3U\n"
 
         self.provider_semaphores: dict[str, threading.Semaphore] = {}
@@ -243,36 +242,52 @@ class ChannelHandler:
         """Gets the configured maximum concurrent streams for a provider."""
         return self.providers_data_from_json.get(provider_alias, {}).get("max_concurrent_streams", 1)
         
-    def increment_stream_count_for_provider(self, provider_alias: str) -> None:
-        """Increments the active stream count for a provider (for UI display)."""
-        with self.stream_lock:
-            self.active_streams_per_provider[provider_alias] = self.active_streams_per_provider.get(provider_alias, 0) + 1
-            max_streams = self._get_max_streams_for_provider(provider_alias)
-            self.config.log_message(f"'{provider_alias}' stream count: {self.active_streams_per_provider[provider_alias]}/{max_streams}", level="INFO")
-    
-    def decrement_stream_count_for_provider(self, provider_alias: str) -> None:
-        """Decrements the active stream count for a provider (for UI display)."""
-        with self.stream_lock:
-            if provider_alias in self.active_streams_per_provider:
-                self.active_streams_per_provider[provider_alias] -= 1
-                count = self.active_streams_per_provider[provider_alias]
-                if count <= 0:
-                    del self.active_streams_per_provider[provider_alias]
-                max_streams = self._get_max_streams_for_provider(provider_alias)
-                self.config.log_message(f"'{provider_alias}' stream count: {count if count > 0 else 0}/{max_streams}", level="INFO")
-
     def reload_handler_config(self) -> None:
         """Public method to trigger a full reload of the handler's configuration."""
         self._load_and_process_configurations()
 
-    def get_provider_stream_status(self) -> tuple[int, int]:
-        """Returns a tuple of all providers active and max streams(for UI display)."""
-        total_active_streams = sum(self.active_streams_per_provider.values())
-        all_providers = self.get_all_providers_for_ui()
-        max_total_streams = sum(
-            details.get("max_concurrent_streams", 1) for details in all_providers.values()
-        )
-        return total_active_streams, max_total_streams
+    def get_provider_stream_status(self) -> dict[str, dict[str, int]]:
+        """
+        Calculates the current stream usage for each provider by inspecting the semaphores.
+        This is the single source of truth for UI and logs.
+
+        Returns:
+            A dictionary where keys are provider aliases and values are dicts
+            containing 'active' and 'max' stream counts.
+            e.g., {'provider_a': {'active': 1, 'max': 2}, ...}
+        """
+        status_report = {}
+        with self.stream_lock: # Lock to safely iterate over provider_semaphores
+            for alias, semaphore in self.provider_semaphores.items():
+                # Get the max streams from the original config
+                max_streams = self._get_max_streams_for_provider(alias)
+                
+                # The semaphore's internal _value is the number of AVAILABLE slots.
+                # Active streams = Max Streams - Available Slots.
+                available_slots = semaphore._value
+                active_streams = max_streams - available_slots
+                
+                status_report[alias] = {
+                    "active": active_streams,
+                    "max": max_streams
+                }
+        return status_report
+
+    def get_total_stream_status_for_ui(self) -> tuple[int, int]:
+        """
+        Returns a tuple of (total_active_streams, total_max_streams) for UI display,
+        derived directly from the semaphore states.
+        """
+        detailed_status = self.get_provider_stream_status()
+        total_active = sum(status['active'] for status in detailed_status.values())
+        total_max = sum(status['max'] for status in detailed_status.values())
+        return int(total_active), int(total_max)
+    
+    def get_active_stream_status_for_logging(self, provider_alias: str) -> dict[str, int]:
+        detailed_status = self.get_provider_stream_status()[provider_alias]
+        active = detailed_status['active']
+        max_streams = detailed_status['max']
+        return f"{active}/{max_streams}"
 
     # --- UI Interaction Methods ---
     def search_predefined_channels(self, query: str) -> list[dict[str, Any]]:
