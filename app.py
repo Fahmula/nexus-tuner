@@ -65,6 +65,8 @@ def serve_hls_playlist(logical_channel_id: str) -> Response:
     """
     hls_manager.record_hls_access(logical_channel_id)
 
+    logical_channel_name = handler.get_logical_channel_by_id(logical_channel_id)['display_name']
+
     with hls_manager.hls_process_lock:
         is_running = logical_channel_id in hls_manager.hls_ffmpeg_processes and \
                      hls_manager.hls_ffmpeg_processes[logical_channel_id]['process'].poll() is None
@@ -83,7 +85,7 @@ def serve_hls_playlist(logical_channel_id: str) -> Response:
             ):
                 started_successfully = True
                 break
-            config.log_message(f"Failed to start '{logical_channel_id}' from provider '{source['provider_alias']}'. Trying next source.", level="WARN")
+            config.log_message(f"Failed to start '{logical_channel_name}' from provider '{source['provider_alias']}'. Trying next source.", level="WARN")
 
         if not started_successfully:
             abort(503, f"Could not start HLS stream for '{logical_channel_id}' with any available source.")
@@ -96,7 +98,7 @@ def serve_hls_playlist(logical_channel_id: str) -> Response:
     while time.monotonic() - start_wait < config.ffmpeg_start_timeout:
         with hls_manager.hls_process_lock:
             if logical_channel_id not in hls_manager.hls_ffmpeg_processes or hls_manager.hls_ffmpeg_processes[logical_channel_id]['process'].poll() is not None:
-                config.log_message(f"FFmpeg for '{logical_channel_id}' terminated while waiting for playlist.", level="ERROR")
+                config.log_message(f"FFmpeg for '{logical_channel_name}' terminated while waiting for playlist.", level="ERROR")
                 hls_manager.stop_hls_ffmpeg_process(logical_channel_id)
                 abort(503, "HLS stream generation failed; the process terminated unexpectedly.")
 
