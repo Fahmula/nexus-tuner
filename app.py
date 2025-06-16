@@ -370,14 +370,15 @@ def ui_provider_edit(alias: str) -> str:
         return "" # HTMX will remove the row if not found
 
     if request.method == "GET":
-        # Render the edit form for HTMX swap
-        provider_display = {
-            "alias": alias,
-            "url": provider.get("url", ""),
-            "max_concurrent_streams": provider.get("max_concurrent_streams", 1),
-            "active_streams": handler.active_streams_per_provider.get(alias, 0)
-        }
-        return render_template("_provider_edit_form.html", provider=provider_display)
+        if request.args.get('cancel'):
+            # This is a CANCEL request. Find the provider and return the display row.
+            if provider:
+                return render_template("_provider_row.html", provider=provider)
+            else:
+                return ""
+        
+        return render_template("_provider_edit_form.html", provider=provider)
+    
     elif request.method == "PUT":
         url = request.form.get("url", "").strip()
         max_streams_str = request.form.get("max_concurrent_streams", "1")
