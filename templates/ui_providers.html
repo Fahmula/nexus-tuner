@@ -10,8 +10,7 @@
                 hx-get="{{ url_for('ui_provider_add') }}"
                 hx-target="#add-provider-form-container"
                 hx-swap="innerHTML"
-                hx-indicator="#add-form-indicator"
-                hx-on::after-request="document.getElementById('add-provider-form-container').scrollIntoView({ behavior: 'smooth', block: 'start' });">
+                hx-indicator="#add-form-indicator">
             <i class="fas fa-plus"></i> Add New Provider
             <span id="add-form-indicator" class="htmx-indicator spinner-border spinner-border-sm ms-1" role="status" aria-hidden="true"></span>
         </button>
@@ -44,11 +43,7 @@
                         <th style="width: 15%;">Actions</th>
                     </tr>
                 </thead>
-                <tbody id="providers-table-body">
-                    {% for provider in providers %}
-                        {% include '_provider_row.html' %}
-                    {% endfor %}
-                </tbody>
+                {% include '_providers_table_body.html' %}
             </table>
         </div>
         {% else %}

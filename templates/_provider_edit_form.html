@@ -1,5 +1,5 @@
-<tr id="provider-{{ provider.alias | replace(' ', '-') }}">
-    <td colspan="4">
+<tr id="provider-{{ provider.alias | replace(' ', '-') }}" hx-target="this" hx-swap="outerHTML">
+    <td colspan="5">
         <form hx-put="{{ url_for('ui_provider_edit', alias=provider.alias) }}"
               hx-target="closest tr"
               hx-swap="outerHTML">
@@ -24,9 +24,7 @@
                         <i class="fas fa-check"></i>
                     </button>
                     <button type="button" class="btn btn-outline-secondary btn-sm w-100 mt-1" title="Cancel"
-                            hx-get="{{ url_for('ui_providers_manage') }}"
-                            hx-target="closest tr"
-                            hx-swap="outerHTML">
+                            hx-get="{{ url_for('ui_provider_edit', alias=provider.alias, cancel='true') }}">
                         <i class="fas fa-times"></i>
                     </button>
                 </div>

@@ -1,8 +1,7 @@
-<div class="card card-body mb-3">
+<div class="card card-body mb-3" id="add-provider-form-wrapper">
     <form hx-post="{{ url_for('ui_provider_add') }}"
           hx-target="#providers-table-body"
-          hx-swap="afterbegin"
-          hx-on::after-request="this.reset(); if(event.detail.successful) { document.getElementById('add-provider-form-container').innerHTML = ''; }">
+          hx-swap="outerHTML">
         <div class="row g-2 align-items-end">
             <div class="col-md-4">
                 <label for="alias" class="form-label visually-hidden">Alias (ID)</label>
