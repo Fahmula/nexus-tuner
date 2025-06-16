@@ -244,6 +244,7 @@ class HLSStreamManager:
 
 
     def get_stream_info(self, stream_url: str) -> dict[str, float | int] | None:
+        """Extracts stream information such as bitrate, resolution, and frame rate using ffprobe."""
         duration = 5  # Doesn't seem to have an effect
         cmd = [
             "ffprobe", "-v", "error", "-select_streams", "v:0",
