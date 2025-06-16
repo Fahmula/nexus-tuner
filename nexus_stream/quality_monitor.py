@@ -2,7 +2,6 @@ import threading
 import time
 import subprocess
 import json
-from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
 
 from typing import TYPE_CHECKING
@@ -12,14 +11,14 @@ if TYPE_CHECKING:
     from nexus_stream.handler import ChannelHandler
 
 # Constants
-MAX_HISTORY_PER_SERVICE = 10
-QUALITY_MONITOR_TIMEOUT = 5
 
 class QualityMonitor:
     def __init__(self, config: 'Config', handler: 'ChannelHandler'):
         self.config = config
         self.handler = handler
         self.interval: int = 300
+        self.max_history_per_service: int = 10
+        self.timeout: int = 5
         
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
@@ -40,7 +39,7 @@ class QualityMonitor:
 
     def get_stream_info(self, service_url: str) -> dict[str, str | float | int] | None:
         """Extracts stream information such as bitrate, resolution, and frame rate using ffprobe."""
-        duration = QUALITY_MONITOR_TIMEOUT  # Doesn't seem to have an effect
+        duration = self.timeout  # Doesn't seem to have an effect
         cmd = [
             "ffprobe", "-v", "error", "-select_streams", "v:0",
             "-show_entries", "stream=width,height,r_frame_rate",
@@ -126,7 +125,7 @@ class QualityMonitor:
             return
 
         max_streams = sum(status["max"] for status in self.handler.get_provider_stream_status().values())
-        acquire_timeout = max_streams * QUALITY_MONITOR_TIMEOUT  # If only 1 slot is available gives enough time
+        acquire_timeout = max_streams * self.timeout  # If only 1 slot is available gives enough time
 
         probe_tasks = []
         for service_id in target_service_ids:
@@ -166,22 +165,22 @@ class QualityMonitor:
             width = result.get("width", 0)
             if width:
                 service_entry["widths"].append(width)
-                if len(service_entry["widths"]) > MAX_HISTORY_PER_SERVICE:
+                if len(service_entry["widths"]) > self.max_history_per_service:
                     service_entry["widths"].pop(0)
             height = result.get("height", 0)
             if height:
                 service_entry["heights"].append(height)
-                if len(service_entry["heights"]) > MAX_HISTORY_PER_SERVICE:
+                if len(service_entry["heights"]) > self.max_history_per_service:
                     service_entry["heights"].pop(0)
             bitrate = result.get("bitrate", 0)
             if bitrate:
                 service_entry["bitrates"].append(bitrate)
-                if len(service_entry["bitrates"]) > MAX_HISTORY_PER_SERVICE:
+                if len(service_entry["bitrates"]) > self.max_history_per_service:
                     service_entry["bitrates"].pop(0)
             framerate = result.get("framerate", 0)
             if framerate:
                 service_entry["framerates"].append(framerate)
-                if len(service_entry["framerates"]) > MAX_HISTORY_PER_SERVICE:
+                if len(service_entry["framerates"]) > self.max_history_per_service:
                     service_entry["framerates"].pop(0)
 
         self.config.save_service_quality_cache(quality_cache)
