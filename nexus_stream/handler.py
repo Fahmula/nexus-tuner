@@ -431,6 +431,10 @@ class ChannelHandler:
             self.providers_data_from_json[alias] = provider_to_delete
             return False
 
+    def get_all_logical_channels_for_ui(self) -> list[dict[str, Any]]:
+        """Gets a list of all logical channels."""
+        return sorted(self.logical_channels_data_from_json, key=lambda x: x.get("display_name","").lower())
+
     def get_logical_channel_by_id(self, logical_channel_id: str) -> dict[str, Any] | None:
         """Gets a logical channel by its logical channel ID."""
         return next((lc for lc in self.logical_channels_data_from_json if lc.get("logical_channel_id") == logical_channel_id), None)

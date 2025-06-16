@@ -20,6 +20,7 @@ class Config:
     """
     def __init__(self) -> None:
         """Initializes the configuration object."""
+        load_dotenv()
         config_dir_str = os.getenv("NEXUS_CONFIG_DIR")
         if not config_dir_str:
             raise ValueError("NEXUS_CONFIG_DIR environment variable is not set on docker container or system.")
@@ -27,8 +28,6 @@ class Config:
         env_file = config_dir / ".env"
         if env_file.exists():
             load_dotenv(env_file)
-        else:
-            load_dotenv()
         
         nexus_url = os.getenv("NEXUS_URL")
         if not nexus_url:
