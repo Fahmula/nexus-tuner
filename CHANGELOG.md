@@ -1,3 +1,10 @@
+# [1.10.0](https://github.com/Fahmula/nexus-stream/compare/v1.9.1...v1.10.0) (2025-06-16)
+
+
+### Features
+
+* **providers:** Implement full CRUD UI and logic ([#19](https://github.com/Fahmula/nexus-stream/issues/19)) ([0da614d](https://github.com/Fahmula/nexus-stream/commit/0da614da2a05c39104d73886de44cf4d8a932314))
+
 ## [1.9.1](https://github.com/Fahmula/nexus-stream/compare/v1.9.0...v1.9.1) (2025-06-15)
 
 
