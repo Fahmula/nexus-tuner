@@ -41,9 +41,9 @@ class Config:
         self.logs_dir: Path = config_dir / "logs"
         self.logs_dir.mkdir(exist_ok=True)
         self._loggers: dict[str, logging.Logger] = {}
-        self.log_level: str = os.getenv("LOG_LEVEL", "INFO").upper()
-        self.log_backup_count = int(os.getenv("LOG_BACKUP_COUNT", 7))
-        self.ffmpeg_logs_retention_seconds = int(os.getenv("FFMPEG_LOGS_RETENTION_SECONDS", 86400))
+        self.log_level: str = os.getenv("NEXUS_LOG_LEVEL", "INFO").upper()
+        self.log_backup_count = int(os.getenv("NEXUS_LOG_BACKUP_COUNT", 7))
+        self.ffmpeg_logs_retention_seconds = int(os.getenv("NEXUS_FFMPEG_LOGS_RETENTION_SECONDS", 86400))
 
         # --- JSON Data Paths ---
         config_dir.mkdir(parents=True, exist_ok=True)
@@ -68,11 +68,11 @@ class Config:
         self.ffmpeg_logs_dir.mkdir(parents=True, exist_ok=True)
 
         # --- Media Server Monitoring Configs ---
-        self.emby_url: str | None = os.getenv("EMBY_URL")
-        self.emby_api_key: str | None = os.getenv("EMBY_API_KEY")
-        self.jellyfin_url: str | None = os.getenv("JELLYFIN_URL")
-        self.jellyfin_api_key: str | None = os.getenv("JELLYFIN_API_KEY")
-        self.ghost_check_interval: int = int(os.getenv("GHOST_SESSION_CHECK_INTERVAL", 60))
+        self.emby_url: str | None = os.getenv("NEXUS_EMBY_URL")
+        self.emby_api_key: str | None = os.getenv("NEXUS_EMBY_API_KEY")
+        self.jellyfin_url: str | None = os.getenv("NEXUS_JELLYFIN_URL")
+        self.jellyfin_api_key: str | None = os.getenv("NEXUS_JELLYFIN_API_KEY")
+        self.ghost_check_interval: int = int(os.getenv("NEXUS_GHOST_SESSION_CHECK_INTERVAL", 60))
 
         self.file_lock = threading.Lock()
 
