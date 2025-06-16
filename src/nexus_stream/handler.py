@@ -73,12 +73,7 @@ class ChannelHandler:
         
         self.providers_data_from_json = self.config.get_providers_config().get("source_m3u_providers", {})
 
-        with self.stream_lock:
-            self.provider_semaphores.clear()
-            for alias, details in self.providers_data_from_json.items():
-                max_streams = details.get("max_concurrent_streams", 1)
-                self.provider_semaphores[alias] = threading.Semaphore(max_streams)
-                self.config.log_message(f"Initialized semaphore for provider '{alias}' with capacity {max_streams}", level="DEBUG")
+        self._update_providers_semaphore()
 
         self.logical_channels_data_from_json = self.config.get_logical_channels_config()
         self.channel_mappings_data_from_json = self.config.get_channel_mappings_config()
@@ -237,6 +232,16 @@ class ChannelHandler:
         """Retrieves the list of source stream URLs for a given client-facing channel ID."""
         channel_data = self.client_facing_channels.get(logical_channel_id)
         return channel_data.get("sources", []) if channel_data else []
+    
+    def _update_providers_semaphore(self,) -> bool:
+        """Initializes or updates the semaphores for each provider based on their max concurrent streams."""
+        with self.stream_lock:
+            self.provider_semaphores.clear()
+            for alias, details in self.providers_data_from_json.items():
+                max_streams = details.get("max_concurrent_streams", 1)
+                self.provider_semaphores[alias] = threading.Semaphore(max_streams)
+                self.config.log_message(f"Initialized semaphore for provider '{alias}' with capacity {max_streams}", level="DEBUG")
+        return True
 
     def _get_max_streams_for_provider(self, provider_alias: str) -> int:
         """Gets the configured maximum concurrent streams for a provider."""
@@ -336,17 +341,21 @@ class ChannelHandler:
 
         return providers_display
 
-    def save_providers_for_ui(self, new_providers_data: dict[str, Any]) -> bool:
+    def _save_providers_for_ui(self, new_providers_data: dict[str, Any]) -> bool:
+        """Saves the provider configuration and updates internal state on success."""
         if "source_m3u_providers" not in new_providers_data:
             return False 
-        return self.config.save_providers_config(new_providers_data)
-
+        save_successful = self.config.save_providers_config(new_providers_data)
+        if save_successful:
+            self._update_providers_semaphore()
+        return save_successful
+    
     def add_provider(self, alias: str, url: str, max_streams: int) -> dict[str, Any]:
         """
-        Adds a new provider to the configuration.
+        Adds a new provider to the configuration using the central save method.
         
-        On success, returns the newly created provider dictionary.
-        On failure (like a save error), returns None.
+        On success, returns the newly created provider dictionary for UI rendering.
+        On failure (invalid input, duplicate, or save error), returns None.
         Raises ValueError for invalid input or duplicate alias.
         """
         alias = alias.strip()
@@ -360,24 +369,19 @@ class ChannelHandler:
         if alias.lower() in {a.lower() for a in self.providers_data_from_json.keys()}:
             raise ValueError(f"Provider with alias '{alias}' already exists.")
 
-        provider_data_to_save = {
+        self.providers_data_from_json[alias] = {
             "url": url,
             "max_concurrent_streams": max_streams
         }
         
-        self.providers_data_from_json[alias] = provider_data_to_save
-
-        save_successful = self.config.save_providers_config({"source_m3u_providers": self.providers_data_from_json})
-
-        if save_successful:
-
-            provider_to_render = {
+        save_data = {"source_m3u_providers": self.providers_data_from_json}
+        if self._save_providers_for_ui(save_data):
+            return {
                 "alias": alias,
                 "url": url,
                 "max_concurrent_streams": max_streams,
                 "active_streams": 0
             }
-            return provider_to_render
         else:
             del self.providers_data_from_json[alias]
             return None
@@ -395,9 +399,17 @@ class ChannelHandler:
         if alias not in self.providers_data_from_json:
             raise ValueError(f"Provider with alias '{alias}' not found.")
 
+        original_data = self.providers_data_from_json[alias].copy()
+
         self.providers_data_from_json[alias]["url"] = url
         self.providers_data_from_json[alias]["max_concurrent_streams"] = max_streams
-        return self.config.save_providers_config({"source_m3u_providers": self.providers_data_from_json})
+        
+        save_data = {"source_m3u_providers": self.providers_data_from_json}
+        if self._save_providers_for_ui(save_data):
+            return True
+        else:
+            self.providers_data_from_json[alias] = original_data
+            return False
 
     def delete_provider(self, alias: str) -> bool:
         """Deletes a provider from the configuration."""
@@ -408,12 +420,16 @@ class ChannelHandler:
         if alias not in self.providers_data_from_json:
             raise ValueError(f"Provider with alias '{alias}' not found.")
         
+        provider_to_delete = self.providers_data_from_json[alias]
+        
         del self.providers_data_from_json[alias]
-        return self.config.save_providers_config({"source_m3u_providers": self.providers_data_from_json})
-
-    def get_all_logical_channels_for_ui(self) -> list[dict[str, Any]]:
-        """Gets a list of all logical channels."""
-        return sorted(self.logical_channels_data_from_json, key=lambda x: x.get("display_name","").lower())
+        
+        save_data = {"source_m3u_providers": self.providers_data_from_json}
+        if self._save_providers_for_ui(save_data):
+            return True
+        else:
+            self.providers_data_from_json[alias] = provider_to_delete
+            return False
 
     def get_logical_channel_by_id(self, logical_channel_id: str) -> dict[str, Any] | None:
         """Gets a logical channel by its logical channel ID."""
