@@ -320,15 +320,8 @@ def ui_source_services_list() -> str:
 def ui_providers_manage() -> str:
     """Renders the provider management page."""
     all_providers = handler.get_all_providers_for_ui()
-    providers_display = [
-        {
-            "alias": alias,
-            "url": details.get("url", ""),
-            "max_concurrent_streams": details.get("max_concurrent_streams", 1),
-            "active_streams": handler.active_streams_per_provider.get(alias, 0)
-        } for alias, details in sorted(all_providers.items())
-    ]
-    return render_template("ui_providers.html", providers=providers_display)
+
+    return render_template("ui_providers.html", providers=all_providers)
 
 
 # --- HTMX Partial Routes ---
@@ -368,7 +361,10 @@ def ui_provider_add() -> Response | str:
 @app.route("/ui/providers/edit/<string:alias>", methods=["GET", "PUT"])
 def ui_provider_edit(alias: str) -> str:
     """Handles editing a provider."""
-    provider = handler.get_all_providers_for_ui().get(alias)
+    providers = handler.get_all_providers_for_ui()
+    for provider in providers:
+        if provider['alias'] == alias:
+            break
     if not provider:
         flash(f"Provider '{alias}' not found.", "error")
         return "" # HTMX will remove the row if not found
@@ -395,20 +391,20 @@ def ui_provider_edit(alias: str) -> str:
                     "alias": alias,
                     "url": url,
                     "max_concurrent_streams": max_streams,
-                    "active_streams": handler.active_streams_per_provider.get(alias, 0)
+                    "active_streams":  handler.get_provider_stream_status()[alias]['active']
                 }
                 response = Response(render_template("_provider_row.html", provider=updated_provider_data))
             else:
                 flash(f"Failed to update provider '{alias}'.", "error")
                 response = Response(render_template("_provider_edit_form.html", provider={
                     "alias": alias, "url": url, "max_concurrent_streams": max_streams_str,
-                    "active_streams": handler.active_streams_per_provider.get(alias, 0)
+                    "active_streams":  handler.get_provider_stream_status()[alias]['active']
                 }))
         except ValueError as e:
             flash(str(e), "error")
             response = Response(render_template("_provider_edit_form.html", provider={
                 "alias": alias, "url": url, "max_concurrent_streams": max_streams_str,
-                "active_streams": handler.active_streams_per_provider.get(alias, 0)
+                "active_streams":  handler.get_provider_stream_status()[alias]['active']
             }))
         
         response.headers["HX-Trigger"] = "flashMessagesUpdated"

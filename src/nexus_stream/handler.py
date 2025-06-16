@@ -324,7 +324,17 @@ class ChannelHandler:
         return str(next_id_as_int)
 
     def get_all_providers_for_ui(self) -> dict[str, Any]:
-        return self.providers_data_from_json
+        all_providers = self.providers_data_from_json
+        providers_display = [
+            {
+                "alias": alias,
+                "url": details.get("url", ""),
+                "max_concurrent_streams": details.get("max_concurrent_streams", 1),
+                "active_streams": self.get_provider_stream_status().get(alias, {}).get("active", 0)
+            } for alias, details in sorted(all_providers.items())
+        ]
+
+        return providers_display
 
     def save_providers_for_ui(self, new_providers_data: dict[str, Any]) -> bool:
         if "source_m3u_providers" not in new_providers_data:
