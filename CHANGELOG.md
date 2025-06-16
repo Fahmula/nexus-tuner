@@ -1,3 +1,10 @@
+# [1.11.0](https://github.com/Fahmula/nexus-stream/compare/v1.10.1...v1.11.0) (2025-06-16)
+
+
+### Features
+
+* **channel_list:** create channel_list.json if not exists ([#23](https://github.com/Fahmula/nexus-stream/issues/23)) ([0320b3e](https://github.com/Fahmula/nexus-stream/commit/0320b3e7f31da61a292dc2547d5a57b45ae823f2))
+
 ## [1.10.1](https://github.com/Fahmula/nexus-stream/compare/v1.10.0...v1.10.1) (2025-06-16)
 
 
