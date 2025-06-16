@@ -9,4 +9,4 @@ name = "nexus-stream"
 version = "0.0.1"  # placeholder for local installation
 
 [tool.setuptools]
-package-dir = {"" = "src"}
+package-dir = {"" = "nexus_stream"}
