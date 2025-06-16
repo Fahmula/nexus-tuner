@@ -336,15 +336,19 @@ def ui_provider_add() -> Response | str:
         
         try:
             max_streams = int(max_streams_str)
-            if handler.add_provider(alias, url, max_streams):
+            new_provider_object = handler.add_provider(alias, url, max_streams)
+            if new_provider_object:
                 flash(f"Provider '{alias}' added successfully.", "success")
-                new_provider_data = {
-                    "alias": alias,
-                    "url": url,
-                    "max_concurrent_streams": max_streams,
-                    "active_streams": 0 
-                }
-                response = Response(render_template("_provider_row.html", provider=new_provider_data, is_new=True))
+
+                all_providers = handler.get_all_providers_for_ui()
+
+                table_body_html = render_template("_providers_table_body.html", providers=all_providers)
+
+                form_removal_html = '<div id="add-provider-form-wrapper" hx-swap-oob="true"></div>'
+
+                response = Response(table_body_html + form_removal_html)
+                response.headers["HX-Trigger"] = "flashMessagesUpdated"
+                return response
             else:
                 flash(f"Failed to add provider '{alias}'.", "error")
                 response = Response(render_template("_provider_add_form.html", alias=alias, url=url, max_concurrent_streams=max_streams_str))

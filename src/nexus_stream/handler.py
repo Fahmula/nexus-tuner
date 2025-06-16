@@ -341,8 +341,14 @@ class ChannelHandler:
             return False 
         return self.config.save_providers_config(new_providers_data)
 
-    def add_provider(self, alias: str, url: str, max_streams: int) -> bool:
-        """Adds a new provider to the configuration."""
+    def add_provider(self, alias: str, url: str, max_streams: int) -> dict[str, Any]:
+        """
+        Adds a new provider to the configuration.
+        
+        On success, returns the newly created provider dictionary.
+        On failure (like a save error), returns None.
+        Raises ValueError for invalid input or duplicate alias.
+        """
         alias = alias.strip()
         if not alias:
             raise ValueError("Provider alias cannot be empty.")
@@ -351,15 +357,30 @@ class ChannelHandler:
         if max_streams < 1:
             raise ValueError("Max concurrent streams must be at least 1.")
 
-        # Check for existing alias (case-insensitive)
         if alias.lower() in {a.lower() for a in self.providers_data_from_json.keys()}:
             raise ValueError(f"Provider with alias '{alias}' already exists.")
 
-        self.providers_data_from_json[alias] = {
+        provider_data_to_save = {
             "url": url,
             "max_concurrent_streams": max_streams
         }
-        return self.config.save_providers_config({"source_m3u_providers": self.providers_data_from_json})
+        
+        self.providers_data_from_json[alias] = provider_data_to_save
+
+        save_successful = self.config.save_providers_config({"source_m3u_providers": self.providers_data_from_json})
+
+        if save_successful:
+
+            provider_to_render = {
+                "alias": alias,
+                "url": url,
+                "max_concurrent_streams": max_streams,
+                "active_streams": 0
+            }
+            return provider_to_render
+        else:
+            del self.providers_data_from_json[alias]
+            return None
 
     def update_provider(self, alias: str, url: str, max_streams: int) -> bool:
         """Updates an existing provider's configuration."""
