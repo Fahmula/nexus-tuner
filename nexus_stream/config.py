@@ -49,6 +49,7 @@ class Config:
         self.providers_path: Path = config_dir / "providers.json"
         self.logical_channels_path: Path = config_dir / "logical_channels.json"
         self.channel_mappings_path: Path = config_dir / "channel_mappings.json"
+        self.service_quality_cache_path: Path = config_dir / "service_quality_cache.json"
         self.channel_list_path: Path = config_dir / "channel_list.json"
         if not self.channel_list_path.exists():
             self.log_message(f"Creating default channel list at {self.channel_list_path}", level="DEBUG")
@@ -242,6 +243,14 @@ class Config:
     def save_channel_mappings_config(self, data: dict[str, Any]) -> bool:
         """Saves the channel mappings to channel_mappings.json."""
         return self._save_json_file(self.channel_mappings_path, data)
+
+    def get_service_quality_cache(self) -> dict[str, Any]:
+        """Loads the service quality cache from service_quality_cache.json."""
+        return self._load_json_file(self.service_quality_cache_path, dict)
+
+    def save_service_quality_cache(self, data: dict[str, Any]) -> bool:
+        """Saves the service quality cache to service_quality_cache.json."""
+        return self._save_json_file(self.service_quality_cache_path, data)
 
     def reload_all_configs(self) -> None:
         """Logs a message indicating that configs should be reloaded by handlers."""

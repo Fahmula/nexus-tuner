@@ -24,6 +24,7 @@ from nexus_stream.handler import ChannelHandler
 from nexus_stream.config import Config
 from nexus_stream.stream import HLSStreamManager
 from nexus_stream.session_monitor import GhostSessionMonitor
+from nexus_stream.quality_monitor import QualityMonitor
 
 # --- Constants ---
 PLAYLIST_POLL_INTERVAL = 0.2  # Seconds to wait between checking for a new playlist
@@ -39,6 +40,7 @@ try:
     handler = ChannelHandler(config)
     hls_manager = HLSStreamManager(config, handler)
     GhostSessionMonitor(config, handler, hls_manager)
+    QualityMonitor(config, handler)
 except ValueError as e:
     # A fatal error during startup should be logged and cause an exit
     config.log_message(f"FATAL: Could not initialize application due to a configuration error: {e}", level="FATAL")

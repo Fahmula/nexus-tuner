@@ -1,0 +1,184 @@
+import threading
+import time
+import subprocess
+import json
+from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from nexus_stream.config import Config
+    from nexus_stream.handler import ChannelHandler
+
+# Constants
+MAX_HISTORY_PER_SERVICE = 10
+
+class QualityMonitor:
+    def __init__(self, config: 'Config', handler: 'ChannelHandler'):
+        self.config = config
+        self.handler = handler
+        self.interval: int = 300
+        self.probe_timeout: int = 5
+        self.max_concurrent_probes: int = 10
+        self.semaphore_acquire_timeout: int = 10 
+        
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def _run(self) -> None:
+        """The main execution loop for the monitor thread."""
+        self.config.log_message("Quality Monitor thread started.", level="INFO")
+        time.sleep(10)
+
+        while True:
+            try:
+                self._analyze_mapped_services()
+            except Exception as e:
+                self.config.log_message(f"Quality Monitor: Unhandled exception in main check loop: {e}", level="CRITICAL")
+            
+            self.config.log_message(f"Quality Monitor: Cycle complete. Sleeping for {self.interval} seconds.", level="INFO")
+            time.sleep(self.interval)
+
+    def get_stream_info(self, service_url: str) -> dict[str, str | float | int] | None:
+        """Extracts stream information such as bitrate, resolution, and frame rate using ffprobe."""
+        duration = 5  # Doesn't seem to have an effect
+        cmd = [
+            "ffprobe", "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=width,height,r_frame_rate",
+            "-show_entries", "packet=pts_time,size",
+            "-read_intervals", f"%+{duration}",
+            "-of", "json",
+            service_url
+        ]
+
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=duration + 3)
+        info = json.loads(proc.stdout)
+
+        stream = info.get('streams', [{}])[0]
+        width = int(stream.get('width', 0))
+        height = int(stream.get('height', 0))
+        fr_str = stream.get('r_frame_rate', '0/1')
+        nums = fr_str.split('/')
+        frame_rate = float(nums[0]) / float(nums[1]) if len(nums) == 2 else float(nums[0])
+
+        packets = info.get('packets', [])
+        if not packets:
+            return None
+
+        sizes, times = zip(*((float(pkt['size']), float(pkt['pts_time'])) for pkt in packets))
+        duration_s = max(times) - min(times)
+        if duration_s <= 0:
+            return None
+        total_bytes = sum(sizes)
+        bitrate = (total_bytes * 8) / duration_s
+
+        return {
+            "status": "online",
+            "width": width,
+            "height": height,
+            "bitrate": bitrate,
+            "framerate": frame_rate
+        }
+
+    def _run_single_probe(self, service_id: str, service_url: str, provider_alias: str) -> tuple[str, dict[str, str | float | int]]:
+        """
+        Probes a single stream URL. It will politely wait for a semaphore slot
+        for a limited time, yielding to higher-priority stream requests.
+        """
+        provider_semaphore = self.handler.provider_semaphores.get(provider_alias)
+        if not provider_semaphore:
+            return service_id, {"status": "error", "reason": "Semaphore not found"}
+
+        start_time = time.monotonic()
+        slot_acquired = False
+        while time.monotonic() - start_time < self.semaphore_acquire_timeout:
+            slot_acquired = provider_semaphore.acquire(blocking=False)
+            if slot_acquired:
+                break
+            time.sleep(1)
+        
+        if not slot_acquired:
+            return service_id, {"status": "skipped", "reason": "Provider busy (active streams?)"}
+
+        try:
+            stream_info = self.get_stream_info(service_url)
+            if not stream_info:
+                return service_id, {"status": "offline", "reason": "No stream info available"}
+            return service_id, stream_info
+        
+        except subprocess.TimeoutExpired:
+            return service_id, {"status": "offline", "reason": "Probe timed out"}
+        except (subprocess.CalledProcessError, json.JSONDecodeError, IndexError) as e:
+            return service_id, {"status": "offline", "reason": f"Probe failed: {e}"}
+        finally:
+            if slot_acquired:
+                provider_semaphore.release()
+    
+    def _analyze_mapped_services(self) -> None:
+        """The main logic to find and probe all mapped services, running concurrently."""
+        self.config.log_message("Quality Monitor: Starting stream quality analysis cycle.", level="INFO")
+        
+        all_mappings = self.handler.channel_mappings_data_from_json.values()
+        target_service_ids = {mapping['source_service_id'] for mappings_list in all_mappings for mapping in mappings_list}
+
+        if not target_service_ids:
+            self.config.log_message("Quality Monitor: No mapped services to analyze.", level="INFO")
+            return
+
+        probe_tasks = []
+        for service_id in target_service_ids:
+            service_details = self.handler.discovered_source_services.get(service_id)
+            if service_details:
+                probe_tasks.append(
+                    (service_id, service_details['actual_stream_url'], service_details['provider_alias'])
+                )
+
+        all_results = []
+        with ThreadPoolExecutor(max_workers=self.max_concurrent_probes) as executor:
+            results_iterator = executor.map(lambda p: self._run_single_probe(*p), probe_tasks)
+            all_results = list(results_iterator)
+
+        self.config.log_message(f"Quality Monitor: {len(all_results)} probes complete. Processing results.", level="DEBUG")
+
+        quality_cache = self.config.get_service_quality_cache()
+
+        for service_id, result in all_results:
+            service_entry = quality_cache.setdefault(service_id, {
+            "probe_success_count": 0,
+            "probe_failure_count": 0,
+            "widths": [],
+            "heights": [],
+            "bitrates": [],
+            "framerates": []
+            })
+
+            if result['status'] == 'offline':
+                self.config.log_message(f"Quality Monitor: Service {service_id} is offline: {result['reason']}", level="WARNING")
+                service_entry["probe_failure_count"] += 1
+                continue
+            elif result['status'] != 'online':
+                continue
+
+            service_entry["probe_success_count"] += 1
+            width = result.get("width", 0)
+            if width:
+                service_entry["widths"].append(width)
+                if len(service_entry["widths"]) > MAX_HISTORY_PER_SERVICE:
+                    service_entry["widths"].pop(0)
+            height = result.get("height", 0)
+            if height:
+                service_entry["heights"].append(height)
+                if len(service_entry["heights"]) > MAX_HISTORY_PER_SERVICE:
+                    service_entry["heights"].pop(0)
+            bitrate = result.get("bitrate", 0)
+            if bitrate:
+                service_entry["bitrates"].append(bitrate)
+                if len(service_entry["bitrates"]) > MAX_HISTORY_PER_SERVICE:
+                    service_entry["bitrates"].pop(0)
+            framerate = result.get("framerate", 0)
+            if framerate:
+                service_entry["framerates"].append(framerate)
+                if len(service_entry["framerates"]) > MAX_HISTORY_PER_SERVICE:
+                    service_entry["framerates"].pop(0)
+
+        self.config.save_service_quality_cache(quality_cache)
