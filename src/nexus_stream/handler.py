@@ -73,12 +73,7 @@ class ChannelHandler:
         
         self.providers_data_from_json = self.config.get_providers_config().get("source_m3u_providers", {})
 
-        with self.stream_lock:
-            self.provider_semaphores.clear()
-            for alias, details in self.providers_data_from_json.items():
-                max_streams = details.get("max_concurrent_streams", 1)
-                self.provider_semaphores[alias] = threading.Semaphore(max_streams)
-                self.config.log_message(f"Initialized semaphore for provider '{alias}' with capacity {max_streams}", level="DEBUG")
+        self._update_providers_semaphore()
 
         self.logical_channels_data_from_json = self.config.get_logical_channels_config()
         self.channel_mappings_data_from_json = self.config.get_channel_mappings_config()
@@ -237,6 +232,16 @@ class ChannelHandler:
         """Retrieves the list of source stream URLs for a given client-facing channel ID."""
         channel_data = self.client_facing_channels.get(logical_channel_id)
         return channel_data.get("sources", []) if channel_data else []
+    
+    def _update_providers_semaphore(self,) -> bool:
+        """Initializes or updates the semaphores for each provider based on their max concurrent streams."""
+        with self.stream_lock:
+            self.provider_semaphores.clear()
+            for alias, details in self.providers_data_from_json.items():
+                max_streams = details.get("max_concurrent_streams", 1)
+                self.provider_semaphores[alias] = threading.Semaphore(max_streams)
+                self.config.log_message(f"Initialized semaphore for provider '{alias}' with capacity {max_streams}", level="DEBUG")
+        return True
 
     def _get_max_streams_for_provider(self, provider_alias: str) -> int:
         """Gets the configured maximum concurrent streams for a provider."""
