@@ -43,7 +43,7 @@ class GhostSessionMonitor:
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.display_name_to_lc_id_map: dict[str, str] = {}
 
-        if self.config.emby_base_url or self.config.jellyfin_base_url:
+        if self.config.emby_url or self.config.jellyfin_url:
             self.config.log_message("Emby/Jellyfin URL found, starting Ghost Session Monitor thread.", level="INFO")
             self.thread.start()
         else:
@@ -98,8 +98,8 @@ class GhostSessionMonitor:
         Returns:
             A set of string logical channel IDs that have active sessions.
         """
-        emby_sessions = self._fetch_sessions_from_server(self.config.emby_base_url, self.config.emby_api_key, "Emby")
-        jellyfin_sessions = self._fetch_sessions_from_server(self.config.jellyfin_base_url, self.config.jellyfin_api_key, "Jellyfin")
+        emby_sessions = self._fetch_sessions_from_server(self.config.emby_url, self.config.emby_api_key, "Emby")
+        jellyfin_sessions = self._fetch_sessions_from_server(self.config.jellyfin_url, self.config.jellyfin_api_key, "Jellyfin")
         
         all_sessions = emby_sessions + jellyfin_sessions
         active_lc_ids: Set[str] = set()

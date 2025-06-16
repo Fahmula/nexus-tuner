@@ -10,6 +10,8 @@ HLSStreamManager, GhostSessionMonitor) and defines all the web routes for:
 """
 
 import os
+import signal
+import sys
 import time
 import math
 from datetime import datetime, UTC
@@ -540,5 +542,16 @@ def ui_logs_modal():
     return render_template("_logs_modal_content.html", log_lines=log_lines)
 
 
+def signal_handler(signum: int, _: object) -> None:
+    """Handles signals"""
+    config.log_message(f"Received {signal.Signals(signum).name}, exiting...", level="INFO")
+    hls_manager.stop_all_hls_ffmpeg_processes()
+    config.clean_up_hls_segments()
+    sys.exit(0)
+
+
+signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGHUP, signal_handler)
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=80, debug=True, use_reloader=False)
+    app.run(host="0.0.0.0", port=config.nexus_port, debug=True, use_reloader=False)
