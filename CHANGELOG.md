@@ -1,3 +1,10 @@
+## [1.10.1](https://github.com/Fahmula/nexus-stream/compare/v1.10.0...v1.10.1) (2025-06-16)
+
+
+### Bug Fixes
+
+* **handler:** readd get_all_logical_channels_for_ui ([#22](https://github.com/Fahmula/nexus-stream/issues/22)) ([4a91351](https://github.com/Fahmula/nexus-stream/commit/4a91351ca36924e27f0e2be41ce07f8a6c90f94c))
+
 # [1.10.0](https://github.com/Fahmula/nexus-stream/compare/v1.9.1...v1.10.0) (2025-06-16)
 
 
