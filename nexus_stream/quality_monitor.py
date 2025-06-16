@@ -7,13 +7,13 @@ from concurrent.futures import ThreadPoolExecutor
 
 from typing import TYPE_CHECKING
 
-from nexus_stream.handler import QUALITY_MONITOR_TIMEOUT
 if TYPE_CHECKING:
     from nexus_stream.config import Config
     from nexus_stream.handler import ChannelHandler
 
 # Constants
 MAX_HISTORY_PER_SERVICE = 10
+QUALITY_MONITOR_TIMEOUT = 5
 
 class QualityMonitor:
     def __init__(self, config: 'Config', handler: 'ChannelHandler'):
@@ -125,7 +125,7 @@ class QualityMonitor:
             self.config.log_message("Quality Monitor: No mapped services to analyze.", level="INFO")
             return
 
-        max_streams = self.handler.get_provider_stream_status()["max"]
+        max_streams = sum(status["max"] for status in self.handler.get_provider_stream_status().values())
         acquire_timeout = max_streams * QUALITY_MONITOR_TIMEOUT  # If only 1 slot is available gives enough time
 
         probe_tasks = []

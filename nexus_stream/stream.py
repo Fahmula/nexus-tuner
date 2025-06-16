@@ -10,7 +10,6 @@ from typing import Any
 # Forward-declare Config to avoid circular import issues with type hints
 from typing import TYPE_CHECKING
 
-from nexus_stream.handler import QUALITY_MONITOR_TIMEOUT
 if TYPE_CHECKING:
     from nexus_stream.config import Config
     from nexus_stream.handler import ChannelHandler
@@ -104,7 +103,7 @@ class HLSStreamManager:
                 return True
             
             provider_semaphore = self.handler.provider_semaphores.get(provider_alias)
-            if not provider_semaphore or not provider_semaphore.acquire(timeout=QUALITY_MONITOR_TIMEOUT):
+            if not provider_semaphore or not provider_semaphore.acquire(timeout=10):  # Media players will timeout after, also wait for quality monitor
                 self.config.log_message(f"Provider '{provider_alias}' is at full capacity. Cannot start {logical_channel_name}.", level="INFO")
                 return None
 
