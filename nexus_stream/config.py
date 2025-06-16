@@ -50,6 +50,9 @@ class Config:
         self.logical_channels_path: Path = config_dir / "logical_channels.json"
         self.channel_mappings_path: Path = config_dir / "channel_mappings.json"
         self.channel_list_path: Path = config_dir / "channel_list.json"
+        if not self.channel_list_path.exists():
+            self.log_message(f"Creating default channel list at {self.channel_list_path}", level="DEBUG")
+            shutil.copy(Path(__file__).parent / "channel_list.json.default", self.channel_list_path)
         
         # --- HLS Segment Directory ---
         self.hls_base_segment_dir: Path = config_dir / "hls_segments"

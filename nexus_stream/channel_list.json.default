@@ -1,0 +1,1600 @@
+{
+    "USA": [
+        {
+            "num": "1",
+            "name": "WINS"
+        },
+        {
+            "num": "70",
+            "name": "QVC"
+        },
+        {
+            "num": "70-1",
+            "name": "HSN"
+        },
+        {
+            "num": "71",
+            "name": "News Mix"
+        },
+        {
+            "num": "72",
+            "name": "Jewelry Television"
+        },
+        {
+            "num": "74",
+            "name": "Sale Network"
+        },
+        {
+            "num": "75",
+            "name": "Shop LC"
+        },
+        {
+            "num": "76",
+            "name": "QVC 2"
+        },
+        {
+            "num": "77",
+            "name": "MeTV"
+        },
+        {
+            "num": "77-1",
+            "name": "New TV"
+        },
+        {
+            "num": "78",
+            "name": "Cool"
+        },
+        {
+            "num": "79",
+            "name": "QVC 2"
+        },
+        {
+            "num": "80",
+            "name": "Cozi TV"
+        },
+        {
+            "num": "81",
+            "name": "Grit"
+        },
+        {
+            "num": "82",
+            "name": "Bounce TV"
+        },
+        {
+            "num": "83",
+            "name": "Get"
+        },
+        {
+            "num": "84",
+            "name": "Start TV"
+        },
+        {
+            "num": "85",
+            "name": "NBC American Crimes"
+        },
+        {
+            "num": "86",
+            "name": "VALU"
+        },
+        {
+            "num": "87",
+            "name": "Deals"
+        },
+        {
+            "num": "88",
+            "name": "Best"
+        },
+        {
+            "num": "89",
+            "name": "Vision"
+        },
+        {
+            "num": "91",
+            "name": "Fresh"
+        },
+        {
+            "num": "92",
+            "name": "Crave"
+        },
+        {
+            "num": "95",
+            "name": "Celebrity Shopping TV"
+        },
+        {
+            "num": "97",
+            "name": "Cash HD"
+        },
+        {
+            "num": "98",
+            "name": "Interactive Advertising Channel HD"
+        },
+        {
+            "num": "98-1",
+            "name": "America's Value Channel"
+        },
+        {
+            "num": "99",
+            "name": "XTRA"
+        },
+        {
+            "num": "100",
+            "name": "Order DirecTV Sports Packages"
+        },
+        {
+            "num": "105",
+            "name": "LIVE4K"
+        },
+        {
+            "num": "106",
+            "name": "LIVE4K2"
+        },
+        {
+            "num": "107",
+            "name": "CINE4K"
+        },
+        {
+            "num": "108",
+            "name": "CINE4K2"
+        },
+        {
+            "num": "110",
+            "name": "Order DirecTV Sports Packages"
+        },
+        {
+            "num": "111",
+            "name": "Interactive Advertising Channel"
+        },
+        {
+            "num": "112",
+            "name": "Order DirecTV Sports Packages"
+        },
+        {
+            "num": "113",
+            "name": "Order DirecTV Sports Packages"
+        },
+        {
+            "num": "115",
+            "name": "Order DirecTV Sports Packages"
+        },
+        {
+            "num": "119",
+            "name": "Pay-Per-View Events"
+        },
+        {
+            "num": "120",
+            "name": "Pay-Per-View Events"
+        },
+        {
+            "num": "121",
+            "name": "Pay-Per-View Events"
+        },
+        {
+            "num": "122",
+            "name": "Pay-Per-View Events"
+        },
+        {
+            "num": "123",
+            "name": "Pay-Per-View Events"
+        },
+        {
+            "num": "124",
+            "name": "Pay-Per-View Events"
+        },
+        {
+            "num": "196",
+            "name": "Discovery+"
+        },
+        {
+            "num": "199",
+            "name": "Kids Mix"
+        },
+        {
+            "num": "200",
+            "name": "News Mix"
+        },
+        {
+            "num": "202",
+            "name": "CNN"
+        },
+        {
+            "num": "203",
+            "name": "Cool"
+        },
+        {
+            "num": "204",
+            "name": "HLN"
+        },
+        {
+            "num": "205",
+            "name": "SPORTSMIX HD"
+        },
+        {
+            "num": "206",
+            "name": "ESPN"
+        },
+        {
+            "num": "207",
+            "name": "ESPNews"
+        },
+        {
+            "num": "208",
+            "name": "ESPNU"
+        },
+        {
+            "num": "209",
+            "name": "ESPN2"
+        },
+        {
+            "num": "211",
+            "name": "NFL RedZone"
+        },
+        {
+            "num": "212",
+            "name": "NFL Network"
+        },
+        {
+            "num": "213",
+            "name": "MLB Network"
+        },
+        {
+            "num": "213-1",
+            "name": "MLB Network alternate"
+        },
+        {
+            "num": "214",
+            "name": "MAVTV"
+        },
+        {
+            "num": "215",
+            "name": "NHL Network"
+        },
+        {
+            "num": "215-1",
+            "name": "NHL Network alternate"
+        },
+        {
+            "num": "216",
+            "name": "NBA TV"
+        },
+        {
+            "num": "217",
+            "name": "Tennis Channel"
+        },
+        {
+            "num": "218",
+            "name": "Golf Channel"
+        },
+        {
+            "num": "219",
+            "name": "FOX Sports 1"
+        },
+        {
+            "num": "221",
+            "name": "CBS Sports Network"
+        },
+        {
+            "num": "222",
+            "name": "Save"
+        },
+        {
+            "num": "223",
+            "name": "Celebrity Shopping TV"
+        },
+        {
+            "num": "224",
+            "name": "Shepherd's Chapel"
+        },
+        {
+            "num": "225",
+            "name": "America's Value Channel"
+        },
+        {
+            "num": "226",
+            "name": "Shop LC"
+        },
+        {
+            "num": "227",
+            "name": "Mall TV"
+        },
+        {
+            "num": "228",
+            "name": "Gems"
+        },
+        {
+            "num": "229",
+            "name": "HGTV"
+        },
+        {
+            "num": "230",
+            "name": "Magnolia Network"
+        },
+        {
+            "num": "231",
+            "name": "Food Network"
+        },
+        {
+            "num": "232",
+            "name": "Cooking Channel"
+        },
+        {
+            "num": "233",
+            "name": "Game Show Network"
+        },
+        {
+            "num": "234",
+            "name": "Wow TV"
+        },
+        {
+            "num": "235",
+            "name": "Tastemade"
+        },
+        {
+            "num": "236",
+            "name": "E!"
+        },
+        {
+            "num": "237",
+            "name": "Bravo"
+        },
+        {
+            "num": "238",
+            "name": "Reelz"
+        },
+        {
+            "num": "239",
+            "name": "SundanceTV"
+        },
+        {
+            "num": "240",
+            "name": "HSN"
+        },
+        {
+            "num": "241",
+            "name": "Paramount Network"
+        },
+        {
+            "num": "242",
+            "name": "USA Network"
+        },
+        {
+            "num": "243",
+            "name": "XPLOR"
+        },
+        {
+            "num": "244",
+            "name": "SYFY"
+        },
+        {
+            "num": "245",
+            "name": "TNT (East)"
+        },
+        {
+            "num": "245-1",
+            "name": "TNT (West)"
+        },
+        {
+            "num": "246",
+            "name": "truTV"
+        },
+        {
+            "num": "247",
+            "name": "TBS (East)"
+        },
+        {
+            "num": "247-1",
+            "name": "TBS (West)"
+        },
+        {
+            "num": "248",
+            "name": "FX"
+        },
+        {
+            "num": "249",
+            "name": "Comedy Central (East)"
+        },
+        {
+            "num": "249-1",
+            "name": "Comedy Central (West)"
+        },
+        {
+            "num": "250",
+            "name": "Secret"
+        },
+        {
+            "num": "251",
+            "name": "Oxygen"
+        },
+        {
+            "num": "252",
+            "name": "Lifetime"
+        },
+        {
+            "num": "253",
+            "name": "LMN"
+        },
+        {
+            "num": "254",
+            "name": "AMC"
+        },
+        {
+            "num": "255",
+            "name": "Xtra Network"
+        },
+        {
+            "num": "256",
+            "name": "TCM"
+        },
+        {
+            "num": "258",
+            "name": "FXM"
+        },
+        {
+            "num": "259",
+            "name": "FXX"
+        },
+        {
+            "num": "260",
+            "name": "We TV"
+        },
+        {
+            "num": "261",
+            "name": "Discovery Life"
+        },
+        {
+            "num": "262",
+            "name": "Vision"
+        },
+        {
+            "num": "262-1",
+            "name": "XPLOR"
+        },
+        {
+            "num": "263",
+            "name": "Get It"
+        },
+        {
+            "num": "264",
+            "name": "BBC America"
+        },
+        {
+            "num": "265",
+            "name": "A&E"
+        },
+        {
+            "num": "266",
+            "name": "FYI"
+        },
+        {
+            "num": "267",
+            "name": "EarthxTV"
+        },
+        {
+            "num": "268",
+            "name": "Best Channel"
+        },
+        {
+            "num": "269",
+            "name": "History"
+        },
+        {
+            "num": "270",
+            "name": "Idea Channel"
+        },
+        {
+            "num": "271",
+            "name": "Vice TV"
+        },
+        {
+            "num": "272",
+            "name": "Logo"
+        },
+        {
+            "num": "273",
+            "name": "POP"
+        },
+        {
+            "num": "274",
+            "name": "Ovation"
+        },
+        {
+            "num": "275",
+            "name": "QVC"
+        },
+        {
+            "num": "276",
+            "name": "National Geographic"
+        },
+        {
+            "num": "277",
+            "name": "Travel Channel"
+        },
+        {
+            "num": "278",
+            "name": "Discovery"
+        },
+        {
+            "num": "279",
+            "name": "Oprah Winfrey Network (East)"
+        },
+        {
+            "num": "279-1",
+            "name": "Oprah Winfrey Network (West)"
+        },
+        {
+            "num": "280",
+            "name": "TLC"
+        },
+        {
+            "num": "281",
+            "name": "Motor Trend"
+        },
+        {
+            "num": "282",
+            "name": "Animal Planet"
+        },
+        {
+            "num": "283",
+            "name": "Nat Geo Wild"
+        },
+        {
+            "num": "284",
+            "name": "Science"
+        },
+        {
+            "num": "285",
+            "name": "Investigation Discovery"
+        },
+        {
+            "num": "286",
+            "name": "Destination America"
+        },
+        {
+            "num": "287",
+            "name": "American Heroes Channel"
+        },
+        {
+            "num": "288",
+            "name": "PBS Kids"
+        },
+        {
+            "num": "289",
+            "name": "Disney Jr."
+        },
+        {
+            "num": "290",
+            "name": "Disney Channel (East)"
+        },
+        {
+            "num": "291",
+            "name": "Disney Channel (West)"
+        },
+        {
+            "num": "292",
+            "name": "Disney XD"
+        },
+        {
+            "num": "293",
+            "name": "BabyFirst"
+        },
+        {
+            "num": "294",
+            "name": "Discovery Family"
+        },
+        {
+            "num": "296",
+            "name": "Cartoon Network/Adult Swim (East)"
+        },
+        {
+            "num": "297",
+            "name": "Cartoon Network/Adult Swim (West)"
+        },
+        {
+            "num": "298",
+            "name": "Boomerang"
+        },
+        {
+            "num": "299",
+            "name": "Nickelodeon/Nick at Nite (East)"
+        },
+        {
+            "num": "300",
+            "name": "Nickelodeon/Nick at Nite (West)"
+        },
+        {
+            "num": "301",
+            "name": "Nick Jr. Channel"
+        },
+        {
+            "num": "302",
+            "name": "NickSpongebob"
+        },
+        {
+            "num": "303",
+            "name": "TeenNick"
+        },
+        {
+            "num": "304",
+            "name": "TV Land"
+        },
+        {
+            "num": "305",
+            "name": "Ion"
+        },
+        {
+            "num": "306",
+            "name": "Merit Street"
+        },
+        {
+            "num": "307",
+            "name": "NewsNation"
+        },
+        {
+            "num": "308",
+            "name": "LooLoo Kids TV"
+        },
+        {
+            "num": "309",
+            "name": "Sale Network"
+        },
+        {
+            "num": "310",
+            "name": "HSN 2"
+        },
+        {
+            "num": "311",
+            "name": "Freeform"
+        },
+        {
+            "num": "312",
+            "name": "Hallmark Channel"
+        },
+        {
+            "num": "313",
+            "name": "Jewelry Television"
+        },
+        {
+            "num": "314",
+            "name": "Family Movie Classics"
+        },
+        {
+            "num": "315",
+            "name": "QVC 2"
+        },
+        {
+            "num": "317",
+            "name": "QVC"
+        },
+        {
+            "num": "318",
+            "name": "QVC 3"
+        },
+        {
+            "num": "319",
+            "name": "New TV"
+        },
+        {
+            "num": "320",
+            "name": "Scientology Network"
+        },
+        {
+            "num": "322",
+            "name": "NHK World-Japan"
+        },
+        {
+            "num": "323",
+            "name": "fetv"
+        },
+        {
+            "num": "324",
+            "name": "In Touch+"
+        },
+        {
+            "num": "324-1",
+            "name": "Secret TV"
+        },
+        {
+            "num": "325",
+            "name": "Fresh"
+        },
+        {
+            "num": "325-1",
+            "name": "JLTV"
+        },
+        {
+            "num": "326",
+            "name": "Great American Family"
+        },
+        {
+            "num": "327",
+            "name": "CMT"
+        },
+        {
+            "num": "328",
+            "name": "TV One"
+        },
+        {
+            "num": "329",
+            "name": "BET (East)"
+        },
+        {
+            "num": "329-1",
+            "name": "BET (West)"
+        },
+        {
+            "num": "330",
+            "name": "BET Her"
+        },
+        {
+            "num": "331",
+            "name": "MTV (East)"
+        },
+        {
+            "num": "331-1",
+            "name": "MTV (West)"
+        },
+        {
+            "num": "332",
+            "name": "MTV2"
+        },
+        {
+            "num": "333",
+            "name": "IFC"
+        },
+        {
+            "num": "334",
+            "name": "Revolt"
+        },
+        {
+            "num": "335",
+            "name": "VH1"
+        },
+        {
+            "num": "336",
+            "name": "MTV Classic"
+        },
+        {
+            "num": "337",
+            "name": "Cash"
+        },
+        {
+            "num": "338",
+            "name": "UP tv"
+        },
+        {
+            "num": "339",
+            "name": "Fuse"
+        },
+        {
+            "num": "340",
+            "name": "AXS TV"
+        },
+        {
+            "num": "341",
+            "name": "Cleo TV"
+        },
+        {
+            "num": "342",
+            "name": "TheGrio"
+        },
+        {
+            "num": "343",
+            "name": "i24 News"
+        },
+        {
+            "num": "344",
+            "name": "SonLife Broadcasting Network"
+        },
+        {
+            "num": "345",
+            "name": "RFD-TV"
+        },
+        {
+            "num": "346",
+            "name": "BBC News"
+        },
+        {
+            "num": "347",
+            "name": "The First"
+        },
+        {
+            "num": "348",
+            "name": "Free Speech TV"
+        },
+        {
+            "num": "349",
+            "name": "Newsmax TV"
+        },
+        {
+            "num": "350",
+            "name": "C-SPAN"
+        },
+        {
+            "num": "351",
+            "name": "C-SPAN 2"
+        },
+        {
+            "num": "353",
+            "name": "Bloomberg Television"
+        },
+        {
+            "num": "354",
+            "name": "Cheddar News"
+        },
+        {
+            "num": "355",
+            "name": "CNBC"
+        },
+        {
+            "num": "356",
+            "name": "MSNBC"
+        },
+        {
+            "num": "357",
+            "name": "CNBC World"
+        },
+        {
+            "num": "358",
+            "name": "CNN International"
+        },
+        {
+            "num": "359",
+            "name": "Fox Business Network"
+        },
+        {
+            "num": "360",
+            "name": "Fox News Channel"
+        },
+        {
+            "num": "361",
+            "name": "AccuWeather Network"
+        },
+        {
+            "num": "362",
+            "name": "The Weather Channel"
+        },
+        {
+            "num": "363",
+            "name": "Fox Weather"
+        },
+        {
+            "num": "364",
+            "name": "INSP"
+        },
+        {
+            "num": "365",
+            "name": "GEB Network"
+        },
+        {
+            "num": "366",
+            "name": "Victory"
+        },
+        {
+            "num": "367",
+            "name": "WHT"
+        },
+        {
+            "num": "368",
+            "name": "Hope Channel"
+        },
+        {
+            "num": "369",
+            "name": "Daystar"
+        },
+        {
+            "num": "370",
+            "name": "EWTN"
+        },
+        {
+            "num": "371",
+            "name": "TBN Inspire"
+        },
+        {
+            "num": "372",
+            "name": "TBN"
+        },
+        {
+            "num": "373",
+            "name": "The Word Network"
+        },
+        {
+            "num": "374",
+            "name": "BYUtv"
+        },
+        {
+            "num": "375",
+            "name": "Blossom"
+        },
+        {
+            "num": "376",
+            "name": "CTN"
+        },
+        {
+            "num": "377",
+            "name": "TCT"
+        },
+        {
+            "num": "378",
+            "name": "NRBTV"
+        },
+        {
+            "num": "379",
+            "name": "Faith TV USA"
+        },
+        {
+            "num": "380",
+            "name": "The Impact Network"
+        },
+        {
+            "num": "381",
+            "name": "Aspire"
+        },
+        {
+            "num": "382",
+            "name": "Comedy.TV"
+        },
+        {
+            "num": "383",
+            "name": "Justice Central"
+        },
+        {
+            "num": "385",
+            "name": "Heroes & Icons"
+        },
+        {
+            "num": "386",
+            "name": "FM"
+        },
+        {
+            "num": "388",
+            "name": "Jewish Broadcasting Service (JBS)"
+        },
+        {
+            "num": "389",
+            "name": "PBS Satellite Service"
+        },
+        {
+            "num": "390",
+            "name": "WCBS-TV (New York) CBS (East)"
+        },
+        {
+            "num": "391",
+            "name": "KCBS-TV (Los Angeles) CBS (West)"
+        },
+        {
+            "num": "392",
+            "name": "WNBC (New York) NBC (East)"
+        },
+        {
+            "num": "393",
+            "name": "KNBC (Los Angeles) NBC (West)"
+        },
+        {
+            "num": "394",
+            "name": "The CW Plus (East feed) The CW (East)"
+        },
+        {
+            "num": "395",
+            "name": "KTLA (Los Angeles) The CW (West)"
+        },
+        {
+            "num": "396",
+            "name": "WABC-TV (New York) ABC (East)"
+        },
+        {
+            "num": "397",
+            "name": "KABC-TV (Los Angeles) ABC (West)"
+        },
+        {
+            "num": "398",
+            "name": "WNYW (New York) Fox (East)"
+        },
+        {
+            "num": "399",
+            "name": "KTTV (Los Angeles) Fox (West)"
+        },
+        {
+            "num": "400",
+            "name": "Pay-Per-View Events"
+        },
+        {
+            "num": "401",
+            "name": "Aquí"
+        },
+        {
+            "num": "402",
+            "name": "Univision (East)"
+        },
+        {
+            "num": "403",
+            "name": "Univision (West)"
+        },
+        {
+            "num": "404",
+            "name": "Galavision"
+        },
+        {
+            "num": "405",
+            "name": "Mega TV"
+        },
+        {
+            "num": "406",
+            "name": "Telemundo (East)"
+        },
+        {
+            "num": "407",
+            "name": "Telemundo (West)"
+        },
+        {
+            "num": "408",
+            "name": "UniMás (West)"
+        },
+        {
+            "num": "409",
+            "name": "VePlus"
+        },
+        {
+            "num": "410",
+            "name": "Universo"
+        },
+        {
+            "num": "411",
+            "name": "Telefe Internacional"
+        },
+        {
+            "num": "412",
+            "name": "Canal 6 Multimedios USA"
+        },
+        {
+            "num": "413",
+            "name": "Discovery en Español"
+        },
+        {
+            "num": "414",
+            "name": "WAPA America"
+        },
+        {
+            "num": "415",
+            "name": "Video Rola"
+        },
+        {
+            "num": "416",
+            "name": "RCN Nuestra Tele"
+        },
+        {
+            "num": "417",
+            "name": "Caracol TV Internacional"
+        },
+        {
+            "num": "418",
+            "name": "NTN24"
+        },
+        {
+            "num": "419",
+            "name": "CNN en Español"
+        },
+        {
+            "num": "420",
+            "name": "Atreseries"
+        },
+        {
+            "num": "422",
+            "name": "Cine Estelar"
+        },
+        {
+            "num": "423",
+            "name": "Cine Latino"
+        },
+        {
+            "num": "424",
+            "name": "Cine Nostalgia"
+        },
+        {
+            "num": "425",
+            "name": "Baby TV"
+        },
+        {
+            "num": "426",
+            "name": "Starz Encore Español"
+        },
+        {
+            "num": "428",
+            "name": "Centroamérica TV"
+        },
+        {
+            "num": "429",
+            "name": "TeleCentro"
+        },
+        {
+            "num": "430",
+            "name": "Hola TV"
+        },
+        {
+            "num": "431",
+            "name": "Perú Mágico"
+        },
+        {
+            "num": "432",
+            "name": "ZooMoo"
+        },
+        {
+            "num": "433",
+            "name": "Bandamax"
+        },
+        {
+            "num": "434",
+            "name": "Hogar HGTV"
+        },
+        {
+            "num": "435",
+            "name": "NatGeo Mundo"
+        },
+        {
+            "num": "436",
+            "name": "Discovery Familia"
+        },
+        {
+            "num": "437",
+            "name": "TV Chile"
+        },
+        {
+            "num": "438",
+            "name": "Ecuavisa Internacional"
+        },
+        {
+            "num": "439",
+            "name": "SUR Perú"
+        },
+        {
+            "num": "440",
+            "name": "V-me"
+        },
+        {
+            "num": "442",
+            "name": "Estrella TV"
+        },
+        {
+            "num": "443",
+            "name": "History en Español"
+        },
+        {
+            "num": "444",
+            "name": "Pasiones"
+        },
+        {
+            "num": "445",
+            "name": "Tr3s"
+        },
+        {
+            "num": "446",
+            "name": "Canal 22 Internacional"
+        },
+        {
+            "num": "447",
+            "name": "Canal Once Internacional"
+        },
+        {
+            "num": "448",
+            "name": "Enlace"
+        },
+        {
+            "num": "449",
+            "name": "Cine SONY"
+        },
+        {
+            "num": "450",
+            "name": "ViendoMovies"
+        },
+        {
+            "num": "451",
+            "name": "De Película"
+        },
+        {
+            "num": "452",
+            "name": "De Película Clásico"
+        },
+        {
+            "num": "453",
+            "name": "N+ Foro"
+        },
+        {
+            "num": "454",
+            "name": "Univision tlnovelas"
+        },
+        {
+            "num": "455",
+            "name": "Ganga"
+        },
+        {
+            "num": "456",
+            "name": "ESNE (El Sembrador Nueva Evangelización)"
+        },
+        {
+            "num": "457",
+            "name": "TC Internacional"
+        },
+        {
+            "num": "458",
+            "name": "Antena 3 Internacional"
+        },
+        {
+            "num": "459",
+            "name": "Atrés Cine"
+        },
+        {
+            "num": "460",
+            "name": "TVE Internacional"
+        },
+        {
+            "num": "461",
+            "name": "HITN"
+        },
+        {
+            "num": "462",
+            "name": "Cine Mexicano"
+        },
+        {
+            "num": "463",
+            "name": "Daystar en Español"
+        },
+        {
+            "num": "464",
+            "name": "TUDN"
+        },
+        {
+            "num": "465",
+            "name": "Fox Deportes"
+        },
+        {
+            "num": "466",
+            "name": "ESPN Deportes"
+        },
+        {
+            "num": "468",
+            "name": "GOL TV"
+        },
+        {
+            "num": "469",
+            "name": "TyC Sports"
+        },
+        {
+            "num": "472",
+            "name": "Nuestra Visión"
+        },
+        {
+            "num": "473",
+            "name": "Estrella News"
+        },
+        {
+            "num": "474",
+            "name": "Meganoticias"
+        },
+        {
+            "num": "475",
+            "name": "EWTN Español"
+        },
+        {
+            "num": "501",
+            "name": "HBO (East)"
+        },
+        {
+            "num": "502",
+            "name": "HBO2 (East)"
+        },
+        {
+            "num": "503",
+            "name": "HBO Signature"
+        },
+        {
+            "num": "504",
+            "name": "HBO (West)"
+        },
+        {
+            "num": "505",
+            "name": "HBO2 (West)"
+        },
+        {
+            "num": "506",
+            "name": "HBO Comedy"
+        },
+        {
+            "num": "507",
+            "name": "HBO Family (East)"
+        },
+        {
+            "num": "508",
+            "name": "HBO Family (West)"
+        },
+        {
+            "num": "509",
+            "name": "HBO Zone"
+        },
+        {
+            "num": "511",
+            "name": "HBO Latino"
+        },
+        {
+            "num": "512",
+            "name": "Order HBO Interactive channel"
+        },
+        {
+            "num": "515",
+            "name": "Cinemax (East)"
+        },
+        {
+            "num": "516",
+            "name": "Cinemax (West)"
+        },
+        {
+            "num": "517",
+            "name": "MoreMax"
+        },
+        {
+            "num": "519",
+            "name": "ActionMax"
+        },
+        {
+            "num": "520",
+            "name": "5StarMax"
+        },
+        {
+            "num": "521",
+            "name": "MovieMax"
+        },
+        {
+            "num": "522",
+            "name": "ThrillerMax"
+        },
+        {
+            "num": "523",
+            "name": "Cinemáx"
+        },
+        {
+            "num": "525",
+            "name": "Starz (East)"
+        },
+        {
+            "num": "526",
+            "name": "Starz (West)"
+        },
+        {
+            "num": "527",
+            "name": "Starz Kids & Family"
+        },
+        {
+            "num": "528",
+            "name": "Starz Comedy"
+        },
+        {
+            "num": "529",
+            "name": "Starz Edge"
+        },
+        {
+            "num": "530",
+            "name": "Starz In Black"
+        },
+        {
+            "num": "531",
+            "name": "Starz Cinema"
+        },
+        {
+            "num": "535",
+            "name": "Starz Encore (East)"
+        },
+        {
+            "num": "536",
+            "name": "Starz Encore (West)"
+        },
+        {
+            "num": "537",
+            "name": "Starz Encore Classic"
+        },
+        {
+            "num": "538",
+            "name": "Starz Encore Westerns"
+        },
+        {
+            "num": "539",
+            "name": "Starz Encore Suspense"
+        },
+        {
+            "num": "540",
+            "name": "Starz Encore Black"
+        },
+        {
+            "num": "541",
+            "name": "Starz Encore Action"
+        },
+        {
+            "num": "542",
+            "name": "Starz Encore Family"
+        },
+        {
+            "num": "545",
+            "name": "Paramount+ with Showtime (East)"
+        },
+        {
+            "num": "546",
+            "name": "Paramount+ with Showtime (West)"
+        },
+        {
+            "num": "547",
+            "name": "Showtime 2"
+        },
+        {
+            "num": "548",
+            "name": "SHOxBET"
+        },
+        {
+            "num": "549",
+            "name": "Showtime Extreme"
+        },
+        {
+            "num": "550",
+            "name": "Showtime Showcase"
+        },
+        {
+            "num": "551",
+            "name": "Showtime Next"
+        },
+        {
+            "num": "552",
+            "name": "Showtime Family Zone"
+        },
+        {
+            "num": "553",
+            "name": "The Movie Channel (East)"
+        },
+        {
+            "num": "554",
+            "name": "The Movie Channel (West)"
+        },
+        {
+            "num": "555",
+            "name": "The Movie Channel Xtra (East)"
+        },
+        {
+            "num": "556",
+            "name": "Flix"
+        },
+        {
+            "num": "557",
+            "name": "AMC+"
+        },
+        {
+            "num": "557-1",
+            "name": "The Walking Dead Channel"
+        },
+        {
+            "num": "558",
+            "name": "MGM+"
+        },
+        {
+            "num": "559",
+            "name": "MGM+ Hits"
+        },
+        {
+            "num": "560",
+            "name": "MGM+ Marquee"
+        },
+        {
+            "num": "561",
+            "name": "Order MGM+ Interactive channel"
+        },
+        {
+            "num": "562",
+            "name": "Dog TV"
+        },
+        {
+            "num": "563",
+            "name": "So Yummy"
+        },
+        {
+            "num": "564",
+            "name": "Hallmark Family"
+        },
+        {
+            "num": "565",
+            "name": "Hallmark Mystery"
+        },
+        {
+            "num": "566",
+            "name": "HDNet Movies"
+        },
+        {
+            "num": "568",
+            "name": "Sony Movies"
+        },
+        {
+            "num": "570",
+            "name": "Smithsonian Channel"
+        },
+        {
+            "num": "571",
+            "name": "Crime & Investigation"
+        },
+        {
+            "num": "572",
+            "name": "MTV Live"
+        },
+        {
+            "num": "573",
+            "name": "ShortsTV"
+        },
+        {
+            "num": "575",
+            "name": "Playboy TV Interactive Ordering"
+        },
+        {
+            "num": "576",
+            "name": "Playboy TV HD"
+        },
+        {
+            "num": "577",
+            "name": "Playboy TV"
+        },
+        {
+            "num": "578",
+            "name": "Playboy TV en Español"
+        },
+        {
+            "num": "581",
+            "name": "Adult Monthly Subscription Ordering Info"
+        },
+        {
+            "num": "585",
+            "name": "Playboy TV en Español Interactive Ordering"
+        },
+        {
+            "num": "586",
+            "name": "Playboy TV en Español"
+        },
+        {
+            "num": "587",
+            "name": "Penthouse TV Interactive Ordering"
+        },
+        {
+            "num": "588",
+            "name": "Hustler TV Interactive Ordering"
+        },
+        {
+            "num": "589",
+            "name": "Playboy TV"
+        },
+        {
+            "num": "590",
+            "name": "Playboy TV HD"
+        },
+        {
+            "num": "591",
+            "name": "Club Erotix 1 - IPPV Channel"
+        },
+        {
+            "num": "592",
+            "name": "Club Erotix 2 - IPPV Channel"
+        },
+        {
+            "num": "593",
+            "name": "Adult Billboard IPPV"
+        },
+        {
+            "num": "594",
+            "name": "Reality Kings TV"
+        },
+        {
+            "num": "595",
+            "name": "Penthouse TV"
+        },
+        {
+            "num": "597",
+            "name": "Brazzers TV"
+        },
+        {
+            "num": "598",
+            "name": "Vivid TV"
+        },
+        {
+            "num": "599",
+            "name": "Hustler TV"
+        }
+    ]
+}
