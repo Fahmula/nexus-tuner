@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
 
 from typing import TYPE_CHECKING
+
+from nexus_stream.handler import QUALITY_MONITOR_TIMEOUT
 if TYPE_CHECKING:
     from nexus_stream.config import Config
     from nexus_stream.handler import ChannelHandler
@@ -18,9 +20,6 @@ class QualityMonitor:
         self.config = config
         self.handler = handler
         self.interval: int = 300
-        self.probe_timeout: int = 5
-        self.max_concurrent_probes: int = 10
-        self.semaphore_acquire_timeout: int = 10 
         
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
@@ -41,7 +40,7 @@ class QualityMonitor:
 
     def get_stream_info(self, service_url: str) -> dict[str, str | float | int] | None:
         """Extracts stream information such as bitrate, resolution, and frame rate using ffprobe."""
-        duration = 5  # Doesn't seem to have an effect
+        duration = QUALITY_MONITOR_TIMEOUT  # Doesn't seem to have an effect
         cmd = [
             "ffprobe", "-v", "error", "-select_streams", "v:0",
             "-show_entries", "stream=width,height,r_frame_rate",
@@ -80,7 +79,7 @@ class QualityMonitor:
             "framerate": frame_rate
         }
 
-    def _run_single_probe(self, service_id: str, service_url: str, provider_alias: str) -> tuple[str, dict[str, str | float | int]]:
+    def _run_single_probe(self, service_id: str, service_url: str, provider_alias: str, acquire_timeout: float) -> tuple[str, dict[str, str | float | int]]:
         """
         Probes a single stream URL. It will politely wait for a semaphore slot
         for a limited time, yielding to higher-priority stream requests.
@@ -91,8 +90,8 @@ class QualityMonitor:
 
         start_time = time.monotonic()
         slot_acquired = False
-        while time.monotonic() - start_time < self.semaphore_acquire_timeout:
-            slot_acquired = provider_semaphore.acquire(blocking=False)
+        while time.monotonic() - start_time < acquire_timeout:
+            slot_acquired = provider_semaphore.acquire(blocking=False)  # non-blocking acquire so that streams are prioritized
             if slot_acquired:
                 break
             time.sleep(1)
@@ -113,6 +112,7 @@ class QualityMonitor:
         finally:
             if slot_acquired:
                 provider_semaphore.release()
+            time.sleep(3)  # Give some time before the next probe to avoid overwhelming the provider
     
     def _analyze_mapped_services(self) -> None:
         """The main logic to find and probe all mapped services, running concurrently."""
@@ -125,16 +125,19 @@ class QualityMonitor:
             self.config.log_message("Quality Monitor: No mapped services to analyze.", level="INFO")
             return
 
+        max_streams = self.handler.get_provider_stream_status()["max_streams"]
+        acquire_timeout = max_streams * QUALITY_MONITOR_TIMEOUT  # If only 1 slot is available gives enough time
+
         probe_tasks = []
         for service_id in target_service_ids:
             service_details = self.handler.discovered_source_services.get(service_id)
             if service_details:
                 probe_tasks.append(
-                    (service_id, service_details['actual_stream_url'], service_details['provider_alias'])
+                    (service_id, service_details['actual_stream_url'], service_details['provider_alias'], acquire_timeout)
                 )
 
         all_results = []
-        with ThreadPoolExecutor(max_workers=self.max_concurrent_probes) as executor:
+        with ThreadPoolExecutor(max_workers=max_streams) as executor:
             results_iterator = executor.map(lambda p: self._run_single_probe(*p), probe_tasks)
             all_results = list(results_iterator)
 

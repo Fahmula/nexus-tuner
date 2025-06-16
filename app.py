@@ -82,12 +82,15 @@ def serve_hls_playlist(logical_channel_id: str) -> Response:
 
         started_successfully = False
         for source in sources_to_try:
-            if hls_manager.ensure_stream_is_active(
+            is_active = hls_manager.ensure_stream_is_active(
                 logical_channel_id=logical_channel_id,
                 actual_url=source['actual_stream_url'],
                 provider_alias=source['provider_alias']
-            ):
+            )
+            if is_active:
                 started_successfully = True
+                break
+            elif is_active is None:
                 break
             config.log_message(f"Failed to start '{logical_channel_name}' from provider '{source['provider_alias']}'. Trying next source.", level="WARN")
 

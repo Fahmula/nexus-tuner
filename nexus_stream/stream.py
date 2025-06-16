@@ -9,6 +9,8 @@ from typing import Any
 
 # Forward-declare Config to avoid circular import issues with type hints
 from typing import TYPE_CHECKING
+
+from nexus_stream.handler import QUALITY_MONITOR_TIMEOUT
 if TYPE_CHECKING:
     from nexus_stream.config import Config
     from nexus_stream.handler import ChannelHandler
@@ -84,10 +86,11 @@ class HLSStreamManager:
         ]
         return command, channel_hls_dir
 
-    def ensure_stream_is_active(self, logical_channel_id: str, actual_url: str, provider_alias: str) -> bool:
+    def ensure_stream_is_active(self, logical_channel_id: str, actual_url: str, provider_alias: str) -> bool | None:
         """
         Ensures an HLS stream is running using a high-performance, concurrent-startup safe method.
         It allows multiple new streams to start up in parallel without blocking each other.
+        Returns None if the provider is at full capacity, True if the stream is active, or False if it failed to start.
         """
         logical_channel_name = self.handler.get_logical_channel_by_id(logical_channel_id)['display_name']
 
@@ -101,9 +104,9 @@ class HLSStreamManager:
                 return True
             
             provider_semaphore = self.handler.provider_semaphores.get(provider_alias)
-            if not provider_semaphore or not provider_semaphore.acquire(blocking=False):
+            if not provider_semaphore or not provider_semaphore.acquire(timeout=QUALITY_MONITOR_TIMEOUT):
                 self.config.log_message(f"Provider '{provider_alias}' is at full capacity. Cannot start {logical_channel_name}.", level="INFO")
-                return False
+                return None
 
             try:
                 command, channel_hls_dir = self._get_hls_ffmpeg_command(actual_url, logical_channel_id)
