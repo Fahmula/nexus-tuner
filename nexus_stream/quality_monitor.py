@@ -125,7 +125,7 @@ class QualityMonitor:
             self.config.log_message("Quality Monitor: No mapped services to analyze.", level="INFO")
             return
 
-        max_streams = self.handler.get_provider_stream_status()["max_streams"]
+        max_streams = self.handler.get_provider_stream_status()["max"]
         acquire_timeout = max_streams * QUALITY_MONITOR_TIMEOUT  # If only 1 slot is available gives enough time
 
         probe_tasks = []
