@@ -1,10 +1,11 @@
 import subprocess
+import json
 import threading
 import time
 import shutil
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Callable, Any
+from typing import Any
 
 # Forward-declare Config to avoid circular import issues with type hints
 from typing import TYPE_CHECKING
@@ -233,3 +234,50 @@ class HLSStreamManager:
     def stop_hls_ffmpeg_process(self, logical_channel_id: str) -> None:
         """Public method to stop an HLS stream and its associated process."""
         self._stop_hls_ffmpeg_process_internal(logical_channel_id)
+
+
+    def stop_all_hls_ffmpeg_processes(self) -> None:
+        """Stops all active HLS FFmpeg processes and cleans up resources."""
+        self.config.log_message("Stopping all HLS FFmpeg processes...", level="INFO")
+        for lc_id in list(self.hls_ffmpeg_processes.keys()):
+            self.stop_hls_ffmpeg_process(lc_id)
+
+
+    def get_stream_info(self, stream_url: str) -> dict[str, float | int] | None:
+        duration = 5  # Doesn't seem to have an effect
+        cmd = [
+            "ffprobe", "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=width,height,r_frame_rate",
+            "-show_entries", "packet=pts_time,size",
+            "-read_intervals", f"%+{duration}",
+            "-of", "json",
+            stream_url
+        ]
+
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=duration + 3)
+        info = json.loads(proc.stdout)
+
+        stream = info.get('streams', [{}])[0]
+        width = int(stream.get('width', 0))
+        height = int(stream.get('height', 0))
+        fr_str = stream.get('r_frame_rate', '0/1')
+        nums = fr_str.split('/')
+        frame_rate = float(nums[0]) / float(nums[1]) if len(nums) == 2 else float(nums[0])
+
+        packets = info.get('packets', [])
+        if not packets:
+            return None
+
+        sizes, times = zip(*((float(pkt['size']), float(pkt['pts_time'])) for pkt in packets))
+        duration_s = max(times) - min(times)
+        if duration_s <= 0:
+            return None
+        total_bytes = sum(sizes)
+        bitrate = (total_bytes * 8) / duration_s
+
+        return {
+            "bitrate": bitrate,
+            "width": width,
+            "height": height,
+            "framerate": frame_rate
+        }

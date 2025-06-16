@@ -43,7 +43,7 @@ docker-compose up -d
 
 The application will now be running and accessible.
 ### 4. Initial Setup in the UI
--   Open a web browser and navigate to your BASE_URL (e.g., http://your-server-ip).
+-   Open a web browser and navigate to your NEXUS_URL (e.g., http://your-server-ip).
 -   Navigate to the Providers page and add the URLs for your M3U playlists.
 -   Go to the Logical Channels page to create your channels.
 -   Edit each logical channel to map the discovered source streams to it, setting priorities for failover.

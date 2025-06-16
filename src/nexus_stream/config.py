@@ -10,11 +10,6 @@ from pathlib import Path
 from dotenv import load_dotenv
 from typing import Any, Callable
 
-# --- Constants ---
-DATA_DIR_NAME = "data"
-HLS_SEGMENT_ROOT_DIR_NAME = "hls_segments"
-LOG_BACKUP_COUNT = 7
-FFMPEG_LOGS_RETENTION_SECONDS = 86400
 
 class Config:
     """
@@ -25,51 +20,66 @@ class Config:
     """
     def __init__(self) -> None:
         """Initializes the configuration object."""
-        load_dotenv()
+        config_dir_str = os.getenv("NEXUS_CONFIG_DIR")
+        if not config_dir_str:
+            raise ValueError("NEXUS_CONFIG_DIR environment variable is not set on docker container or system.")
+        config_dir = Path(config_dir_str)
+        env_file = config_dir / ".env"
+        if env_file.exists():
+            load_dotenv(env_file)
+        else:
+            load_dotenv()
         
-        base_url = os.environ.get("BASE_URL")
-        if not base_url:
-            raise ValueError("BASE_URL environment variable is not set.")
-        self.base_url: str = base_url
+        nexus_url = os.getenv("NEXUS_URL")
+        if not nexus_url:
+            raise ValueError("NEXUS_URL environment variable is not set.")
+        self.nexus_url: str = nexus_url
+        self.nexus_port = int(os.getenv("NEXUS_PORT", 4040))
+        
 
         # --- Logging ---
-        project_root = Path.cwd()
-        self.logs_dir: Path = project_root / "logs"
+        self.logs_dir: Path = config_dir / "logs"
         self.logs_dir.mkdir(exist_ok=True)
         self._loggers: dict[str, logging.Logger] = {}
         self.log_level: str = os.getenv("LOG_LEVEL", "INFO").upper()
+        self.log_backup_count = int(os.getenv("LOG_BACKUP_COUNT", 7))
+        self.ffmpeg_logs_retention_seconds = int(os.getenv("FFMPEG_LOGS_RETENTION_SECONDS", 86400))
 
         # --- JSON Data Paths ---
-        data_dir = project_root / DATA_DIR_NAME
-        data_dir.mkdir(parents=True, exist_ok=True)
-        self.providers_path: Path = data_dir / "providers.json"
-        self.logical_channels_path: Path = data_dir / "logical_channels.json"
-        self.channel_mappings_path: Path = data_dir / "channel_mappings.json"
-        self.channel_list_path: Path = data_dir / "channel_list.json"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        self.providers_path: Path = config_dir / "providers.json"
+        self.logical_channels_path: Path = config_dir / "logical_channels.json"
+        self.channel_mappings_path: Path = config_dir / "channel_mappings.json"
+        self.channel_list_path: Path = config_dir / "channel_list.json"
         
         # --- HLS Segment Directory ---
-        self.hls_base_segment_dir: Path = project_root / HLS_SEGMENT_ROOT_DIR_NAME
+        self.hls_base_segment_dir: Path = config_dir / "hls_segments"
         self.log_message(f"Cleaning HLS directory at startup: {self.hls_base_segment_dir}", level="DEBUG")
         shutil.rmtree(self.hls_base_segment_dir, ignore_errors=True)
         self.hls_base_segment_dir.mkdir(parents=True, exist_ok=True)
         
         # --- FFmpeg & HLS Configs ---
-        self.hls_segment_duration: int = int(os.getenv("NEXUS_HLS_SEGMENT_DURATION", "3"))
-        self.hls_playlist_length: int = int(os.getenv("NEXUS_HLS_PLAYLIST_LENGTH", "10"))
-        self.ffmpeg_hls_inactivity_timeout: int = int(os.getenv("NEXUS_FFMPEG_HLS_INACTIVITY_TIMEOUT", "60"))
-        self.ffmpeg_start_timeout: int = int(os.getenv("NEXUS_FFMPEG_START_TIMEOUT", "10"))
+        self.hls_segment_duration: int = int(os.getenv("NEXUS_HLS_SEGMENT_DURATION", 3))
+        self.hls_playlist_length: int = int(os.getenv("NEXUS_HLS_PLAYLIST_LENGTH", 10))
+        self.ffmpeg_hls_inactivity_timeout: int = int(os.getenv("NEXUS_FFMPEG_HLS_INACTIVITY_TIMEOUT", 60))
+        self.ffmpeg_start_timeout: int = int(os.getenv("NEXUS_FFMPEG_START_TIMEOUT", 10))
         self.ffmpeg_path: str = os.getenv("FFMPEG_PATH", "/usr/bin/ffmpeg")
         self.ffmpeg_logs_dir: Path = self.logs_dir / "ffmpeg_logs"
         self.ffmpeg_logs_dir.mkdir(parents=True, exist_ok=True)
 
         # --- Media Server Monitoring Configs ---
-        self.emby_base_url: str | None = os.environ.get("EMBY_BASE_URL")
-        self.emby_api_key: str | None = os.environ.get("EMBY_API_KEY")
-        self.jellyfin_base_url: str | None = os.environ.get("JELLYFIN_BASE_URL")
-        self.jellyfin_api_key: str | None = os.environ.get("JELLYFIN_API_KEY")
-        self.ghost_check_interval: int = int(os.getenv("GHOST_SESSION_CHECK_INTERVAL", "60"))
+        self.emby_url: str | None = os.getenv("EMBY_URL")
+        self.emby_api_key: str | None = os.getenv("EMBY_API_KEY")
+        self.jellyfin_url: str | None = os.getenv("JELLYFIN_URL")
+        self.jellyfin_api_key: str | None = os.getenv("JELLYFIN_API_KEY")
+        self.ghost_check_interval: int = int(os.getenv("GHOST_SESSION_CHECK_INTERVAL", 60))
 
         self.file_lock = threading.Lock()
+
+    def clean_up_hls_segments(self) -> None:
+        """Cleans up old HLS segment files in the configured directory."""
+        self.log_message(f"Cleaning up HLS segments in {self.hls_base_segment_dir}", level="INFO")
+        shutil.rmtree(self.hls_base_segment_dir, ignore_errors=True)
 
     def get_ffmpeg_log_path(self, logical_channel_id: str = "unknown_channel", provider_alias: str = "unknown_provider") -> Path:
         """
@@ -95,7 +105,7 @@ class Config:
             self.log_message(f"No FFmpeg logs directory at {self.ffmpeg_logs_dir}. Skipping cleanup.", level="DEBUG")
             return
 
-        cutoff_time = time.time() - FFMPEG_LOGS_RETENTION_SECONDS
+        cutoff_time = time.time() - self.ffmpeg_logs_retention_seconds
         files_cleaned_up = False
         for log_file in self.ffmpeg_logs_dir.glob("ffmpeg_*.log"):
             try:
@@ -190,7 +200,7 @@ class Config:
             logger.setLevel(self.log_level)
             log_file_path = self.logs_dir / log_filename
             file_handler = TimedRotatingFileHandler(
-                log_file_path, when='midnight', backupCount=LOG_BACKUP_COUNT
+                log_file_path, when='midnight', backupCount=self.log_backup_count
             )
             formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
             file_handler.setFormatter(formatter)

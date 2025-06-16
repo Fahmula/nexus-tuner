@@ -41,7 +41,7 @@ class ChannelHandler:
             config: The main application Config object.
         """
         self.config = config
-        self.base_url = self.config.base_url
+        self.nexus_url = self.config.nexus_url
         self.stream_lock = threading.RLock()
 
         # Data loaded from configuration files
@@ -206,9 +206,9 @@ class ChannelHandler:
     def generate_master_client_m3u(self) -> None:
         """Generates the master M3U content to be served to clients."""
         m3u_lines = ["#EXTM3U x-tvg-url=\"\""]
-        if not self.base_url:
-            self.config.log_message("BASE_URL not set. Client M3U URLs will be incorrect.", level="ERROR")
-            m3u_lines.extend(["#EXTINF:-1,Error: BASE_URL not configured", "http://error.invalid/stream"])
+        if not self.nexus_url:
+            self.config.log_message("NEXUS_URL not set. Client M3U URLs will be incorrect.", level="ERROR")
+            m3u_lines.extend(["#EXTINF:-1,Error: NEXUS_URL not configured", "http://error.invalid/stream"])
             self.master_m3u_content = "\n".join(m3u_lines) + "\n"
             return
 
@@ -223,7 +223,7 @@ class ChannelHandler:
             if group := lc_data.get("group_title"): extinf_parts.append(f'group-title="{group}"')
             
             m3u_lines.append(f"#EXTINF:-1 {' '.join(extinf_parts)},{name}")
-            m3u_lines.append(f"{self.base_url}/hls/{lc_data['logical_channel_id']}/playlist.m3u8")
+            m3u_lines.append(f"{self.nexus_url}/hls/{lc_data['logical_channel_id']}/playlist.m3u8")
         
         self.master_m3u_content = "\n".join(m3u_lines) + "\n"
         self.config.log_message(f"Generated master client M3U with {len(self.client_facing_channels)} channels.", level="INFO")
