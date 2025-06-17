@@ -3,17 +3,14 @@ import time
 import subprocess
 import json
 from concurrent.futures import ThreadPoolExecutor
-
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from nexus_stream.config import Config
-    from nexus_stream.handler import ChannelHandler
+from nexus_stream.config import Config
+from nexus_stream.handler import ChannelHandler
+from nexus_stream.slots import ProviderName
 
 # Constants
 
 class QualityMonitor:
-    def __init__(self, config: 'Config', handler: 'ChannelHandler'):
+    def __init__(self, config: 'Config', handler: 'ChannelHandler') -> None:
         self.config = config
         self.handler = handler
         self.interval: int = 300
@@ -78,19 +75,19 @@ class QualityMonitor:
             "framerate": frame_rate
         }
 
-    def _run_single_probe(self, service_id: str, service_url: str, provider_alias: str, acquire_timeout: float) -> tuple[str, dict[str, str | float | int]]:
+    def _run_single_probe(self, service_id: str, service_url: str, provider_alias: ProviderName, acquire_timeout: float) -> tuple[str, dict[str, str | float | int]]:
         """
-        Probes a single stream URL. It will politely wait for a semaphore slot
+        Probes a single stream URL. It will politely wait for a slot
         for a limited time, yielding to higher-priority stream requests.
         """
-        provider_semaphore = self.handler.provider_semaphores.get(provider_alias)
-        if not provider_semaphore:
-            return service_id, {"status": "error", "reason": "Semaphore not found"}
+        provider_slots = self.handler.slots.get(provider_alias)
+        if not provider_slots:
+            return service_id, {"status": "error", "reason": "Slot not found"}
 
         start_time = time.monotonic()
         slot_acquired = False
         while time.monotonic() - start_time < acquire_timeout:
-            slot_acquired = provider_semaphore.acquire(blocking=False)  # non-blocking acquire so that streams are prioritized
+            slot_acquired = provider_slots.acquire(blocking=False)  # non-blocking acquire so that streams are prioritized
             if slot_acquired:
                 break
             time.sleep(1)
@@ -110,7 +107,7 @@ class QualityMonitor:
             return service_id, {"status": "offline", "reason": f"Probe failed: {e}"}
         finally:
             if slot_acquired:
-                provider_semaphore.release()
+                provider_slots.release()
             time.sleep(3)  # Give some time before the next probe to avoid overwhelming the provider
     
     def _analyze_mapped_services(self) -> None:
@@ -127,7 +124,7 @@ class QualityMonitor:
         max_streams = sum(status["max"] for status in self.handler.get_provider_stream_status().values())
         acquire_timeout = max_streams * self.timeout  # If only 1 slot is available gives enough time
 
-        probe_tasks = []
+        probe_tasks: list[tuple[str, str, ProviderName, float]] = []
         for service_id in target_service_ids:
             service_details = self.handler.discovered_source_services.get(service_id)
             if service_details:

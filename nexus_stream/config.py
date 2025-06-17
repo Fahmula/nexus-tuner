@@ -216,11 +216,11 @@ class Config:
 
         self._loggers[log_filename].log(log_level_const, message)
 
-    def get_providers_config(self) -> dict[str, Any]:
+    def get_providers_config(self) -> dict[str, dict[str, dict[str, Any]]]:
         """Loads the providers configuration from providers.json."""
         return self._load_json_file(self.providers_path, lambda: {"source_m3u_providers": {}})
 
-    def save_providers_config(self, data: dict[str, Any]) -> bool:
+    def save_providers_config(self, data: dict[str, dict[str, dict[str, Any]]]) -> bool:
         """Saves the providers configuration to providers.json."""
         return self._save_json_file(self.providers_path, data)
 

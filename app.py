@@ -20,11 +20,12 @@ from collections import deque
 from flask import (Flask, Response, abort, flash, redirect, render_template,
                    request, send_from_directory, url_for)
 
-from nexus_stream.handler import ChannelHandler
 from nexus_stream.config import Config
-from nexus_stream.stream import HLSStreamManager
-from nexus_stream.session_monitor import GhostSessionMonitor
+from nexus_stream.handler import ChannelHandler
 from nexus_stream.quality_monitor import QualityMonitor
+from nexus_stream.session_monitor import GhostSessionMonitor
+from nexus_stream.slots import ProviderName
+from nexus_stream.stream import HLSStreamManager
 
 # --- Constants ---
 PLAYLIST_POLL_INTERVAL = 0.2  # Seconds to wait between checking for a new playlist
@@ -85,7 +86,7 @@ def serve_hls_playlist(logical_channel_id: str) -> Response:
             is_active = hls_manager.ensure_stream_is_active(
                 logical_channel_id=logical_channel_id,
                 actual_url=source['actual_stream_url'],
-                provider_alias=source['provider_alias']
+                provider_alias=ProviderName(source['provider_alias'])
             )
             if is_active:
                 started_successfully = True

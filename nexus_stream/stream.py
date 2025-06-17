@@ -1,18 +1,14 @@
 import subprocess
-import json
 import threading
 import time
 import shutil
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Any
+from nexus_stream.config import Config
+from nexus_stream.handler import ChannelHandler
+from nexus_stream.slots import ProviderName
 
-# Forward-declare Config to avoid circular import issues with type hints
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from nexus_stream.config import Config
-    from nexus_stream.handler import ChannelHandler
 
 # --- Constants ---
 FFMPEG_TERMINATE_TIMEOUT = 5  # seconds
@@ -40,13 +36,13 @@ class HLSStreamManager:
         }
     }
     """
-    def __init__(self, config: 'Config', handler: 'ChannelHandler'):
+    def __init__(self, config: 'Config', handler: 'ChannelHandler') -> None:
         """
         Initializes the HLSStreamManager.
 
         Args:
             config: The main application Config object.
-            handler: The main ChannelHandler object, which holds the semaphores.
+            handler: The main ChannelHandler object, which holds the slots.
         """
         self.config = config
         self.handler = handler
@@ -85,7 +81,7 @@ class HLSStreamManager:
         ]
         return command, channel_hls_dir
 
-    def ensure_stream_is_active(self, logical_channel_id: str, actual_url: str, provider_alias: str) -> bool | None:
+    def ensure_stream_is_active(self, logical_channel_id: str, actual_url: str, provider_alias: ProviderName) -> bool | None:
         """
         Ensures an HLS stream is running using a high-performance, concurrent-startup safe method.
         It allows multiple new streams to start up in parallel without blocking each other.
@@ -102,8 +98,8 @@ class HLSStreamManager:
             if logical_channel_id in self.hls_ffmpeg_processes and self.hls_ffmpeg_processes[logical_channel_id]['process'].poll() is None:
                 return True
             
-            provider_semaphore = self.handler.provider_semaphores.get(provider_alias)
-            if not provider_semaphore or not provider_semaphore.acquire(timeout=10):  # Media players will timeout after, also wait for quality monitor
+            provider_slots = self.handler.slots.get(provider_alias)
+            if not provider_slots or not provider_slots.acquire(timeout=10):  # Media players will timeout after, also wait for quality monitor
                 self.config.log_message(f"Provider '{provider_alias}' is at full capacity. Cannot start {logical_channel_name}.", level="INFO")
                 return None
 
@@ -112,19 +108,19 @@ class HLSStreamManager:
                 log_path = self.config.get_ffmpeg_log_path(logical_channel_name, provider_alias)
                 stderr_log_file = open(log_path, 'a', encoding='utf-8')
                 process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=stderr_log_file)
-                
-                self.hls_ffmpeg_processes[logical_channel_id] = {
-                    'process': process,
-                    'last_access': datetime.now(),
-                    'provider_alias': provider_alias,
-                    'channel_hls_dir': channel_hls_dir,
-                    'stderr_log_file_obj': stderr_log_file
-                }
-                self.config.log_message(f"Claimed slot and started FFmpeg for '{logical_channel_name}' (PID: {process.pid}).", level="INFO")
             except Exception as e:
                 self.config.log_message(f"Immediate Popen failure for {logical_channel_name}: {e}", level="CRITICAL")
-                provider_semaphore.release()
+                provider_slots.release()
                 return False
+
+            self.hls_ffmpeg_processes[logical_channel_id] = {
+                'process': process,
+                'last_access': datetime.now(),
+                'provider_alias': provider_alias,
+                'channel_hls_dir': channel_hls_dir,
+                'stderr_log_file_obj': stderr_log_file
+            }
+            self.config.log_message(f"Claimed slot and started FFmpeg for '{logical_channel_name}' (PID: {process.pid}).", level="INFO")
 
         try:
             start_time = time.monotonic()
@@ -177,7 +173,7 @@ class HLSStreamManager:
 
         if data_to_cleanup:
             process = data_to_cleanup['process']
-            provider = data_to_cleanup['provider_alias']
+            provider = ProviderName(data_to_cleanup['provider_alias'])
             hls_dir = data_to_cleanup['channel_hls_dir']
             log_file = data_to_cleanup.get('stderr_log_file_obj')
             logical_channel_name = self.handler.get_logical_channel_by_id(logical_channel_id)['display_name']
@@ -196,8 +192,7 @@ class HLSStreamManager:
                 except Exception as e:
                     self.config.log_message(f"Error closing FFmpeg log file for '{logical_channel_name}': {e}", level="ERROR")
 
-            provider_semaphore = self.handler.provider_semaphores.get(provider)
-            provider_semaphore.release()
+            provider_slots = self.handler.slots.get(provider).release()
 
             provider_streams = self.handler.get_active_stream_status_for_logging(provider)
             self.config.log_message(f"{provider} stream count: {provider_streams}", level="INFO")

@@ -2,13 +2,10 @@ import threading
 import time
 import requests
 from typing import Set
+from nexus_stream.config import Config
+from nexus_stream.handler import ChannelHandler
+from nexus_stream.stream import HLSStreamManager
 
-# Forward-declare classes to avoid circular import issues with type hints
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from nexus_stream.config import Config
-    from nexus_stream.handler import ChannelHandler
-    from nexus_stream.stream import HLSStreamManager
 
 # --- Constants ---
 MEDIA_SERVER_API_TIMEOUT = 10
@@ -23,7 +20,7 @@ class GhostSessionMonitor:
     corresponding active viewing session on any configured media server. This can
     happen if a client disconnects improperly.
     """
-    def __init__(self, config: 'Config', handler: 'ChannelHandler', hls_manager: 'HLSStreamManager'):
+    def __init__(self, config: 'Config', handler: 'ChannelHandler', hls_manager: 'HLSStreamManager') -> None:
         """
         Initializes the monitor.
         
