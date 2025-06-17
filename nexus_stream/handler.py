@@ -201,15 +201,15 @@ class ChannelHandler:
                  self.config.log_message(f"No valid mapped sources for LC '{logical_channel_id}'. It will not be included in the client M3U.", level="WARN")
         self.config.log_message(f"Built {len(self.client_facing_channels)} client-facing channels.", level="INFO")
 
-    def get_pending_streams(self) -> int:
+    def get_pending_stream_count(self) -> int:
         with self.stream_lock:
             return self.pending_streams
 
-    def increment_pending_streams(self) -> None:
+    def increment_pending_stream_count(self) -> None:
         with self.stream_lock:
             self.pending_streams += 1
 
-    def decrement_pending_streams(self) -> None:
+    def decrement_pending_stream_count(self) -> None:
         with self.stream_lock:
             self.pending_streams -= 1
 

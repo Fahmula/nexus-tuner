@@ -87,9 +87,12 @@ class QualityMonitor:
         start_time = time.monotonic()
         slot_acquired = False
         while time.monotonic() - start_time < acquire_timeout:
-            slot_acquired = provider_slots.acquire(blocking=False)  # non-blocking acquire so that streams are prioritized
-            if slot_acquired:
-                break
+            if self.handler.get_pending_stream_count() == 0:
+                slot_acquired = provider_slots.acquire(blocking=False)  # non-blocking acquire so that streams are prioritized
+                if slot_acquired:
+                    break
+            else:
+                start_time = time.monotonic()
             time.sleep(1)
         
         if not slot_acquired:
@@ -132,10 +135,9 @@ class QualityMonitor:
                     (service_id, service_details['actual_stream_url'], service_details['provider_alias'], acquire_timeout)
                 )
 
-        all_results = []
         with ThreadPoolExecutor(max_workers=max_streams) as executor:
             results_iterator = executor.map(lambda p: self._run_single_probe(*p), probe_tasks)
-            all_results = list(results_iterator)
+        all_results = list(results_iterator)
 
         self.config.log_message(f"Quality Monitor: {len(all_results)} probes complete. Processing results.", level="DEBUG")
 
