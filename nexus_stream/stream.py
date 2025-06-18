@@ -130,16 +130,16 @@ class HLSStreamManager:
         inital_deadline = time.monotonic() + 10
         with ThreadPoolExecutor(max_workers=len(provider_sources)) as executor:
             for provider_alias, sources in provider_sources.items():
-                executor.submit(self._create_provider_streams, provider_alias, logical_channel_id, sources, results, [inital_deadline], mutex)
+                executor.submit(self._create_provider_streams, provider_alias, logical_channel_id, logical_channel_name, sources, results, [inital_deadline], mutex)
         if not results:
             return 503, f"Failed to start HLS stream for '{logical_channel_name}' from any source."
         hls_key = min(results, key=lambda x: x[1]["priority"])[0]
         for other_key, source in results:
             if other_key != hls_key:
-                self.stop_hls_ffmpeg_process(other_key)
+                self.stop_hls_ffmpeg_process(other_key, logical_channel_name)
         return hls_key
 
-    def _create_provider_streams(self, provider_alias: ProviderName, logical_channel_id: str, sources: list[dict[str, Any]], results: list[tuple[HLSKey, dict[str, str]]], deadlines: list[float], mutex: threading.Lock) -> None:
+    def _create_provider_streams(self, provider_alias: ProviderName, logical_channel_id: str, logical_channel_name: str, sources: list[dict[str, Any]], results: list[tuple[HLSKey, dict[str, str]]], deadlines: list[float], mutex: threading.Lock) -> None:
         """Creates HLS streams for a specific provider with all sources simulatenously."""
         provider_slots = self.handler.slots.get(provider_alias)
         if not provider_slots:
@@ -149,9 +149,9 @@ class HLSStreamManager:
         max_streams = self.handler.get_provider_stream_status()[provider_alias]["max"]
         with ThreadPoolExecutor(max_workers=max_streams) as executor:
             for _ in range(max_streams):
-                executor.submit(self._provider_worker_thread, provider_slots, provider_alias, logical_channel_id, sources, results, deadlines, mutex)
+                executor.submit(self._provider_worker_thread, provider_slots, provider_alias, logical_channel_id, logical_channel_name, sources, results, deadlines, mutex)
 
-    def _provider_worker_thread(self, provider_slots: ProviderSlots, provider_alias: ProviderName, logical_channel_id: str, sources: list[dict[str, Any]], results: list[tuple[HLSKey, dict[str, str]]], deadlines: list[float], mutex: threading.Lock) -> None:
+    def _provider_worker_thread(self, provider_slots: ProviderSlots, provider_alias: ProviderName, logical_channel_id: str, logical_channel_name: str, sources: list[dict[str, Any]], results: list[tuple[HLSKey, dict[str, str]]], deadlines: list[float], mutex: threading.Lock) -> None:
         """Creates a single HLS stream for each provider source as resources become available until success, dealine, or no more sources."""
         start_time = time.monotonic()
         source = self._pop_source(sources, mutex)
@@ -171,7 +171,7 @@ class HLSStreamManager:
                 time.sleep(0.01)
                 continue
             
-            hls_key = self._create_single_stream(provider_slots, provider_alias, logical_channel_id, source['source_service_id'], source['actual_stream_url'])
+            hls_key = self._create_single_stream(provider_slots, provider_alias, logical_channel_id, logical_channel_name, source['source_service_id'], source['actual_stream_url'])
             if hls_key:
                 self._set_result(results, hls_key, source, mutex)
                 self._set_deadline(deadlines, time.monotonic() + 1, mutex)
@@ -200,7 +200,7 @@ class HLSStreamManager:
         with mutex:
             results.append((hls_key, source))
 
-    def _create_single_stream(self, provider_slots: ProviderSlots, provider_alias: ProviderName, logical_channel_id: str, source_service_id: str, actual_url: str) -> HLSKey | None:
+    def _create_single_stream(self, provider_slots: ProviderSlots, provider_alias: ProviderName, logical_channel_id: str, logical_channel_name: str, source_service_id: str, actual_url: str) -> HLSKey | None:
         """
         Ensures an HLS stream is running using a high-performance, concurrent-startup safe method.
         It allows multiple new streams to start up in parallel without blocking each other.
@@ -225,6 +225,7 @@ class HLSStreamManager:
                 'provider_alias': provider_alias,
                 'logical_channel_id': logical_channel_id,
                 'source_service_id': source_service_id,
+                'logical_channel_name': logical_channel_name,
                 'channel_hls_dir': channel_hls_dir,
                 'last_access': datetime.now(),
                 'stderr_log_file_obj': stderr_log_file
@@ -249,7 +250,7 @@ class HLSStreamManager:
 
         except (ChildProcessError, TimeoutError) as e:
             self.config.log_message(f"Validation failed for {hls_name}: {e}. Cleaning up.", level="ERROR")
-            self.stop_hls_ffmpeg_process(hls_key)
+            self.stop_hls_ffmpeg_process(hls_key, logical_channel_name)
             return
 
     def record_hls_access(self, logical_channel_id: str) -> None:
@@ -278,23 +279,23 @@ class HLSStreamManager:
         self.config.log_message("HLS FFmpeg cleanup thread started.", level="INFO")
         while True:
             time.sleep(CLEANUP_POLL_INTERVAL)
-            inactive_ids: set[HLSKey] = set()
+            inactive_ids: set[tuple[HLSKey, str]] = set()
             with self.hls_process_lock:
                 now = datetime.now()
                 for hls_key, data in self.hls_ffmpeg_processes.items():
                     if data['process'].poll() is not None:
-                        logical_channel_name = self.handler.get_logical_channel_by_id(data['logical_channel_id'])['display_name']
+                        logical_channel_name = data['logical_channel_name']
                         self.config.log_message(f"Cleanup: Found dead process for '{logical_channel_name}' (PID: {data['process'].pid}).", level="INFO")
-                        inactive_ids.add(hls_key)
+                        inactive_ids.add((hls_key, logical_channel_name))
                     elif now - data['last_access'] > timedelta(seconds=self.config.ffmpeg_hls_inactivity_timeout):
-                        logical_channel_name = self.handler.get_logical_channel_by_id(data['logical_channel_id'])['display_name']
+                        logical_channel_name = data['logical_channel_name']
                         self.config.log_message(f"Cleanup: Stream '{logical_channel_name}' timed out due to inactivity (PID: {data['process'].pid}).", level="INFO")
-                        inactive_ids.add(hls_key)
+                        inactive_ids.add((hls_key, logical_channel_name))
             
-            for hls_key_to_stop in inactive_ids:
-                self.stop_hls_ffmpeg_process(hls_key_to_stop)
+            for hls_key_to_stop, logical_channel_name in inactive_ids:
+                self.stop_hls_ffmpeg_process(hls_key_to_stop, logical_channel_name)
 
-    def stop_hls_ffmpeg_process(self, hls_key: HLSKey, logical_channel_name: str | None = None) -> None:
+    def stop_hls_ffmpeg_process(self, hls_key: HLSKey, logical_channel_name: str) -> None:
         """Public method to stop an HLS stream and its associated process."""
         data_to_cleanup = None
         with self.hls_process_lock:
@@ -308,22 +309,20 @@ class HLSStreamManager:
         provider = ProviderName(data_to_cleanup['provider_alias'])
         hls_dir = data_to_cleanup['channel_hls_dir']
         log_file = data_to_cleanup.get('stderr_log_file_obj')
-        if logical_channel_name is None:  # Fake logical_channel_id from preview
-            logical_channel_name = self.handler.get_logical_channel_by_id(data_to_cleanup['logical_channel_id'])['display_name']
 
         if process.poll() is None:
             process.terminate()
             try:
                 process.wait(timeout=FFMPEG_TERMINATE_TIMEOUT)
             except subprocess.TimeoutExpired:
-                self.config.log_message(f"Killing unresponsive FFmpeg process for '{logical_channel_name}'.", level="WARN")
+                self.config.log_message(f"Killing unresponsive FFmpeg process for '{logical_channel_name}' [{hls_key}].", level="WARN")
                 process.kill()
         
         if log_file and not log_file.closed:
             try:
                 log_file.close()
             except Exception as e:
-                self.config.log_message(f"Error closing FFmpeg log file for '{logical_channel_name}': {e}", level="ERROR")
+                self.config.log_message(f"Error closing FFmpeg log file for '{logical_channel_name}' [{hls_key}]: {e}", level="ERROR")
 
         provider_slots = self.handler.slots.get(provider).release()
 
@@ -338,10 +337,10 @@ class HLSStreamManager:
             
         self.config.cleanup_ffmpeg_logs_by_age()
 
-        self.config.log_message(f"Successfully stopped and cleaned up all resources for '{logical_channel_name}'.", level="INFO")
+        self.config.log_message(f"Successfully stopped and cleaned up all resources for '{logical_channel_name}' [{hls_key}].", level="INFO")
 
     def stop_all_hls_ffmpeg_processes(self) -> None:
         """Stops all active HLS FFmpeg processes and cleans up resources."""
         self.config.log_message("Stopping all HLS FFmpeg processes...", level="INFO")
-        for lc_id in list(self.hls_ffmpeg_processes.keys()):
-            self.stop_hls_ffmpeg_process(lc_id)
+        for lc_id, data in self.hls_ffmpeg_processes.items():
+            self.stop_hls_ffmpeg_process(lc_id, data['logical_channel_name'])

@@ -105,7 +105,7 @@ def serve_hls_playlist(logical_channel_id: str) -> Response:
                 if hls_key not in hls_manager.hls_ffmpeg_processes or hls_manager.hls_ffmpeg_processes[hls_key]['process'].poll() is not None:
                     msg = f"[{request.method} {request.path}] FFmpeg process for '{logical_channel_name}' with key '{hls_key}' terminated unexpectedly while waiting for playlist."
                     config.log_message(msg, level="ERROR")
-                    hls_manager.stop_hls_ffmpeg_process(hls_key)
+                    hls_manager.stop_hls_ffmpeg_process(hls_key, logical_channel_name)
                     abort(503, msg)
 
             if playlist_path.exists() and playlist_path.stat().st_size > 0:

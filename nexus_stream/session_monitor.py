@@ -129,26 +129,20 @@ class GhostSessionMonitor:
             self.config.log_message(f"Monitor: Could not get active sessions from media servers: {e}", level="ERROR")
             return
 
+        ghost_hls_keys: Set[tuple[HLSKey, str]] = set()  # A ghost is a stream that is running but NOT in the legitimate list.
         with self.hls_manager.hls_process_lock:
-            currently_running_ids = set(self.hls_manager.hls_ffmpeg_processes.keys())
-        
-        if not currently_running_ids:
-            return # No streams running, nothing to do.
+            for hls_key, data in self.hls_manager.hls_ffmpeg_processes.items():
+                if data['logical_channel_id'] not in legitimately_active_lc_ids:
+                    ghost_hls_keys.add((hls_key, data['logical_channel_name']))
 
-        # A ghost is a stream that is running but NOT in the legitimate list.
-        legitimately_active_ids: set[HLSKey] = set()
-        for lc_id in legitimately_active_lc_ids:
-            for hls_key in self.hls_manager.get_ffmpeg_processes_from_logical_id(lc_id):
-                legitimately_active_ids.add(hls_key)
-        ghost_stream_ids = currently_running_ids - legitimately_active_ids
-
-        if ghost_stream_ids:
-            self.config.log_message(f"Monitor: Found {len(ghost_stream_ids)} ghost session(s) to terminate: {', '.join(ghost_stream_ids)}", level="WARN")
-            for lc_id in ghost_stream_ids:
-                self.config.log_message(f"Monitor: Terminating ghost stream for '{lc_id}'...", level="INFO")
-                self.hls_manager.stop_hls_ffmpeg_process(lc_id)
-        else:
+        if not ghost_hls_keys:
             self.config.log_message("Monitor: No ghost sessions found.", level="DEBUG")
+            return
+
+        self.config.log_message(f"Monitor: Found {len(ghost_hls_keys)} ghost session(s) to terminate: {', '.join(g[0] for g in ghost_hls_keys)}", level="WARN")
+        for hls_key, logical_channel_name in ghost_hls_keys:
+            self.config.log_message(f"Monitor: Terminating ghost stream for '{logical_channel_name}' [{hls_key}]...", level="INFO")
+            self.hls_manager.stop_hls_ffmpeg_process(hls_key, logical_channel_name)
 
     def _run(self) -> None:
         """The main execution loop for the monitor thread."""
