@@ -142,10 +142,13 @@ class HLSStreamManager:
         selected: list[bool] = [False]
         mutex = threading.Lock()
         deadlines = [time.monotonic() + 10]
+        threads: list[threading.Thread] = []
         for provider_alias, sources in provider_sources.items():
-            threading.Thread(target=self._create_provider_streams, args=(provider_alias, logical_channel_id, logical_channel_name, sources, results, selected, deadlines, mutex), daemon=True).start()
+            sources.sort(key=lambda x: x["priority"], reverse=True)
+            threads.append(threading.Thread(target=self._create_provider_streams, args=(provider_alias, logical_channel_id, logical_channel_name, sources, results, selected, deadlines, mutex), daemon=True))
+            threads[-1].start()
         while time.monotonic() < self._get_deadline(deadlines, mutex):
-            if any(self._has_source(sources, mutex) for sources in provider_sources.values()):
+            if any(thread.is_alive() for thread in threads):
                 time.sleep(0.1)
             else:
                 break
@@ -166,7 +169,6 @@ class HLSStreamManager:
         if not provider_slots:
             self.config.log_message(f"Provider '{provider_alias}' does not exist.", level="CRITICAL")
             return
-        sources.sort(key=lambda x: x["priority"], reverse=True)
         max_streams = self.handler.get_provider_stream_status()[provider_alias]["max"]
         with ThreadPoolExecutor(max_workers=max_streams) as executor:
             for _ in range(max_streams):
@@ -222,10 +224,6 @@ class HLSStreamManager:
     def _set_deadline(self, deadlines: list[float], new_deadline: float, mutex: threading.Lock) -> None:
         with mutex:
             deadlines[0] = min(deadlines[0], new_deadline)
-
-    def _has_source(self, sources: list[dict[str, Any]], mutex: threading.Lock) -> bool:
-        with mutex:
-            return bool(sources)
 
     def _pop_source(self, sources: list[dict[str, Any]], mutex: threading.Lock) -> dict[str, Any] | None:
         with mutex:
