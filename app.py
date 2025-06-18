@@ -208,7 +208,6 @@ def ui_logical_channels_list() -> str:
 @app.route("/ui/logical-channels/form/<string:logical_channel_id>", methods=["GET", "POST"])
 def ui_logical_channel_form(logical_channel_id: str | None = None):
     """Handles both adding and editing a logical channel and its mappings."""
-
     if request.method == "GET":
         channel = {}
         if logical_channel_id:
@@ -219,6 +218,9 @@ def ui_logical_channel_form(logical_channel_id: str | None = None):
 
         all_services = handler.get_all_discovered_source_services_for_ui()
         
+        current_mappings = handler.get_mappings_for_logical_channel(logical_channel_id)
+        current_mapping_info = {m['source_service_id']: m['priority'] for m in current_mappings}
+
         filter_query = channel.get('display_name', '').lower().strip()
         
         suggested_services = []
@@ -229,18 +231,48 @@ def ui_logical_channel_form(logical_channel_id: str | None = None):
 
                 if filter_query in name_to_check or filter_query in extinf_name_to_check:
                     suggested_services.append(service)
+
+        per_page = 20
+        page = request.args.get('page', 1, type=int)
+
+        mapped_services = []
+        unmapped_suggestions = []
+        all_mapped_service_ids = set(current_mapping_info.keys())
         
-        current_mappings = []
-        if logical_channel_id:
-            current_mappings = handler.get_mappings_for_logical_channel(logical_channel_id)
+        all_services_map = {s['id']: s for s in all_services}
+        for service_id, priority in current_mapping_info.items():
+            if service_id in all_services_map:
+                service_details = all_services_map[service_id].copy() # Use a copy
+                service_details['priority'] = priority
+                mapped_services.append(service_details)
+        
+        for service in suggested_services:
+            if service['id'] not in all_mapped_service_ids:
+                unmapped_suggestions.append(service)
+
+        total_unmapped_items = len(unmapped_suggestions)
+        total_pages = math.ceil(total_unmapped_items / per_page) if per_page > 0 else 1
+        if page > total_pages:
+            page = total_pages
+        if page < 1:
+            page = 1
+
+        start_index = (page - 1) * per_page
+        end_index = start_index + per_page
+
+        unmapped_suggestions_for_page = unmapped_suggestions[start_index:end_index]
 
         action_url = url_for('ui_logical_channel_form', logical_channel_id=logical_channel_id) if logical_channel_id else url_for('ui_logical_channel_form')
 
         return render_template("ui_logical_channel_form.html", 
                                channel=channel,
                                all_services=all_services,
-                               suggested_services=suggested_services,
-                               current_mappings=current_mappings,
+                               unmapped_suggestions_for_page=unmapped_suggestions_for_page,
+                               logical_channel_id=logical_channel_id,
+                               current_page=page,
+                               total_pages=total_pages,
+                               total_unmapped_items=total_unmapped_items,
+                               mapped_services=mapped_services,
                                action_url=action_url)
 
     if request.method == "POST":
@@ -263,28 +295,26 @@ def ui_logical_channel_form(logical_channel_id: str | None = None):
                 flash("Error updating channel details.", "error")
                 return redirect(url_for('ui_logical_channel_form', logical_channel_id=logical_channel_id))
 
-            mappings_from_form = []
-            
-            # Getlist to get all submitted values for these names in order
-            service_ids = request.form.getlist('mapping_service_id')
-            priorities = request.form.getlist('mapping_priority')
+            final_mappings_to_save = []
+    
+            service_ids_to_map = request.form.getlist('mapping_service_id')
 
-            # Zip the lists together to process them as pairs
-            for service_id_str, priority_str in zip(service_ids, priorities):
-                if not service_id_str:
-                    continue
+            for service_id_str in service_ids_to_map:
+                priority_form_key = f"priority_{service_id_str}"
+                priority_str = request.form.get(priority_form_key, '0')
 
                 try:
-                    mappings_from_form.append({
+                    final_mappings_to_save.append({
                         'source_service_id': service_id_str,
                         'priority': int(priority_str)
                     })
                 except (ValueError, TypeError):
-                    flash(f"Skipping a mapping row with invalid data (service_id: '{service_id_str}').", "warning")
+                    flash(f"Skipping a mapping row with invalid priority data (service_id: '{service_id_str}').", "warning")
                     continue
             
-            handler.update_mappings_for_logical_channel(logical_channel_id, mappings_from_form)
-
+            print(f"Replacing all mappings with a new set of {len(final_mappings_to_save)} mappings.")
+            
+            handler.update_mappings_for_logical_channel(logical_channel_id, final_mappings_to_save)
             flash(f"Channel '{lc_data['display_name']}' and its mappings were updated successfully.", "success")
             handler.reload_handler_config()
             return redirect(url_for('ui_logical_channel_form', logical_channel_id=logical_channel_id))
@@ -543,13 +573,6 @@ def ui_get_new_mapping_row() -> str:
                            all_services=all_services,
                            suggested_services=suggested_services,
                            channel=current_channel)
-
-
-@app.route("/ui/remove-mapping-row-placeholder", methods=["DELETE"])
-def ui_remove_mapping_row_placeholder() -> tuple[str, int]:
-    """Returns an empty response for HTMX to remove a mapping row."""
-    return "", 200
-
 
 @app.route("/ui/logs/modal")
 def ui_logs_modal():
