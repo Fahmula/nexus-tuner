@@ -297,13 +297,9 @@ class HLSStreamManager:
 
     def stop_hls_ffmpeg_process(self, hls_key: HLSKey, logical_channel_name: str) -> None:
         """Public method to stop an HLS stream and its associated process."""
-        data_to_cleanup = None
         with self.hls_process_lock:
-            if (data := self.hls_ffmpeg_processes.pop(hls_key, None)) is None:
+            if (data_to_cleanup := self.hls_ffmpeg_processes.pop(hls_key, None)) is None:
                 return
-            data_to_cleanup = data
-        if not data_to_cleanup:
-            return
 
         process = data_to_cleanup['process']
         provider = ProviderName(data_to_cleanup['provider_alias'])
