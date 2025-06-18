@@ -4,7 +4,7 @@ import requests
 from typing import Set
 from nexus_stream.config import Config
 from nexus_stream.handler import ChannelHandler
-from nexus_stream.stream import HLSStreamManager
+from nexus_stream.stream import HLSKey, HLSStreamManager
 
 
 # --- Constants ---
@@ -99,12 +99,12 @@ class GhostSessionMonitor:
         jellyfin_sessions = self._fetch_sessions_from_server(self.config.jellyfin_url, self.config.jellyfin_api_key, "Jellyfin")
         
         all_sessions = emby_sessions + jellyfin_sessions
-        active_lc_ids: Set[str] = set()
 
         if not self.display_name_to_lc_id_map:
             # This can happen at startup before the handler is fully ready.
-            return active_lc_ids
+            return set()
 
+        active_lc_ids: Set[str] = set()
         for session in all_sessions:
             if (now_playing := session.get("NowPlayingItem")) and now_playing.get("Type") == "TvChannel":
                 if (channel_name := now_playing.get("Name")) in self.display_name_to_lc_id_map:
@@ -121,8 +121,8 @@ class GhostSessionMonitor:
         self._build_name_to_id_map()
 
         try:
-            legitimately_active_ids = self._get_legitimate_stream_ids()
-            self.config.log_message(f"Monitor: Found {len(legitimately_active_ids)} legitimate sessions: {legitimately_active_ids or 'None'}", level="DEBUG")
+            legitimately_active_lc_ids = self._get_legitimate_stream_ids()
+            self.config.log_message(f"Monitor: Found {len(legitimately_active_lc_ids)} legitimate sessions: {legitimately_active_lc_ids or 'None'}", level="DEBUG")
         except Exception as e:
             # This is a critical failure, as we can't determine what's legitimate.
             # Abort this check cycle to avoid terminating valid streams.
@@ -136,6 +136,10 @@ class GhostSessionMonitor:
             return # No streams running, nothing to do.
 
         # A ghost is a stream that is running but NOT in the legitimate list.
+        legitimately_active_ids: set[HLSKey] = set()
+        for lc_id in legitimately_active_lc_ids:
+            for hls_key in self.hls_manager.get_ffmpeg_processes_from_logical_id(lc_id):
+                legitimately_active_ids.add(hls_key)
         ghost_stream_ids = currently_running_ids - legitimately_active_ids
 
         if ghost_stream_ids:

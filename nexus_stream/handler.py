@@ -12,6 +12,11 @@ from nexus_stream.slots import ProviderName, ProviderSlots
 PROVIDER_FETCH_TIMEOUT = 20
 PROVIDER_PARSE_MAX_WORKERS = 10
 NEXUS_USER_AGENT = 'NexusStream/1.0'
+TVG_NAME_REGEX = re.compile(r'tvg-name="([^"]*)"', re.IGNORECASE)
+TVG_ID_REGEX = re.compile(r'tvg-id="([^"]*)"', re.IGNORECASE)
+TVG_LOGO_REGEX = re.compile(r'tvg-logo="([^"]*)"', re.IGNORECASE)
+GROUP_TITLE_REGEX = re.compile(r'group-title="([^"]*)"', re.IGNORECASE)
+
 
 class ChannelHandler:
     """
@@ -102,10 +107,10 @@ class ChannelHandler:
             if line.startswith("#EXTINF:"):
                 current_extinf = line
             elif current_extinf and (line.startswith("http://") or line.startswith("https://")):
-                tvg_name = (re.search(r'tvg-name="([^"]*)"', current_extinf, re.IGNORECASE) or [None, ""])[1]
-                group_title = (re.search(r'group-title="([^"]*)"', current_extinf, re.IGNORECASE) or [None, ""])[1]
-                tvg_id = (re.search(r'tvg-id="([^"]*)"', current_extinf, re.IGNORECASE) or [None, ""])[1]
-                tvg_logo = (re.search(r'tvg-logo="([^"]*)"', current_extinf, re.IGNORECASE) or [None, ""])[1]
+                tvg_name = (re.search(TVG_NAME_REGEX, current_extinf) or [None, ""])[1]
+                tvg_id = (re.search(TVG_ID_REGEX, current_extinf) or [None, ""])[1]
+                tvg_logo = (re.search(TVG_LOGO_REGEX, current_extinf) or [None, ""])[1]
+                group_title = (re.search(GROUP_TITLE_REGEX, current_extinf) or [None, ""])[1]
                 display_name_from_extinf = current_extinf.split(',')[-1]
 
                 parsed_channels.append({
@@ -175,12 +180,15 @@ class ChannelHandler:
                 continue
 
             mapped_sources_for_lc = self.channel_mappings_data_from_json.get(logical_channel_id, [])
-            processed_sources = []
+            processed_sources: list[dict[str, Any]] = []
             for mapping in sorted(mapped_sources_for_lc, key=lambda x: x.get("priority", 0)):
                 source_id = mapping.get("source_service_id")
+                priority = mapping.get("priority", 0)
                 discovered_service = self.discovered_source_services.get(source_id)
                 if discovered_service:
                     processed_sources.append({
+                        "source_service_id": source_id,
+                        "priority": priority,
                         "provider_alias": discovered_service["provider_alias"],
                         "actual_stream_url": discovered_service["actual_stream_url"],
                     })
@@ -238,7 +246,7 @@ class ChannelHandler:
         self.master_m3u_content = "\n".join(m3u_lines) + "\n"
         self.config.log_message(f"Generated master client M3U with {len(self.client_facing_channels)} channels.", level="INFO")
 
-    def get_sources_for_client_facing_channel(self, logical_channel_id: str) -> list[dict[str, str]]:
+    def get_sources_for_client_facing_channel(self, logical_channel_id: str) -> list[dict[str, Any]]:
         """Retrieves the list of source stream URLs for a given client-facing channel ID."""
         channel_data = self.client_facing_channels.get(logical_channel_id)
         return channel_data.get("sources", []) if channel_data else []

@@ -12,10 +12,12 @@ HLSStreamManager, GhostSessionMonitor) and defines all the web routes for:
 import os
 import signal
 import sys
+import threading
 import time
 import math
 from datetime import datetime, UTC
 from collections import deque
+from typing import Any
 
 from flask import (Flask, Response, abort, flash, redirect, render_template,
                    request, send_from_directory, url_for)
@@ -72,45 +74,39 @@ def serve_hls_playlist(logical_channel_id: str) -> Response:
         handler.increment_pending_stream_count()
         hls_manager.record_hls_access(logical_channel_id)
 
-        logical_channel_name = handler.get_logical_channel_by_id(logical_channel_id)['display_name']
+        logical_channel = handler.get_logical_channel_by_id(logical_channel_id)
+        if not logical_channel:
+            msg = f"[{request.method} {request.path}] Logical channel {logical_channel_id} not found."
+            config.log_message(msg, level="ERROR")
+            abort(404, msg)
+        logical_channel_name = logical_channel['display_name']
 
-        with hls_manager.hls_process_lock:
-            is_running = logical_channel_id in hls_manager.hls_ffmpeg_processes and \
-                        hls_manager.hls_ffmpeg_processes[logical_channel_id]['process'].poll() is None
+        lc_id_processes = hls_manager.get_ffmpeg_processes_from_logical_id(logical_channel_id)
+        if len(lc_id_processes):
+            hls_key = lc_id_processes.popitem()[0]
+        else:
+            res = hls_manager.create_hls_stream(logical_channel_id, logical_channel_name)
+            if isinstance(res, tuple):
+                code = res[0]
+                msg = f"[{request.method} {request.path}] {res[1]}"
+                config.log_message(msg, level="ERROR")
+                abort(code, msg)
+            hls_key = res
 
-        if not is_running:
-            sources_to_try = handler.get_sources_for_client_facing_channel(logical_channel_id)
-            if not sources_to_try:
-                abort(404, f"Logical channel '{logical_channel_id}' not found or has no sources.")
-
-            started_successfully = False
-            for source in sources_to_try:
-                is_active = hls_manager.ensure_stream_is_active(
-                    logical_channel_id=logical_channel_id,
-                    actual_url=source['actual_stream_url'],
-                    provider_alias=ProviderName(source['provider_alias'])
-                )
-                if is_active:
-                    started_successfully = True
-                    break
-                elif is_active is None:
-                    break
-                config.log_message(f"Failed to start '{logical_channel_name}' from provider '{source['provider_alias']}'. Trying next source.", level="WARN")
-
-            if not started_successfully:
-                abort(503, f"Could not start HLS stream for '{logical_channel_id}' with any available source.")
-
-        playlist_path = hls_manager.get_hls_playlist_path(logical_channel_id)
+        playlist_path = hls_manager.get_hls_playlist_path(hls_key)
         if not playlist_path:
-            abort(500, "Internal error: HLS playlist path not found after activation.")
+            msg = f"[{request.method} {request.path}] Internal error: HLS playlist path not found for logical channel '{logical_channel_name}' with key '{hls_key}'."
+            config.log_message(msg, level="ERROR")
+            abort(500, msg)
 
         start_wait = time.monotonic()
         while time.monotonic() - start_wait < config.ffmpeg_start_timeout:
             with hls_manager.hls_process_lock:
-                if logical_channel_id not in hls_manager.hls_ffmpeg_processes or hls_manager.hls_ffmpeg_processes[logical_channel_id]['process'].poll() is not None:
-                    config.log_message(f"FFmpeg for '{logical_channel_name}' terminated while waiting for playlist.", level="ERROR")
-                    hls_manager.stop_hls_ffmpeg_process(logical_channel_id)
-                    abort(503, "HLS stream generation failed; the process terminated unexpectedly.")
+                if hls_key not in hls_manager.hls_ffmpeg_processes or hls_manager.hls_ffmpeg_processes[hls_key]['process'].poll() is not None:
+                    msg = f"[{request.method} {request.path}] FFmpeg process for '{logical_channel_name}' with key '{hls_key}' terminated unexpectedly while waiting for playlist."
+                    config.log_message(msg, level="ERROR")
+                    hls_manager.stop_hls_ffmpeg_process(hls_key)
+                    abort(503, msg)
 
             if playlist_path.exists() and playlist_path.stat().st_size > 0:
                 try:
@@ -120,11 +116,14 @@ def serve_hls_playlist(logical_channel_id: str) -> Response:
                     response.headers["Expires"] = "0"
                     return response
                 except Exception as e:
-                    config.log_message(f"Error serving HLS playlist {playlist_path}: {e}", level="ERROR")
-                    abort(500)
+                    msg = f"[{request.method} {request.path}] Error serving HLS playlist {playlist_path}: {e}"
+                    config.log_message(msg, level="ERROR")
+                    abort(500, msg)
             time.sleep(PLAYLIST_POLL_INTERVAL)
 
-        abort(408, "HLS playlist was not available after the timeout period.")
+        msg = f"[{request.method} {request.path}] HLS playlist for logical channel '{logical_channel_name}' with key '{hls_key}' was not available after {config.ffmpeg_start_timeout} seconds."
+        config.log_message(msg, level="ERROR")
+        abort(408, msg)
     finally:
         handler.decrement_pending_stream_count()
 
@@ -133,12 +132,15 @@ def serve_hls_playlist(logical_channel_id: str) -> Response:
 def serve_hls_segment(logical_channel_id: str, segment_filename: str) -> Response:
     """Serves an HLS video segment (.ts file)."""
     if not segment_filename.endswith(".ts") or ".." in segment_filename:
-        abort(400, "Invalid segment filename.")
+        msg = f"[{request.method} {request.path}] Invalid segment filename: {segment_filename}"
+        config.log_message(msg, level="ERROR")
+        abort(400, msg)
     
     segment_path = hls_manager.get_hls_segment_path(logical_channel_id, segment_filename)
     if not segment_path or not segment_path.is_file():
-        config.log_message(f"HLS segment not found: {segment_path}", level="WARN")
-        abort(404)
+        msg = f"[{request.method} {request.path}] HLS segment file not found: {segment_path}"
+        config.log_message(msg, level="ERROR")
+        abort(404, msg)
     
     return send_from_directory(str(segment_path.parent), segment_path.name, mimetype="video/mp2t")
 

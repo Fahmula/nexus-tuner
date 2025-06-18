@@ -11,6 +11,10 @@ from dotenv import load_dotenv
 from typing import Any, Callable
 
 
+# --- Constants ---
+NOT_ALPHANUM_REGEX = re.compile(r'[^a-zA-Z0-9_-]')
+
+
 class Config:
     """
     Manages all application configuration, file paths, and logging.
@@ -84,7 +88,21 @@ class Config:
         self.log_message(f"Cleaning up HLS segments in {self.hls_base_segment_dir}", level="INFO")
         shutil.rmtree(self.hls_base_segment_dir, ignore_errors=True)
 
-    def get_ffmpeg_log_path(self, logical_channel_id: str = "unknown_channel", provider_alias: str = "unknown_provider") -> Path:
+    def get_fs_safe_alphanum(self, name: str) -> str:
+        """
+        Converts a string to a filesystem-safe alphanumeric format.
+
+        Replaces non-alphanumeric characters with underscores.
+
+        Args:
+            name: The input string to sanitize.
+
+        Returns:
+            A sanitized string suitable for filesystem use.
+        """
+        return re.sub(NOT_ALPHANUM_REGEX, '_', name)
+
+    def get_ffmpeg_log_path(self, logical_channel_id: str) -> Path:
         """
         Generates a safe file path for an FFmpeg log file.
 
@@ -95,9 +113,7 @@ class Config:
         Returns:
             A Path object for the log file.
         """
-        safe_lc_id = re.sub(r'[^a-zA-Z0-9_-]', '_', logical_channel_id)
-        safe_prov_id = re.sub(r'[^a-zA-Z0-9_-]', '_', provider_alias)
-        log_filename = f"ffmpeg_{safe_lc_id}_{safe_prov_id}.log" 
+        log_filename = f"ffmpeg_{self.get_fs_safe_alphanum(logical_channel_id)}.log" 
         return self.ffmpeg_logs_dir / log_filename
     
     def cleanup_ffmpeg_logs_by_age(self) -> None:
