@@ -84,15 +84,15 @@ class QualityMonitor:
         if not provider_slots:
             return service_id, {"status": "error", "reason": "Slot not found"}
 
-        start_time = time.monotonic()
+        end_time = time.monotonic() + acquire_timeout
         slot_acquired = False
-        while time.monotonic() - start_time < acquire_timeout:
+        while time.monotonic() < end_time:
             if self.handler.get_pending_stream_count() == 0:
                 slot_acquired = provider_slots.acquire(blocking=False)  # non-blocking acquire so that streams are prioritized
                 if slot_acquired:
                     break
             else:
-                start_time = time.monotonic()
+                end_time = time.monotonic() + acquire_timeout  # Wait indefinitely if there are pending streams
             time.sleep(1)
         
         if not slot_acquired:

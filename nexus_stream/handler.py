@@ -58,7 +58,7 @@ class ChannelHandler:
         self.master_m3u_content: str = "#EXTM3U\n"
 
         self.slots: dict[ProviderName, ProviderSlots] = {}
-        self.pending_streams: int = 0
+        self.pending_streams: set[str] = set()
 
         self._load_and_process_configurations()
 
@@ -211,15 +211,18 @@ class ChannelHandler:
 
     def get_pending_stream_count(self) -> int:
         with self.stream_lock:
-            return self.pending_streams
+            return len(self.pending_streams)
 
-    def increment_pending_stream_count(self) -> None:
+    def add_pending_stream(self, logical_channel_id: str) -> bool:
         with self.stream_lock:
-            self.pending_streams += 1
+            if logical_channel_id in self.pending_streams:
+                return False
+            self.pending_streams.add(logical_channel_id)
+            return True
 
-    def decrement_pending_stream_count(self) -> None:
+    def remove_pending_stream_count(self, logical_channel_id: str) -> None:
         with self.stream_lock:
-            self.pending_streams -= 1
+            self.pending_streams.remove(logical_channel_id)
 
     def generate_master_client_m3u(self) -> None:
         """Generates the master M3U content to be served to clients."""

@@ -70,9 +70,17 @@ def serve_hls_playlist(logical_channel_id: str) -> Response:
     the HLSStreamManager to start the FFmpeg process if it's not already running.
     It then waits for the playlist file to become available before serving it.
     """
+    hls_manager.record_hls_access(logical_channel_id)
+    added_pending_stream = False
+    end_time = time.monotonic() + 10
     try:
-        handler.increment_pending_stream_count()
-        hls_manager.record_hls_access(logical_channel_id)
+        while not handler.add_pending_stream(logical_channel_id):
+            if time.monotonic() > end_time:
+                msg = f"[{request.method} {request.path}] Exceeded timeout while waiting for earlier request for {logical_channel_id} to complete."
+                config.log_message(msg, level="ERROR")
+                abort(503, msg)
+            time.sleep(0.01)
+        added_pending_stream = True
 
         logical_channel = handler.get_logical_channel_by_id(logical_channel_id)
         if not logical_channel:
@@ -81,7 +89,7 @@ def serve_hls_playlist(logical_channel_id: str) -> Response:
             abort(404, msg)
         logical_channel_name = logical_channel['display_name']
 
-        lc_id_processes = hls_manager.get_ffmpeg_processes_from_logical_id(logical_channel_id)
+        lc_id_processes = hls_manager.get_ffmpeg_processes_from_logical_id(logical_channel_id, long_term_only=True)
         if len(lc_id_processes):
             hls_key = lc_id_processes.popitem()[0]
         else:
@@ -99,8 +107,8 @@ def serve_hls_playlist(logical_channel_id: str) -> Response:
             config.log_message(msg, level="ERROR")
             abort(500, msg)
 
-        start_wait = time.monotonic()
-        while time.monotonic() - start_wait < config.ffmpeg_start_timeout:
+        end_time = time.monotonic() + config.ffmpeg_start_timeout
+        while time.monotonic() < end_time:
             with hls_manager.hls_process_lock:
                 if hls_key not in hls_manager.hls_ffmpeg_processes or hls_manager.hls_ffmpeg_processes[hls_key]['process'].poll() is not None:
                     msg = f"[{request.method} {request.path}] FFmpeg process for '{logical_channel_name}' with key '{hls_key}' terminated unexpectedly while waiting for playlist."
@@ -125,7 +133,8 @@ def serve_hls_playlist(logical_channel_id: str) -> Response:
         config.log_message(msg, level="ERROR")
         abort(408, msg)
     finally:
-        handler.decrement_pending_stream_count()
+        if added_pending_stream:
+            handler.remove_pending_stream_count(logical_channel_id)
 
 
 @app.route('/hls/<string:logical_channel_id>/<path:segment_filename>')
@@ -137,11 +146,15 @@ def serve_hls_segment(logical_channel_id: str, segment_filename: str) -> Respons
         abort(400, msg)
     
     segment_path = hls_manager.get_hls_segment_path(logical_channel_id, segment_filename)
-    if not segment_path or not segment_path.is_file():
-        msg = f"[{request.method} {request.path}] HLS segment file not found: {segment_path}"
+    if not segment_path:
+        msg = f"[{request.method} {request.path}] HLS segment path not found for logical channel '{logical_channel_id}' and segment '{segment_filename}'."
         config.log_message(msg, level="ERROR")
         abort(404, msg)
-    
+    if not segment_path.is_file():
+        msg = f"[{request.method} {request.path}] HLS segment file not found for logical channel '{logical_channel_id}' and segment '{segment_path}'."
+        config.log_message(msg, level="ERROR")
+        abort(404, msg)
+
     return send_from_directory(str(segment_path.parent), segment_path.name, mimetype="video/mp2t")
 
 
@@ -557,7 +570,7 @@ def ui_logs_modal():
 def signal_handler(signum: int, _: object) -> None:
     """Handles signals"""
     config.log_message(f"Received {signal.Signals(signum).name}, exiting...", level="INFO")
-    hls_manager.stop_all_hls_ffmpeg_processes()
+    hls_manager.stop_hls_ffmpeg_processes()
     config.clean_up_hls_segments()
     sys.exit(0)
 
