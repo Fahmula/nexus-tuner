@@ -312,8 +312,6 @@ def ui_logical_channel_form(logical_channel_id: str | None = None):
                     flash(f"Skipping a mapping row with invalid priority data (service_id: '{service_id_str}').", "warning")
                     continue
             
-            print(f"Replacing all mappings with a new set of {len(final_mappings_to_save)} mappings.")
-            
             handler.update_mappings_for_logical_channel(logical_channel_id, final_mappings_to_save)
             flash(f"Channel '{lc_data['display_name']}' and its mappings were updated successfully.", "success")
             handler.reload_handler_config()
