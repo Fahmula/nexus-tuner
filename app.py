@@ -16,6 +16,7 @@ import time
 import math
 from datetime import datetime, UTC
 from collections import deque
+from typing import Any
 
 from flask import (Flask, Response, abort, flash, redirect, render_template,
                    request, send_from_directory, url_for)
@@ -60,7 +61,7 @@ def inject_now() -> dict[str, datetime]:
 # --- Core Streaming and Playlist Endpoints ---
 
 @app.route('/hls/<string:logical_channel_id>/playlist.m3u8')
-def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str | None = None) -> Response:
+def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str | None = None, sources: list[dict[str, Any]] | None = None) -> Response:
     """
     Serves the HLS playlist for a channel.
     
@@ -92,7 +93,7 @@ def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str | None
         if len(lc_id_processes):
             hls_key = lc_id_processes.popitem()[0]
         else:
-            res = CreateHLSStream(config, handler, hls_manager, logical_channel_id, logical_channel_name).result()
+            res = CreateHLSStream(config, handler, hls_manager, logical_channel_id, logical_channel_name, sources).result()
             if isinstance(res, tuple):
                 code = res[0]
                 msg = f"[{request.method} {request.path}] {res[1]}"
