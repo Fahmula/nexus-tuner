@@ -139,26 +139,37 @@ class QualityMonitor:
         self.config.log_message("Quality Monitor: Starting stream quality analysis cycle.", level="INFO")
         
         all_mappings = self.handler.channel_mappings_data_from_json.values()
-        target_service_ids = {mapping['source_service_id'] for mappings_list in all_mappings for mapping in mappings_list}
-
-        if not target_service_ids:
+        if not all_mappings:
             self.config.log_message("Quality Monitor: No mapped services to analyze.", level="INFO")
             return
 
         max_streams = sum(status["max"] for status in self.handler.get_provider_stream_status().values())
         acquire_timeout = max_streams * self.timeout  # If only 1 slot is available gives enough time
 
-        probe_tasks: list[tuple[str, str, ProviderName, float]] = []
-        for service_id in target_service_ids:
-            service_details = self.handler.discovered_source_services.get(service_id)
-            if service_details:
-                probe_tasks.append(
+        # Organize probe tasks by logical channel
+        probe_tasks: list[list[tuple[str, str, ProviderName, float]]] = []
+        seen_tasks: set[str] = set()
+        for services in all_mappings:
+            channel_tasks: list[tuple[str, str, ProviderName, float]] = []
+            for service in services:
+                service_id = service["source_service_id"]
+                service_details = self.handler.discovered_source_services.get(service_id)
+                if not service_details:
+                    continue
+                if service_id in seen_tasks:
+                    continue
+                seen_tasks.add(service_id)
+                channel_tasks.append(
                     (service_id, service_details['actual_stream_url'], service_details['provider_alias'], acquire_timeout)
                 )
-
+            if channel_tasks:
+                probe_tasks.append(channel_tasks)
+        
+        # Process one logical channel at a time
+        all_results: list[tuple[str, dict[str, str | float | int]]] = []
         with ThreadPoolExecutor(max_workers=max_streams) as executor:
-            results_iterator = executor.map(lambda p: self._run_single_probe(*p), probe_tasks)
-        all_results = list(results_iterator)
+            for channel_tasks in probe_tasks:
+                all_results.extend(executor.map(lambda p: self._run_single_probe(*p), channel_tasks))
 
         self.config.log_message(f"Quality Monitor: {len(all_results)} probes complete. Processing results.", level="DEBUG")
 

@@ -259,18 +259,23 @@ class CreateHLSStream:
         finally:
             self.hls_manager.hls_process_lock.release()
         provider_streams = self.handler.get_active_stream_status_for_logging(provider_alias)
-        quality_score = self._quality_scores[source["source_service_id"]]
-        self.config.log_message(f"[{provider_alias}:{provider_streams}] Claimed slot and started FFmpeg for '{hls_name}' [User Priority {source['priority']} - Quality Score {quality_score['total_score']:.2f} - Uptime {quality_score['uptime_100']*100:.2f}%] (PID: {process.pid}).", level="INFO")
+        quality_score = self._quality_scores.get(source["source_service_id"])
+        quality_msg = f"Score={quality_score['total_score']:.2f} | Uptime={quality_score['uptime_100']*100:.2f}%" if quality_score else "Score=Unknown | Uptime=Unknown"
+        self.config.log_message(f"[{provider_alias}:{provider_streams}] Claimed slot and started FFmpeg for '{hls_name}' [Priority={source['priority']} | {quality_msg}] (PID: {process.pid}).", level="INFO")
 
         try:
             end_time = time.monotonic() + self.config.ffmpeg_start_timeout
             while time.monotonic() < end_time:
-                if process.poll() is not None:
-                    raise ChildProcessError(f"FFmpeg process for {hls_name} (PID: {process.pid}) exited prematurely.")
                 if self._get_selected():
                     self._remove_active_hls_key(hls_key)
                     self.hls_manager.stop_hls_ffmpeg_process(hls_key, self.logical_channel_name)
                     return
+                if process.poll() is not None:
+                    if self._get_selected():
+                        self._remove_active_hls_key(hls_key)
+                        self.hls_manager.stop_hls_ffmpeg_process(hls_key, self.logical_channel_name)
+                        return
+                    raise ChildProcessError(f"FFmpeg process (PID: {process.pid}) exited prematurely.")
                 if any(channel_hls_dir.glob('*.ts')):
                     provider_streams = self.handler.get_active_stream_status_for_logging(provider_alias)
                     self.config.log_message(f"[{provider_alias}:{provider_streams}] FFmpeg for '{hls_name}' (PID: {process.pid}) is now healthy.", level="INFO")
