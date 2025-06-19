@@ -134,7 +134,7 @@ def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str | None
         abort(408, msg)
     finally:
         if added_pending_stream:
-            handler.remove_pending_stream_count(logical_channel_id)
+            handler.remove_pending_stream(logical_channel_id)
 
 
 @app.route('/hls/<string:logical_channel_id>/<path:segment_filename>')

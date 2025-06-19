@@ -15,6 +15,7 @@ class QualityMonitor:
         self.handler = handler
         self.interval: int = 300
         self.max_history_per_service: int = 10
+        self.max_history_for_statuses: int = 100
         self.timeout: int = 5
         
         self.thread = threading.Thread(target=self._run, daemon=True)
@@ -145,8 +146,7 @@ class QualityMonitor:
 
         for service_id, result in all_results:
             service_entry = quality_cache.setdefault(service_id, {
-            "probe_success_count": 0,
-            "probe_failure_count": 0,
+            "statuses": [],
             "widths": [],
             "heights": [],
             "bitrates": [],
@@ -155,12 +155,16 @@ class QualityMonitor:
 
             if result['status'] == 'offline':
                 self.config.log_message(f"Quality Monitor: Service {service_id} is offline: {result['reason']}", level="WARNING")
-                service_entry["probe_failure_count"] += 1
+                service_entry["statuses"].append("offline")
+                if len(service_entry["statuses"]) > self.max_history_for_statuses:
+                    service_entry["statuses"].pop(0)
                 continue
             elif result['status'] != 'online':
                 continue
 
-            service_entry["probe_success_count"] += 1
+            service_entry["statuses"].append("online")
+            if len(service_entry["statuses"]) > self.max_history_for_statuses:
+                service_entry["statuses"].pop(0)
             width = result.get("width", 0)
             if width:
                 service_entry["widths"].append(width)

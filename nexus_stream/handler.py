@@ -220,7 +220,7 @@ class ChannelHandler:
             self.pending_streams.add(logical_channel_id)
             return True
 
-    def remove_pending_stream_count(self, logical_channel_id: str) -> None:
+    def remove_pending_stream(self, logical_channel_id: str) -> None:
         with self.stream_lock:
             self.pending_streams.remove(logical_channel_id)
 
