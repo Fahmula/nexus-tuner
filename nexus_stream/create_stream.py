@@ -79,6 +79,7 @@ class CreateHLSStream:
             self._res = (404, f"Logical channel '{logical_channel_name}' ({logical_channel_id}) not found or has no sources.")
             return
         self._sources.sort(key=lambda x: x["priority"], reverse=True)
+        self._remaining_sources = self._sources.copy()
         self._active_hls_keys: list[HLSKey] = []
 
         self._results: list[tuple[HLSKey, dict[str, str]]] = []
@@ -105,8 +106,12 @@ class CreateHLSStream:
         with self._mutex:
             return self._selected
 
-    def _set_deadline(self, new_deadline: float) -> None:
+    def _set_deadline(self, source: dict[str, Any]) -> None:
         with self._mutex:
+            if source["priority"] <= min(s["priority"] for s in self._remaining_sources):
+                new_deadline = time.monotonic()
+            else:
+                new_deadline = time.monotonic() + 1
             self._deadline = min(self._deadline, new_deadline)
 
     def _set_result(self, hls_key: HLSKey, source: dict[str, str]) -> bool:
@@ -120,8 +125,10 @@ class CreateHLSStream:
         with self._mutex:
             self._active_hls_keys.remove(hls_key)
 
-    def _pop_source(self, provider_sources: list[dict[str, Any]]) -> dict[str, Any] | None:
+    def _pop_source(self, provider_sources: list[dict[str, Any]], current_source: dict[str, Any] | None) -> dict[str, Any] | None:
         with self._mutex:
+            if current_source:
+                self._remaining_sources.remove(current_source)
             if provider_sources:
                 return provider_sources.pop()
             return None
@@ -139,7 +146,7 @@ class CreateHLSStream:
 
     def _provider_worker_thread(self, provider_alias: ProviderName, provider_slots: ProviderSlots, provider_sources: list[dict[str, Any]]) -> None:
         """Tries all sources for a provider until a stream is created or all sources are exhausted."""
-        source = self._pop_source(provider_sources)
+        source = self._pop_source(provider_sources, None)
         if not source:
             return
         hls_key = create_hls_key(self.logical_channel_id, source["source_service_id"])
@@ -155,7 +162,7 @@ class CreateHLSStream:
                 self.hls_manager.hls_process_lock.release()
                 if not self._set_result(hls_key, source):
                     return  # Don't stop process since it's a long running process owned elsewhere
-                self._set_deadline(time.monotonic() + 1)
+                self._set_deadline(source)
                 return
 
             if not provider_slots.acquire(blocking=False):
@@ -169,10 +176,10 @@ class CreateHLSStream:
                 if not self._set_result(hls_key, source):
                     self.hls_manager.stop_hls_ffmpeg_process(hls_key, self.logical_channel_name)
                     return
-                self._set_deadline(time.monotonic() + 1)
+                self._set_deadline(source)
                 return
 
-            source = self._pop_source(provider_sources)
+            source = self._pop_source(provider_sources, source)
             if not source:
                 return
             hls_key = create_hls_key(self.logical_channel_id, source["source_service_id"])
