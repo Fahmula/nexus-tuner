@@ -9,18 +9,16 @@ from nexus_stream.handler import ChannelHandler
 from nexus_stream.slots import ProviderName
 
 
-# Constants
+# Try to have these add up to 100
 RESOLUTION_WEIGHT = 50
 BITRATE_WEIGHT = 30
-FRAMERATE_WEIGHT = 15
-RELIABILITY_WEIGHT = 5
-RES_THRESHOLD_2160 = 2160
-RES_THRESHOLD_1800 = 1800
-RES_THRESHOLD_1440 = 1440
-RES_THRESHOLD_1080 = 1080
-RES_THRESHOLD_720 = 720
-RES_THRESHOLD_480 = 480
-RES_THRESHOLD_360 = 360
+FRAMERATE_WEIGHT = 20
+RELIABILITY_WEIGHT = 0  # Since we test multiple streams at once when selecting, reliability is not critical
+
+# These cap the maximum values for each metric, any higher will return the same score
+# Essentially, values *_NORM+ will all return the weights above
+RESOLTUION_NORM = 2160
+BITRATE_NORM = 12_000_000
 FRAMERATE_NORM = 60
 
 
@@ -32,7 +30,7 @@ class QualityMonitor:
         self.max_history_per_service: int = 10
         self.max_history_for_statuses: int = 100
         self.timeout: int = 5
-        self.mutex = threading.Lock()
+        self._mutex = threading.Lock()
 
         self._quality_scores: dict[str, dict[str, float]] = {}
 
@@ -41,7 +39,7 @@ class QualityMonitor:
 
     def get_quality_scores(self) -> dict[str, dict[str, float]]:
         """Returns the current quality scores for all services."""
-        with self.mutex:
+        with self._mutex:
             return self._quality_scores
 
     def _run(self) -> NoReturn:
@@ -216,12 +214,10 @@ class QualityMonitor:
         Calculate quality scores for each source based on resolution, bitrate, framerate, and reliability.
         
         Quality metrics are scored and weighted using constants defined at the top of the file:
-        - Resolution (height): 0-RESOLUTION_WEIGHT points (normalized against max resolution)
-        - Bitrate: 0-BITRATE_WEIGHT points (normalized within resolution class)
+        - Resolution (height): 0-RESOLUTION_WEIGHT points (normalized against RESOLTUION_NORM)
+        - Bitrate: 0-BITRATE_WEIGHT points (normalized against BITRATE_NORM)
         - Framerate: 0-FRAMERATE_WEIGHT points (normalized against FRAMERATE_NORM)
         - Reliability: 0-RELIABILITY_WEIGHT points (percentage of time online)
-        
-        Resolution classes defined by RES_THRESHOLD_* constants
         
         Returns:
             Dictionary mapping source_service_id to dict containing:
@@ -235,11 +231,9 @@ class QualityMonitor:
         """
         self.config.log_message("Quality Monitor: Building quality scores from cache.", level="DEBUG")
         
-        source_scores: dict[str, dict[str, float]] = {}
-        all_heights: list[float] = []
-        all_bitrates: list[float] = []
-        all_framerates: list[float] = []
-        for service_id, cache_entry in quality_cache.items():            
+        final_scores: dict[str, dict[str, float]] = {}
+        for service_id, cache_entry in quality_cache.items():
+            # Calculate average metrics
             heights: list[float] = cache_entry["heights"]
             avg_height: float = sum(heights) / len(heights) if heights else 0.0
             
@@ -252,95 +246,34 @@ class QualityMonitor:
             statuses: list[str] = cache_entry["statuses"]
             reliability: float = sum(1 for s in statuses if s == "online") / len(statuses) if statuses else 0.0
             
+            # Calculate uptime metrics
             uptime_10: float = 0.0
             if statuses:
                 recent_10 = statuses[-10:] if len(statuses) >= 10 else statuses
                 uptime_10 = sum(1 for s in recent_10 if s == "online") / len(recent_10)
+            
             uptime_100: float = 0.0
             if statuses:
                 recent_100 = statuses[-100:] if len(statuses) >= 100 else statuses
                 uptime_100 = sum(1 for s in recent_100 if s == "online") / len(recent_100)
             
-            # Store metrics for normalization
-            all_heights.append(avg_height)
-            all_bitrates.append(avg_bitrate)
-            all_framerates.append(avg_framerate)
+            # Calculate normalized scores
+            height_score: float = RESOLUTION_WEIGHT * min(avg_height / float(RESOLTUION_NORM), 1.0)
+            bitrate_score: float = BITRATE_WEIGHT * min(avg_bitrate / float(BITRATE_NORM), 1.0)
+            framerate_score: float = FRAMERATE_WEIGHT * min(avg_framerate / float(FRAMERATE_NORM), 1.0)
+            reliability_score: float = RELIABILITY_WEIGHT * reliability
             
-            # Store metrics for scoring
-            source_scores[service_id] = {
-                "height": avg_height,
-                "bitrate": avg_bitrate,
-                "framerate": avg_framerate,
-                "reliability": reliability,
-                "uptime_10": uptime_10,
-                "uptime_100": uptime_100
-            }
-        
-        # Group sources by resolution classes for bitrate normalization
-        resolution_classes: dict[str, list[str]] = {}
-        for service_id, metrics in source_scores.items():
-            height = metrics["height"]
-            res_class: str
-            if height >= RES_THRESHOLD_2160:
-                res_class = "2160p+"
-            elif height >= RES_THRESHOLD_1800:
-                res_class = "1800p"
-            elif height >= RES_THRESHOLD_1440:
-                res_class = "1440p"
-            elif height >= RES_THRESHOLD_1080:
-                res_class = "1080p"
-            elif height >= RES_THRESHOLD_720:
-                res_class = "720p"
-            elif height >= RES_THRESHOLD_480:
-                res_class = "480p"
-            elif height >= RES_THRESHOLD_360:
-                res_class = "360p"
-            else:
-                res_class = "low"
-            
-            if res_class not in resolution_classes:
-                resolution_classes[res_class] = []
-            resolution_classes[res_class].append(service_id)
-        
-        # Normalize height against target max resolution (with RES_THRESHOLD_2160+ getting full points)
-        max_height: float = max(all_heights) if all_heights else float(RES_THRESHOLD_2160)
-        height_norm: float = max(max_height, float(RES_THRESHOLD_2160))
-        
-        final_scores: dict[str, dict[str, float]] = {}
-        for service_id, metrics in source_scores.items():
-            # Resolution score (0-RESOLUTION_WEIGHT points)
-            height_score: float = RESOLUTION_WEIGHT * min(metrics["height"] / height_norm, 1.0)
-            
-            # Bitrate score (0-BITRATE_WEIGHT points, normalized within resolution class)
-            # Find the max bitrate in this resolution class
-            res_class: str = ""
-            for class_name, ids in resolution_classes.items():
-                if service_id in ids:
-                    res_class = class_name
-                    break
-            
-            bitrate_score: float = 0.0
-            if res_class:
-                class_bitrates: list[float] = [source_scores[sid]["bitrate"] for sid in resolution_classes[res_class]]
-                max_class_bitrate: float = max(class_bitrates) if class_bitrates else 1.0
-                bitrate_score = BITRATE_WEIGHT * (metrics["bitrate"] / max_class_bitrate if max_class_bitrate > 0 else 0.0)
-            
-            # Framerate score (0-FRAMERATE_WEIGHT points)
-            framerate_score: float = FRAMERATE_WEIGHT * min(metrics["framerate"] / float(FRAMERATE_NORM), 1.0)
-            
-            # Reliability score (0-RELIABILITY_WEIGHT points)
-            reliability_score: float = RELIABILITY_WEIGHT * metrics["reliability"]
-            
+            # Store final scores
             final_scores[service_id] = {
                 "total_score": height_score + bitrate_score + framerate_score + reliability_score,
                 "resolution_score": height_score,
                 "bitrate_score": bitrate_score,
                 "framerate_score": framerate_score,
                 "reliability_score": reliability_score,
-                "uptime_10": metrics["uptime_10"],
-                "uptime_100": metrics["uptime_100"]
+                "uptime_10": uptime_10,
+                "uptime_100": uptime_100
             }
 
-        with self.mutex:
+        with self._mutex:
             self._quality_scores = final_scores
         self.config.log_message("Quality Monitor: Quality scores built successfully.", level="DEBUG")
