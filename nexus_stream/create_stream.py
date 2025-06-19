@@ -59,7 +59,7 @@ def create_hls_ffmpeg_command(hls_manager: HLSStreamManager, config: Config, inp
 
 class CreateHLSStream:
     """
-    A class to accquire and use resources for creating a stream.
+    A class to acquire and use resources for creating a stream.
     Multiple instances of this class can run in parallel regardless
     of input parameters.
     """
@@ -160,6 +160,7 @@ class CreateHLSStream:
 
             if not provider_slots.acquire(blocking=False):
                 self.hls_manager.hls_process_lock.release()
+                self.hls_manager.prune_hls_ffmpeg_processes()
                 time.sleep(0.01)
                 continue
             

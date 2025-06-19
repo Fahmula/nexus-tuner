@@ -10,7 +10,7 @@ from nexus_stream.slots import ProviderName
 # Constants
 
 class QualityMonitor:
-    def __init__(self, config: 'Config', handler: 'ChannelHandler') -> None:
+    def __init__(self, config: Config, handler: ChannelHandler) -> None:
         self.config = config
         self.handler = handler
         self.interval: int = 300

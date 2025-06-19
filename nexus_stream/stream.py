@@ -44,7 +44,7 @@ class HLSStreamManager:
     }
     Where `hls_key` is a unique identifier combining logical channel ID and source service ID.
     """
-    def __init__(self, config: 'Config', handler: 'ChannelHandler') -> None:
+    def __init__(self, config: Config, handler: ChannelHandler) -> None:
         """
         Initializes the HLSStreamManager.
 
@@ -129,6 +129,18 @@ class HLSStreamManager:
             
             for hls_key_to_stop, logical_channel_name in inactive_ids:
                 self.stop_hls_ffmpeg_process(hls_key_to_stop, logical_channel_name)
+
+    def prune_hls_ffmpeg_processes(self) -> None:
+        """Prunes HLS FFmpeg processes to free up resources."""
+        with self.hls_process_lock:
+            now = datetime.now()
+            inactive_ids = [
+                (hls_key, data['logical_channel_name']) for hls_key, data in self.hls_ffmpeg_processes.items()
+                if now - data['last_access'] > timedelta(seconds=3)
+            ]
+        for hls_key, logical_channel_name in inactive_ids:
+            self.config.log_message(f"Pruning inactive HLS stream '{logical_channel_name}' [{hls_key}].", level="INFO")
+            self.stop_hls_ffmpeg_process(hls_key, logical_channel_name)
 
     def stop_hls_ffmpeg_process(self, hls_key: 'HLSKey', logical_channel_name: str) -> None:
         """Public method to stop an HLS stream and its associated process."""

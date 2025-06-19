@@ -35,7 +35,7 @@ class ChannelHandler:
     - `client_facing_channels`: A dictionary mapping a logical_channel_id to a
       fully-processed logical channel, including its list of prioritized source URLs.
     """
-    def __init__(self, config: 'Config') -> None:
+    def __init__(self, config: Config) -> None:
         """
         Initializes the ChannelHandler.
 

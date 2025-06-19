@@ -21,7 +21,7 @@ class GhostSessionMonitor:
     corresponding active viewing session on any configured media server. This can
     happen if a client disconnects improperly.
     """
-    def __init__(self, config: 'Config', handler: 'ChannelHandler', hls_manager: 'HLSStreamManager') -> None:
+    def __init__(self, config: Config, handler: ChannelHandler, hls_manager: HLSStreamManager) -> None:
         """
         Initializes the monitor.
         
