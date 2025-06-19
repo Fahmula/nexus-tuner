@@ -140,6 +140,7 @@ def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str | None
 @app.route('/hls/<string:logical_channel_id>/<path:segment_filename>')
 def serve_hls_segment(logical_channel_id: str, segment_filename: str) -> Response:
     """Serves an HLS video segment (.ts file)."""
+    hls_manager.record_hls_access(logical_channel_id)
     if not segment_filename.endswith(".ts") or ".." in segment_filename:
         msg = f"[{request.method} {request.path}] Invalid segment filename: {segment_filename}"
         config.log_message(msg, level="ERROR")

@@ -85,11 +85,15 @@ class HLSStreamManager:
                 if data['logical_channel_id'] == logical_channel_id
             }
 
-    def record_hls_access(self, logical_channel_id: str) -> None:
-        """Updates the last access time for an active stream to keep it alive."""
+    def _record_hls_access(self, logical_channel_id: str) -> None:
+        """Updates the last access time for the HLS stream associated with the given logical channel ID."""
         with self.hls_process_lock:
             for hls_key in self.get_ffmpeg_processes_from_logical_id(logical_channel_id, long_term_only=False):
                 self.hls_ffmpeg_processes[hls_key]['last_access'] = datetime.now()
+
+    def record_hls_access(self, logical_channel_id: str) -> None:
+        """ Records access to an HLS stream by starting a background thread to update the last access time."""
+        threading.Thread(target=self._record_hls_access, args=(logical_channel_id,), daemon=True).start()
 
     def get_hls_playlist_path(self, hls_key: 'HLSKey') -> Path | None:
         """Returns the path to the HLS playlist if the stream is active."""
@@ -136,7 +140,7 @@ class HLSStreamManager:
             now = datetime.now()
             inactive_ids = [
                 (hls_key, data['logical_channel_name']) for hls_key, data in self.hls_ffmpeg_processes.items()
-                if now - data['last_access'] > timedelta(seconds=3)
+                if now - data['last_access'] > timedelta(seconds=self.config.hls_segment_duration)
             ]
         for hls_key, logical_channel_name in inactive_ids:
             self.config.log_message(f"Pruning inactive HLS stream '{logical_channel_name}' [{hls_key}].", level="INFO")
