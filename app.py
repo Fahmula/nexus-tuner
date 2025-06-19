@@ -60,7 +60,7 @@ def inject_now() -> dict[str, datetime]:
 # --- Core Streaming and Playlist Endpoints ---
 
 @app.route('/hls/<string:logical_channel_id>/playlist.m3u8')
-def serve_hls_playlist(logical_channel_id: str) -> Response:
+def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str | None = None) -> Response:
     """
     Serves the HLS playlist for a channel.
     
@@ -80,12 +80,13 @@ def serve_hls_playlist(logical_channel_id: str) -> Response:
             time.sleep(0.01)
         added_pending_stream = True
 
-        logical_channel = handler.get_logical_channel_by_id(logical_channel_id)
-        if not logical_channel:
-            msg = f"[{request.method} {request.path}] Logical channel {logical_channel_id} not found."
-            config.log_message(msg, level="ERROR")
-            abort(404, msg)
-        logical_channel_name = logical_channel['display_name']
+        if logical_channel_name is None:
+            logical_channel = handler.get_logical_channel_by_id(logical_channel_id)
+            if not logical_channel:
+                msg = f"[{request.method} {request.path}] Logical channel {logical_channel_id} not found."
+                config.log_message(msg, level="ERROR")
+                abort(404, msg)
+            logical_channel_name = str(logical_channel['display_name'])
 
         lc_id_processes = hls_manager.get_ffmpeg_processes_from_logical_id(logical_channel_id, long_term_only=True)
         if len(lc_id_processes):
