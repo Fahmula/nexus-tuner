@@ -65,50 +65,54 @@ class CreateHLSStream:
     of input parameters.
     """
 
-    def __init__(self, config: Config, handler: ChannelHandler, hls_manager: HLSStreamManager, quality_monitor: QualityMonitor, logical_channel_id: str, logical_channel_name: str, sources: list[dict[str, Any]] | None = None) -> None:
+    def __init__(self, config: Config, handler: ChannelHandler, hls_manager: HLSStreamManager, quality_monitor: QualityMonitor, logical_channel_id: str, logical_channel_name: str, input_sources: list[dict[str, Any]] | None = None) -> None:
         self.config = config
         self.handler = handler
         self.hls_manager = hls_manager
         self.quality_monitor = quality_monitor
-        self._res: HLSKey | tuple[int, str] = (500, "Stream not created yet")
-        self._result_mutex = threading.Lock()
-        self._mutex = threading.Lock()
+        self._res: HLSKey | tuple[int, str] = (500, "Stream not created yet")  # Final result of the stream, accessed via `result()`
+        self._result_mutex = threading.Lock()  # Used to block `result()` until the stream is created or an error occurs
+        self._mutex = threading.Lock()  # Used to synchronize access to shared state within this instance for all the threads
     
         self.logical_channel_id = logical_channel_id
         self.logical_channel_name = logical_channel_name
-        self._sources = self.handler.get_sources_for_client_facing_channel(logical_channel_id) if sources is None else deepcopy(sources)
-        if not self._sources:
+        sources = self.handler.get_sources_for_client_facing_channel(logical_channel_id) if input_sources is None else deepcopy(input_sources)
+        if not sources:
             self._res = (404, f"Logical channel '{logical_channel_name}' ({logical_channel_id}) not found or has no sources.")
             return
 
+        # Prioritize sources based on manual priority then quality score
+        # Convert these into a integer 0, 1, 2, ... relative to these sources
+        # Ones that are exactly equal to have the same number, lower is better
         self._quality_scores = self.quality_monitor.get_quality_scores()
-        self._source_priorities: dict[str, int] = {}
         prev_score = None
-        prev_priority = -1
-        source_scores = sorted(((source["priority"], -self._quality_scores.get(source["source_service_id"], {}).get("total_score", 0)), source["source_service_id"]) for source in self._sources)
+        curr_priority = -1
+        source_scores = sorted(((source["priority"], -self._quality_scores.get(source["source_service_id"], {}).get("total_score", 0)), source["source_service_id"]) for source in sources)
+        source_priorities: dict[str, int] = {}
         for score, source_service_id in source_scores:
             if score != prev_score:
                 prev_score = score
-                prev_priority += 1
-            self._source_priorities[source_service_id] = prev_priority
-        self._sources.sort(key=lambda x: self._source_priorities[x["source_service_id"]], reverse=True)
-        self._remaining_sources = self._sources.copy()
+                curr_priority += 1
+            source_priorities[source_service_id] = curr_priority
+        sources.sort(key=lambda x: source_priorities[x["source_service_id"]], reverse=True)  # Highest priority last since we use `pop()`
+        self._remaining_priorities = source_priorities.copy()  # To know if the stream we just found is the best one (exculding failed sources)
 
-        self._results: list[tuple[HLSKey, dict[str, Any]]] = []
-        self._selected = False
-        self._active_hls_keys: list[HLSKey] = []
-        self._deadline = time.monotonic() + 10
-        self._threads: list[threading.Thread] = []
-        self._provider_sources: dict[ProviderName, list[dict[str, Any]]] = {}
-        for source in self._sources:
-            self._provider_sources.setdefault(ProviderName(source["provider_alias"]), []).append(source)
+        self._results: list[tuple[HLSKey, dict[str, Any]]] = []  # All the successful streams that we will choose from for self._res
+        self._selected = False  # If a stream has been chosen, stop the other threads early
+        self._active_hls_keys: list[HLSKey] = []  # All the streams that we have started and will stop (exculding the one that is selected)
+        self._deadline = time.monotonic() + 10  # Maximum deadline for this entire process
+        self._threads: list[threading.Thread] = []  # Used to end before deadline if all sources are exhausted
+        all_provider_sources: dict[ProviderName, list[dict[str, Any]]] = {}
+        for source in sources:
+            all_provider_sources.setdefault(ProviderName(source["provider_alias"]), []).append(source)  # Sources maintain their order from above
 
-        for provider_alias, provider_sources in self._provider_sources.items():
+        # Create a thread for each provider to handle its sources
+        for provider_alias, provider_sources in all_provider_sources.items():
             thread = threading.Thread(target=self._create_provider_stream, args=(provider_alias, provider_sources))
             thread.start()
             self._threads.append(thread)
 
-        self._result_mutex.acquire()
+        self._result_mutex.acquire()  # Block `result()` until we finish processing results
         threading.Thread(target=self._process_results, daemon=True).start()
 
     def _get_deadline(self) -> float:
@@ -121,8 +125,8 @@ class CreateHLSStream:
 
     def _set_deadline(self, source: dict[str, Any]) -> None:
         with self._mutex:
-            if self._source_priorities[source["source_service_id"]] <= min(self._source_priorities.values()):
-                new_deadline = time.monotonic()
+            if self._remaining_priorities[source["source_service_id"]] <= min(self._remaining_priorities.values()):
+                new_deadline = time.monotonic()  # Found best remaining source, no need to wait
             else:
                 new_deadline = time.monotonic() + 1
             self._deadline = min(self._deadline, new_deadline)
@@ -130,7 +134,7 @@ class CreateHLSStream:
     def _set_result(self, hls_key: HLSKey, source: dict[str, Any]) -> bool:
         with self._mutex:
             if self._selected:
-                return False
+                return False  # Don't bother setting result if we already selected a stream
             self._results.append((hls_key, source))
             return True
 
@@ -140,8 +144,8 @@ class CreateHLSStream:
 
     def _pop_source(self, provider_sources: list[dict[str, Any]], current_source: dict[str, Any] | None) -> dict[str, Any] | None:
         with self._mutex:
-            if current_source:
-                self._remaining_sources.remove(current_source)
+            if current_source:  # This source has failed, update what the best remaining source is
+                self._remaining_priorities.pop(current_source["source_service_id"])
             if provider_sources:
                 return provider_sources.pop()
             return None
@@ -152,6 +156,9 @@ class CreateHLSStream:
         if not provider_slots:
             self.config.log_message(f"Provider '{provider_alias}' does not exist.", level="CRITICAL")
             return
+
+        # We create as many threads as the maximum number of streams allowed for this provider
+        # Each thread will only occupy the remaining slots accurately, dynamically adjusting if resources are freed elsewhere
         max_streams = self.handler.get_provider_stream_status()[provider_alias]["max"]
         with ThreadPoolExecutor(max_workers=max_streams) as executor:
             for _ in range(max_streams):
@@ -166,21 +173,22 @@ class CreateHLSStream:
         while time.monotonic() < self._get_deadline():
             if self._get_selected():
                 return
-            self.hls_manager.hls_process_lock.acquire()
-            if hls_key in self.hls_manager.hls_ffmpeg_processes and self.hls_manager.hls_ffmpeg_processes[hls_key]["process"].poll() is None:
+            self.hls_manager.hls_process_lock.acquire()  # We don't want to release this lock too early since we need to reacquire it to create a stream
+            if hls_key in self.hls_manager.hls_ffmpeg_processes and self.hls_manager.hls_ffmpeg_processes[hls_key]["process"].poll() is None:  # Process already exists
                 if not self.hls_manager.hls_ffmpeg_processes[hls_key]["is_long_term"]:
                     self.hls_manager.hls_process_lock.release()
                     time.sleep(0.01)
-                    continue
+                    continue  # Short term streams can be killed at any time
                 self.hls_manager.hls_process_lock.release()
                 if not self._set_result(hls_key, source):
                     return  # Don't stop process since it's a long running process owned elsewhere
                 self._set_deadline(source)
                 return
 
+            # This ensure we are respecting the global available slots, it is released by `self._create_stream()`
             if not provider_slots.acquire(blocking=False):
                 self.hls_manager.hls_process_lock.release()
-                self.hls_manager.prune_hls_ffmpeg_processes()
+                self.hls_manager.prune_hls_ffmpeg_processes()  # If any inactive streams, prune them so we can start this. Allows a user to switch channels.
                 time.sleep(0.01)
                 continue
             
@@ -192,6 +200,7 @@ class CreateHLSStream:
                 self._set_deadline(source)
                 return
 
+            # Source failed, try the next one
             source = self._pop_source(provider_sources, source)
             if not source:
                 return
@@ -258,14 +267,14 @@ class CreateHLSStream:
             while time.monotonic() < end_time:
                 if process.poll() is not None:
                     raise ChildProcessError(f"FFmpeg process for {hls_name} (PID: {process.pid}) exited prematurely.")
-                if any(channel_hls_dir.glob('*.ts')):
-                    provider_streams = self.handler.get_active_stream_status_for_logging(provider_alias)
-                    self.config.log_message(f"[{provider_alias}:{provider_streams}] FFmpeg for '{hls_name}' (PID: {process.pid}) is now healthy.", level="INFO")
-                    return hls_key
                 if self._get_selected():
                     self._remove_active_hls_key(hls_key)
                     self.hls_manager.stop_hls_ffmpeg_process(hls_key, self.logical_channel_name)
                     return
+                if any(channel_hls_dir.glob('*.ts')):
+                    provider_streams = self.handler.get_active_stream_status_for_logging(provider_alias)
+                    self.config.log_message(f"[{provider_alias}:{provider_streams}] FFmpeg for '{hls_name}' (PID: {process.pid}) is now healthy.", level="INFO")
+                    return hls_key
                 time.sleep(STARTUP_POLL_INTERVAL)
             
             raise TimeoutError(f"FFmpeg for {hls_name} (PID: {process.pid}) timed out waiting for segments.")
@@ -289,13 +298,13 @@ class CreateHLSStream:
                 if not self._results:
                     self._res = (503, f"Failed to start HLS stream for '{self.logical_channel_name}' from any source.")
                     return
-                hls_key = min(self._results, key=lambda x: self._source_priorities[x[1]["source_service_id"]])[0]
+                hls_key = min(self._results, key=lambda x: self._remaining_priorities[x[1]["source_service_id"]])[0]
+                self._res = hls_key
                 self._selected = True
+                self.hls_manager.set_ffmpeg_process_long_term(hls_key, True)
                 threading.Thread(target=self.hls_manager.stop_hls_ffmpeg_processes, args=([k for k in self._active_hls_keys if k != hls_key],), daemon=True).start()
 
             self.config.log_message(f"Selected source {hls_key} for '{self.logical_channel_name}'.", level="INFO")
-            self.hls_manager.set_ffmpeg_process_long_term(hls_key, True)
-            self._res = hls_key
         finally:
             self._result_mutex.release()
 
