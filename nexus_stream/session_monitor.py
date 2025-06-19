@@ -3,8 +3,9 @@ import time
 import requests
 from typing import Set
 from nexus_stream.config import Config
+from nexus_stream.create_stream import HLSKey
 from nexus_stream.handler import ChannelHandler
-from nexus_stream.stream import HLSKey, HLSStreamManager
+from nexus_stream.stream import HLSStreamManager
 
 
 # --- Constants ---

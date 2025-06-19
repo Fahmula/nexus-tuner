@@ -1,24 +1,21 @@
-from concurrent.futures import ThreadPoolExecutor
-from copy import deepcopy
 import subprocess
 import threading
 import time
 import shutil
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Any, NewType
+from typing import TYPE_CHECKING, Any, Iterable
 from nexus_stream.config import Config
 from nexus_stream.handler import ChannelHandler
-from nexus_stream.slots import ProviderName, ProviderSlots
+from nexus_stream.slots import ProviderName
 
+if TYPE_CHECKING:
+    from nexus_stream.create_stream import HLSKey
 
-HLSKey = NewType("HLSKey", str)
-HLSName = NewType("HLSName", str)
 
 # --- Constants ---
 FFMPEG_TERMINATE_TIMEOUT = 5  # seconds
 CLEANUP_POLL_INTERVAL = 5     # seconds
-STARTUP_POLL_INTERVAL = 0.2   # seconds
 
 
 class HLSStreamManager:
@@ -57,7 +54,7 @@ class HLSStreamManager:
         """
         self.config = config
         self.handler = handler
-        self.hls_ffmpeg_processes: dict[HLSKey, dict[str, Any]] = {}
+        self.hls_ffmpeg_processes: dict['HLSKey', dict[str, Any]] = {}
         self.hls_process_lock = threading.RLock()
 
         self.hls_base_dir: Path = self.config.hls_base_segment_dir
@@ -66,47 +63,13 @@ class HLSStreamManager:
         self.cleanup_thread = threading.Thread(target=self._hls_cleanup_loop, daemon=True)
         self.cleanup_thread.start()
 
-    def _create_hls_key(self, logical_channel_id: str, source_service_id: str) -> HLSKey:
-        """Generates a unique key for the HLS stream."""
-        return HLSKey(f"{logical_channel_id}_{source_service_id}")
-
-    def _create_hls_name(self, logical_channel_name: str, source_service_id: str) -> HLSName:
-        """Generates a unique name for the HLS stream."""
-        return HLSName(f"{logical_channel_name}_{source_service_id}")
-
-    def _get_hls_ffmpeg_command(self, input_url: str, hls_key: HLSKey) -> tuple[list[str], Path]:
-        """Constructs the FFmpeg command list and creates the necessary HLS directory."""
-        channel_hls_dir = self.hls_base_dir / self.config.get_fs_safe_alphanum(hls_key)
-        channel_hls_dir.mkdir(parents=True, exist_ok=True)
-        
-        playlist_path = channel_hls_dir / "playlist.m3u8"
-        segment_filename = channel_hls_dir / "segment_%05d.ts"
-        
-        command = [
-            self.config.ffmpeg_path,
-            "-hide_banner", "-loglevel", "info",
-            "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "4",
-            "-reconnect_on_network_error", "1", "-reconnect_on_http_error", "5xx",
-            "-user_agent", "NexusStream/1.0 (FFMPEG-HLS)",
-            "-i", input_url,
-            "-codec", "copy",
-            "-map", "0:v:0?", "-map", "0:a:0?",
-            "-f", "hls",
-            "-hls_time", str(self.config.hls_segment_duration),
-            "-hls_list_size", str(self.config.hls_playlist_length),
-            "-hls_flags", "delete_segments+omit_endlist+program_date_time",
-            "-hls_segment_filename", str(segment_filename),
-            str(playlist_path)
-        ]
-        return command, channel_hls_dir
-
-    def set_ffmpeg_process_long_term(self, hls_key: HLSKey, long_term: bool) -> None:
+    def set_ffmpeg_process_long_term(self, hls_key: 'HLSKey', long_term: bool) -> None:
         """Sets if an FFmpeg process is long term for a given HLS key."""
         with self.hls_process_lock:
             if hls_key in self.hls_ffmpeg_processes:
                 self.hls_ffmpeg_processes[hls_key]['is_long_term'] = long_term
 
-    def get_ffmpeg_processes_from_logical_id(self, logical_channel_id: str, *, long_term_only: bool) -> dict[HLSKey, dict[str, Any]]:
+    def get_ffmpeg_processes_from_logical_id(self, logical_channel_id: str, *, long_term_only: bool) -> dict['HLSKey', dict[str, Any]]:
         """
         Returns a dictionary of all FFmpeg processes associated with the given logical channel ID.
         This is useful for checking if a stream is already running.
@@ -122,188 +85,13 @@ class HLSStreamManager:
                 if data['logical_channel_id'] == logical_channel_id
             }
 
-    def create_hls_stream(self, logical_channel_id: str, logical_channel_name: str, sources: list[dict[str, Any]] | None = None) -> HLSKey | tuple[int, str]:
-        """
-        Creates an HLS stream for the given logical channel ID and name with all providers simultaneously.
-        Returns the HLSKey if successful, or an error tuple (status_code, message) if not.
-        """
-        if sources is None:
-            sources_to_try = self.handler.get_sources_for_client_facing_channel(logical_channel_id)
-        else:
-            sources_to_try = deepcopy(sources)
-        if not sources_to_try:
-            return 404, f"Logical channel '{logical_channel_name}' ({logical_channel_id}) not found or has no sources."
-
-        provider_sources: dict[ProviderName, list[dict[str, Any]]] = {}
-        for source in sources_to_try:
-            provider_sources.setdefault(ProviderName(source['provider_alias']), []).append(source)
-
-        results: list[tuple[HLSKey, dict[str, str]]] = []
-        selected: list[bool] = [False]
-        mutex = threading.Lock()
-        deadlines = [time.monotonic() + 10]
-        threads: list[threading.Thread] = []
-        for provider_alias, sources in provider_sources.items():
-            sources.sort(key=lambda x: x["priority"], reverse=True)
-            threads.append(threading.Thread(target=self._create_provider_streams, args=(provider_alias, logical_channel_id, logical_channel_name, sources, results, selected, deadlines, mutex), daemon=True))
-            threads[-1].start()
-        while time.monotonic() < self._get_deadline(deadlines, mutex):
-            if any(thread.is_alive() for thread in threads):
-                time.sleep(0.1)
-            else:
-                break
-        with mutex:
-            if not results:
-                return 503, f"Failed to start HLS stream for '{logical_channel_name}' from any source."
-            hls_key = min(results, key=lambda x: x[1]["priority"])[0]
-            selected[0] = True
-            all_keys = [self._create_hls_key(logical_channel_id, source['source_service_id']) for source in sources_to_try]
-            threading.Thread(target=self.stop_hls_ffmpeg_processes, args=([key for key in all_keys if key != hls_key],), daemon=True).start()
-        self.config.log_message(f"Selected source {hls_key} for '{logical_channel_name}'.", level="INFO")
-        self.set_ffmpeg_process_long_term(hls_key, True)
-        return hls_key
-
-    def _create_provider_streams(self, provider_alias: ProviderName, logical_channel_id: str, logical_channel_name: str, sources: list[dict[str, Any]], results: list[tuple[HLSKey, dict[str, str]]], selected: list[bool], deadlines: list[float], mutex: threading.Lock) -> None:
-        """Creates HLS streams for a specific provider with all sources simulatenously."""
-        provider_slots = self.handler.slots.get(provider_alias)
-        if not provider_slots:
-            self.config.log_message(f"Provider '{provider_alias}' does not exist.", level="CRITICAL")
-            return
-        max_streams = self.handler.get_provider_stream_status()[provider_alias]["max"]
-        with ThreadPoolExecutor(max_workers=max_streams) as executor:
-            for _ in range(max_streams):
-                executor.submit(self._provider_worker_thread, provider_slots, provider_alias, logical_channel_id, logical_channel_name, sources, results, selected, deadlines, mutex)
-
-    def _provider_worker_thread(self, provider_slots: ProviderSlots, provider_alias: ProviderName, logical_channel_id: str, logical_channel_name: str, sources: list[dict[str, Any]], results: list[tuple[HLSKey, dict[str, str]]], selected: list[bool], deadlines: list[float], mutex: threading.Lock) -> None:
-        """Creates a single HLS stream for each provider source as resources become available until success, dealine, or no more sources."""
-        source = self._pop_source(sources, mutex)
-        if not source:
-            return
-        hls_key = self._create_hls_key(logical_channel_id, source['source_service_id'])
-        while time.monotonic() < self._get_deadline(deadlines, mutex):
-            if self._get_selected(selected, mutex):
-                return
-            self.hls_process_lock.acquire()
-            if hls_key in self.hls_ffmpeg_processes and self.hls_ffmpeg_processes[hls_key]['process'].poll() is None:
-                if not self.hls_ffmpeg_processes[hls_key]['is_long_term']:
-                    self.hls_process_lock.release()
-                    time.sleep(0.01)
-                    continue
-                self.hls_process_lock.release()
-                if not self._set_result(results, hls_key, source, selected, mutex):
-                    return  # Don't stop since it's a long running process owned elsewhere
-                self._set_deadline(deadlines, time.monotonic() + 1, mutex)
-                return
-
-            if not provider_slots.acquire(blocking=False):
-                self.hls_process_lock.release()
-                time.sleep(0.01)
-                continue
-            
-            hls_key = self._create_single_stream(provider_slots, provider_alias, logical_channel_id, logical_channel_name, source['source_service_id'], source['actual_stream_url'], selected, mutex)
-            if hls_key:
-                if not self._set_result(results, hls_key, source, selected, mutex):
-                    self.stop_hls_ffmpeg_process(hls_key, logical_channel_name)
-                    return
-                self._set_deadline(deadlines, time.monotonic() + 1, mutex)
-                return
-
-            source = self._pop_source(sources, mutex)
-            if not source:
-                return
-            hls_key = self._create_hls_key(logical_channel_id, source['source_service_id'])
-
-    def _get_deadline(self, deadlines: list[float], mutex: threading.Lock) -> float:
-        with mutex:
-            return min(deadlines)
-
-    def _get_selected(self, selected: list[bool], mutex: threading.Lock) -> bool:
-        with mutex:
-            return selected[0]
-
-    def _set_deadline(self, deadlines: list[float], new_deadline: float, mutex: threading.Lock) -> None:
-        with mutex:
-            deadlines[0] = min(deadlines[0], new_deadline)
-
-    def _pop_source(self, sources: list[dict[str, Any]], mutex: threading.Lock) -> dict[str, Any] | None:
-        with mutex:
-            if sources:
-                return sources.pop()
-            return None
-
-    def _set_result(self, results: list[tuple[HLSKey, dict[str, str]]], hls_key: HLSKey, source: dict[str, str], selected: list[bool], mutex: threading.Lock) -> bool:
-        with mutex:
-            if selected[0]:
-                return False
-            results.append((hls_key, source))
-            return True
-
-    def _create_single_stream(self, provider_slots: ProviderSlots, provider_alias: ProviderName, logical_channel_id: str, logical_channel_name: str, source_service_id: str, actual_url: str, selected: list[bool], mutex: threading.Lock) -> HLSKey | None:
-        """
-        Ensures an HLS stream is running using a high-performance, concurrent-startup safe method.
-        It allows multiple new streams to start up in parallel without blocking each other.
-        Returns the HLSKey if successful, or None if it fails to start.
-        """
-        try:
-            hls_key = self._create_hls_key(logical_channel_id, source_service_id)
-            hls_name = self._create_hls_name(logical_channel_id, source_service_id)
-
-            try:
-                command, channel_hls_dir = self._get_hls_ffmpeg_command(actual_url, hls_key)
-                log_path = self.config.get_ffmpeg_log_path(hls_name)
-                stderr_log_file = open(log_path, 'a', encoding='utf-8')
-                if self._get_selected(selected, mutex):
-                    provider_slots.release()
-                    return
-                process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=stderr_log_file)
-            except Exception as e:
-                self.config.log_message(f"Immediate Popen failure for {hls_name}: {e}", level="CRITICAL")
-                provider_slots.release()
-                return
-
-            self.hls_ffmpeg_processes[hls_key] = {
-                'process': process,
-                'is_long_term': False,
-                'provider_alias': provider_alias,
-                'logical_channel_id': logical_channel_id,
-                'source_service_id': source_service_id,
-                'logical_channel_name': logical_channel_name,
-                'channel_hls_dir': channel_hls_dir,
-                'last_access': datetime.now(),
-                'stderr_log_file_obj': stderr_log_file
-            }
-        finally:
-            self.hls_process_lock.release()
-        self.config.log_message(f"Claimed slot and started FFmpeg for '{hls_name}' (PID: {process.pid}).", level="INFO")
-
-        try:
-            end_time = time.monotonic() + self.config.ffmpeg_start_timeout
-            while time.monotonic() < end_time:
-                if process.poll() is not None:
-                    raise ChildProcessError(f"FFmpeg process for {hls_name} (PID: {process.pid}) exited prematurely.")
-                if any(channel_hls_dir.glob('*.ts')):
-                    provider_streams = self.handler.get_active_stream_status_for_logging(provider_alias)
-                    self.config.log_message(f"[{provider_alias}:{provider_streams}] FFmpeg for '{hls_name}' (PID: {process.pid}) is now healthy.", level="INFO")
-                    return hls_key
-                if self._get_selected(selected, mutex):
-                    self.stop_hls_ffmpeg_process(hls_key, logical_channel_name)
-                    return
-                time.sleep(STARTUP_POLL_INTERVAL)
-            
-            raise TimeoutError(f"FFmpeg for {hls_name} (PID: {process.pid}) timed out waiting for segments.")
-
-        except (ChildProcessError, TimeoutError) as e:
-            self.config.log_message(f"Validation failed for {hls_name}: {e}. Cleaning up.", level="ERROR")
-            self.stop_hls_ffmpeg_process(hls_key, logical_channel_name)
-            return
-
     def record_hls_access(self, logical_channel_id: str) -> None:
         """Updates the last access time for an active stream to keep it alive."""
         with self.hls_process_lock:
             for hls_key in self.get_ffmpeg_processes_from_logical_id(logical_channel_id, long_term_only=False):
                 self.hls_ffmpeg_processes[hls_key]['last_access'] = datetime.now()
 
-    def get_hls_playlist_path(self, hls_key: HLSKey) -> Path | None:
+    def get_hls_playlist_path(self, hls_key: 'HLSKey') -> Path | None:
         """Returns the path to the HLS playlist if the stream is active."""
         with self.hls_process_lock:
             if hls_key in self.hls_ffmpeg_processes:
@@ -326,7 +114,7 @@ class HLSStreamManager:
         self.config.log_message("HLS FFmpeg cleanup thread started.", level="INFO")
         while True:
             time.sleep(CLEANUP_POLL_INTERVAL)
-            inactive_ids: set[tuple[HLSKey, str]] = set()
+            inactive_ids: set[tuple['HLSKey', str]] = set()
             with self.hls_process_lock:
                 now = datetime.now()
                 for hls_key, data in self.hls_ffmpeg_processes.items():
@@ -342,7 +130,7 @@ class HLSStreamManager:
             for hls_key_to_stop, logical_channel_name in inactive_ids:
                 self.stop_hls_ffmpeg_process(hls_key_to_stop, logical_channel_name)
 
-    def stop_hls_ffmpeg_process(self, hls_key: HLSKey, logical_channel_name: str) -> None:
+    def stop_hls_ffmpeg_process(self, hls_key: 'HLSKey', logical_channel_name: str) -> None:
         """Public method to stop an HLS stream and its associated process."""
         with self.hls_process_lock:
             if (data_to_cleanup := self.hls_ffmpeg_processes.pop(hls_key, None)) is None:
@@ -361,7 +149,7 @@ class HLSStreamManager:
                 self.config.log_message(f"Killing unresponsive FFmpeg process for '{logical_channel_name}' [{hls_key}].", level="WARN")
                 process.kill()
         
-        if log_file and not log_file.closed:
+        if log_file:
             try:
                 log_file.close()
             except Exception as e:
@@ -380,7 +168,7 @@ class HLSStreamManager:
 
         self.config.log_message(f"[{provider}:{provider_streams}] Successfully stopped and cleaned up all resources for '{logical_channel_name}' [{hls_key}].", level="INFO")
 
-    def stop_hls_ffmpeg_processes(self, hls_keys: list[HLSKey] | None = None) -> None:
+    def stop_hls_ffmpeg_processes(self, hls_keys: Iterable['HLSKey'] | None = None) -> None:
         """Stops all active HLS FFmpeg processes and cleans up resources."""
         if hls_keys is None:
             msg = "Stopping all active HLS FFmpeg processes:"

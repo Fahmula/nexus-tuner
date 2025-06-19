@@ -12,21 +12,19 @@ HLSStreamManager, GhostSessionMonitor) and defines all the web routes for:
 import os
 import signal
 import sys
-import threading
 import time
 import math
 from datetime import datetime, UTC
 from collections import deque
-from typing import Any
 
 from flask import (Flask, Response, abort, flash, redirect, render_template,
                    request, send_from_directory, url_for)
 
 from nexus_stream.config import Config
+from nexus_stream.create_stream import CreateHLSStream
 from nexus_stream.handler import ChannelHandler
 from nexus_stream.quality_monitor import QualityMonitor
 from nexus_stream.session_monitor import GhostSessionMonitor
-from nexus_stream.slots import ProviderName
 from nexus_stream.stream import HLSStreamManager
 
 # --- Constants ---
@@ -93,7 +91,7 @@ def serve_hls_playlist(logical_channel_id: str) -> Response:
         if len(lc_id_processes):
             hls_key = lc_id_processes.popitem()[0]
         else:
-            res = hls_manager.create_hls_stream(logical_channel_id, logical_channel_name)
+            res = CreateHLSStream(config, handler, hls_manager, logical_channel_id, logical_channel_name).result()
             if isinstance(res, tuple):
                 code = res[0]
                 msg = f"[{request.method} {request.path}] {res[1]}"
