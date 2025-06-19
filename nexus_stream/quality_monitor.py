@@ -21,15 +21,16 @@ RESOLTUION_NORM = 2160
 BITRATE_NORM = 12_000_000
 FRAMERATE_NORM = 60
 
+QUALITY_MONITOR_INTERVAL = 300
+QUALITY_MONITOR_TIMEOUT = 5
+MAX_HISTORY_PER_SERVICE = 10
+MAX_HISTORY_FOR_STATUSES = 100
+
 
 class QualityMonitor:
     def __init__(self, config: Config, handler: ChannelHandler) -> None:
         self.config = config
         self.handler = handler
-        self.interval: int = 300
-        self.max_history_per_service: int = 10
-        self.max_history_for_statuses: int = 100
-        self.timeout: int = 5
         self._mutex = threading.Lock()
 
         self._quality_scores: dict[str, dict[str, float]] = {}
@@ -48,16 +49,16 @@ class QualityMonitor:
         self.config.log_message("Quality Monitor thread started.", level="INFO")
 
         while True:
-            time.sleep(self.interval)
+            time.sleep(QUALITY_MONITOR_INTERVAL)
             try:
                 self._analyze_mapped_services()
             except Exception as e:
                 self.config.log_message(f"Quality Monitor: Unhandled exception in main check loop: {e}", level="CRITICAL")
-            self.config.log_message(f"Quality Monitor: Cycle complete. Sleeping for {self.interval} seconds.", level="INFO")
+            self.config.log_message(f"Quality Monitor: Cycle complete. Sleeping for {QUALITY_MONITOR_INTERVAL} seconds.", level="INFO")
 
     def _get_stream_info(self, service_url: str) -> dict[str, str | float | int] | None:
         """Extracts stream information such as bitrate, resolution, and frame rate using ffprobe."""
-        duration = self.timeout  # Doesn't seem to have an effect
+        duration = QUALITY_MONITOR_TIMEOUT  # Doesn't seem to have an effect
         cmd = [
             "ffprobe", "-v", "error", "-select_streams", "v:0",
             "-show_entries", "stream=width,height,r_frame_rate",
@@ -144,7 +145,7 @@ class QualityMonitor:
             return
 
         max_streams = sum(status["max"] for status in self.handler.get_provider_stream_status().values())
-        acquire_timeout = max_streams * self.timeout  # If only 1 slot is available gives enough time
+        acquire_timeout = max_streams * QUALITY_MONITOR_TIMEOUT  # If only 1 slot is available gives enough time
 
         # Organize probe tasks by logical channel
         probe_tasks: list[list[tuple[str, str, ProviderName, float]]] = []
@@ -185,36 +186,36 @@ class QualityMonitor:
             })
 
             if result['status'] == 'offline':
-                self.config.log_message(f"Quality Monitor: Service {service_id} is offline: {result['reason']}", level="WARNING")
+                self.config.log_message(f"Quality Monitor: Service {service_id} is offline: {result['reason']}", level="WARN")
                 service_entry["statuses"].append("offline")
-                if len(service_entry["statuses"]) > self.max_history_for_statuses:
+                if len(service_entry["statuses"]) > MAX_HISTORY_FOR_STATUSES:
                     service_entry["statuses"].pop(0)
                 continue
             elif result['status'] != 'online':
                 continue
 
             service_entry["statuses"].append("online")
-            if len(service_entry["statuses"]) > self.max_history_for_statuses:
+            if len(service_entry["statuses"]) > MAX_HISTORY_FOR_STATUSES:
                 service_entry["statuses"].pop(0)
             width = result.get("width", 0)
             if width:
                 service_entry["widths"].append(width)
-                if len(service_entry["widths"]) > self.max_history_per_service:
+                if len(service_entry["widths"]) > MAX_HISTORY_PER_SERVICE:
                     service_entry["widths"].pop(0)
             height = result.get("height", 0)
             if height:
                 service_entry["heights"].append(height)
-                if len(service_entry["heights"]) > self.max_history_per_service:
+                if len(service_entry["heights"]) > MAX_HISTORY_PER_SERVICE:
                     service_entry["heights"].pop(0)
             bitrate = result.get("bitrate", 0)
             if bitrate:
                 service_entry["bitrates"].append(bitrate)
-                if len(service_entry["bitrates"]) > self.max_history_per_service:
+                if len(service_entry["bitrates"]) > MAX_HISTORY_PER_SERVICE:
                     service_entry["bitrates"].pop(0)
             framerate = result.get("framerate", 0)
             if framerate:
                 service_entry["framerates"].append(framerate)
-                if len(service_entry["framerates"]) > self.max_history_per_service:
+                if len(service_entry["framerates"]) > MAX_HISTORY_PER_SERVICE:
                     service_entry["framerates"].pop(0)
 
         self.config.save_service_quality_cache(quality_cache)

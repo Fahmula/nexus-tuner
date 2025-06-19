@@ -37,7 +37,6 @@ class GhostSessionMonitor:
         self.handler = handler
         self.hls_manager = hls_manager
         
-        self.interval: int = self.config.ghost_check_interval
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.display_name_to_lc_id_map: dict[str, str] = {}
 
@@ -78,7 +77,7 @@ class GhostSessionMonitor:
         
         url = f"{base_url.rstrip('/')}/emby/Sessions"
         headers = {'Content-Type': 'application/json'}
-        params = {"api_key": api_key, "ActiveWithinSeconds": self.interval + SESSION_ACTIVE_BUFFER_SECONDS}
+        params = {"api_key": api_key, "ActiveWithinSeconds": self.config.ghost_check_interval + SESSION_ACTIVE_BUFFER_SECONDS}
         
         try:
             response = requests.get(url, params=params, headers=headers, timeout=MEDIA_SERVER_API_TIMEOUT)
@@ -156,4 +155,4 @@ class GhostSessionMonitor:
             except Exception as e:
                 # Top-level catch to ensure the monitoring thread never dies.
                 self.config.log_message(f"Monitor: Unhandled exception in main check loop: {e}", level="CRITICAL")
-            time.sleep(self.interval)
+            time.sleep(self.config.ghost_check_interval)

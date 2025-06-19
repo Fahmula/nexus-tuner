@@ -43,8 +43,7 @@ class ChannelHandler:
             config: The main application Config object.
         """
         self.config = config
-        self.nexus_url = self.config.nexus_url
-        self.stream_lock = threading.RLock()
+        self._mutex = threading.RLock()
 
         # Data loaded from configuration files
         self.providers_data_from_json: dict[str, Any] = {}
@@ -135,7 +134,7 @@ class ChannelHandler:
             
             parsed_channels = self._parse_source_m3u_lines(response.text.splitlines())
 
-            with self.stream_lock:
+            with self._mutex:
                 for p_channel in parsed_channels:
                     service_id = self._generate_source_service_id(provider_alias, p_channel["actual_stream_url"])
                     self.discovered_source_services[service_id] = {
@@ -210,24 +209,24 @@ class ChannelHandler:
         self.config.log_message(f"Built {len(self.client_facing_channels)} client-facing channels.", level="INFO")
 
     def get_pending_stream_count(self) -> int:
-        with self.stream_lock:
+        with self._mutex:
             return len(self.pending_streams)
 
     def add_pending_stream(self, logical_channel_id: str) -> bool:
-        with self.stream_lock:
+        with self._mutex:
             if logical_channel_id in self.pending_streams:
                 return False
             self.pending_streams.add(logical_channel_id)
             return True
 
     def remove_pending_stream(self, logical_channel_id: str) -> None:
-        with self.stream_lock:
+        with self._mutex:
             self.pending_streams.remove(logical_channel_id)
 
     def generate_master_client_m3u(self) -> None:
         """Generates the master M3U content to be served to clients."""
         m3u_lines = ["#EXTM3U x-tvg-url=\"\""]
-        if not self.nexus_url:
+        if not self.config.nexus_url:
             self.config.log_message("NEXUS_URL not set. Client M3U URLs will be incorrect.", level="ERROR")
             m3u_lines.extend(["#EXTINF:-1,Error: NEXUS_URL not configured", "http://error.invalid/stream"])
             self.master_m3u_content = "\n".join(m3u_lines) + "\n"
@@ -244,7 +243,7 @@ class ChannelHandler:
             if group := lc_data.get("group_title"): extinf_parts.append(f'group-title="{group}"')
             
             m3u_lines.append(f"#EXTINF:-1 {' '.join(extinf_parts)},{name}")
-            m3u_lines.append(f"{self.nexus_url}/hls/{lc_data['logical_channel_id']}/playlist.m3u8")
+            m3u_lines.append(f"{self.config.nexus_url}/hls/{lc_data['logical_channel_id']}/playlist.m3u8")
         
         self.master_m3u_content = "\n".join(m3u_lines) + "\n"
         self.config.log_message(f"Generated master client M3U with {len(self.client_facing_channels)} channels.", level="INFO")
@@ -256,7 +255,7 @@ class ChannelHandler:
     
     def _update_providers_slots(self,) -> bool:
         """Initializes or updates the slots for each provider based on their max concurrent streams."""
-        with self.stream_lock:
+        with self._mutex:
             self.slots.clear()
             for alias, details in self.providers_data_from_json.items():
                 name = ProviderName(alias)
@@ -284,7 +283,7 @@ class ChannelHandler:
             e.g., {'provider_a': {'active': 1, 'max': 2}, ...}
         """
         status_report: dict[str, dict[str, int]] = {}
-        with self.stream_lock: # Lock to safely iterate over slots
+        with self._mutex: # Lock to safely iterate over slots
             for alias, provider_slots in self.slots.items():                
                 status_report[alias] = {
                     "active": provider_slots.get_active_slots(),
