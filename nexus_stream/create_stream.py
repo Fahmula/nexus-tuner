@@ -9,6 +9,7 @@ import time
 from typing import Any, NewType
 
 from nexus_stream.config import Config
+from nexus_stream.quality_monitor import QualityMonitor
 from nexus_stream.slots import ProviderName, ProviderSlots
 from nexus_stream.stream import ChannelHandler, HLSStreamManager
 
@@ -64,10 +65,11 @@ class CreateHLSStream:
     of input parameters.
     """
 
-    def __init__(self, config: Config, handler: ChannelHandler, hls_manager: HLSStreamManager, logical_channel_id: str, logical_channel_name: str, sources: list[dict[str, Any]] | None = None) -> None:
+    def __init__(self, config: Config, handler: ChannelHandler, hls_manager: HLSStreamManager, quality_monitor: QualityMonitor, logical_channel_id: str, logical_channel_name: str, sources: list[dict[str, Any]] | None = None) -> None:
         self.config = config
         self.handler = handler
         self.hls_manager = hls_manager
+        self.quality_monitor = quality_monitor
         self._res: HLSKey | tuple[int, str] = (500, "Stream not created yet")
         self._result_mutex = threading.Lock()
         self._mutex = threading.Lock()
@@ -78,12 +80,23 @@ class CreateHLSStream:
         if not self._sources:
             self._res = (404, f"Logical channel '{logical_channel_name}' ({logical_channel_id}) not found or has no sources.")
             return
-        self._sources.sort(key=lambda x: x["priority"], reverse=True)
-        self._remaining_sources = self._sources.copy()
-        self._active_hls_keys: list[HLSKey] = []
 
-        self._results: list[tuple[HLSKey, dict[str, str]]] = []
+        self._quality_scores = self.quality_monitor.get_quality_scores()
+        self._source_priorities: dict[str, int] = {}
+        prev_score = None
+        prev_priority = -1
+        source_scores = sorted(((source["priority"], -self._quality_scores.get(source["source_service_id"], {}).get("total_score", 0)), source["source_service_id"]) for source in self._sources)
+        for score, source_service_id in source_scores:
+            if score != prev_score:
+                prev_score = score
+                prev_priority += 1
+            self._source_priorities[source_service_id] = prev_priority
+        self._sources.sort(key=lambda x: self._source_priorities[x["source_service_id"]], reverse=True)
+        self._remaining_sources = self._sources.copy()
+
+        self._results: list[tuple[HLSKey, dict[str, Any]]] = []
         self._selected = False
+        self._active_hls_keys: list[HLSKey] = []
         self._deadline = time.monotonic() + 10
         self._threads: list[threading.Thread] = []
         self._provider_sources: dict[ProviderName, list[dict[str, Any]]] = {}
@@ -108,13 +121,13 @@ class CreateHLSStream:
 
     def _set_deadline(self, source: dict[str, Any]) -> None:
         with self._mutex:
-            if source["priority"] <= min(s["priority"] for s in self._remaining_sources):
+            if self._source_priorities[source["source_service_id"]] <= min(self._source_priorities.values()):
                 new_deadline = time.monotonic()
             else:
                 new_deadline = time.monotonic() + 1
             self._deadline = min(self._deadline, new_deadline)
 
-    def _set_result(self, hls_key: HLSKey, source: dict[str, str]) -> bool:
+    def _set_result(self, hls_key: HLSKey, source: dict[str, Any]) -> bool:
         with self._mutex:
             if self._selected:
                 return False
@@ -237,7 +250,8 @@ class CreateHLSStream:
         finally:
             self.hls_manager.hls_process_lock.release()
         provider_streams = self.handler.get_active_stream_status_for_logging(provider_alias)
-        self.config.log_message(f"[{provider_alias}:{provider_streams}] Claimed slot and started FFmpeg for '{hls_name}' (PID: {process.pid}).", level="INFO")
+        quality_score = self._quality_scores[source["source_service_id"]]
+        self.config.log_message(f"[{provider_alias}:{provider_streams}] Claimed slot and started FFmpeg for '{hls_name}' [User Priority {source['priority']} - Quality Score {quality_score['total_score']:.2f} - Uptime {quality_score['uptime_100']*100:.2f}%] (PID: {process.pid}).", level="INFO")
 
         try:
             end_time = time.monotonic() + self.config.ffmpeg_start_timeout
@@ -275,7 +289,7 @@ class CreateHLSStream:
                 if not self._results:
                     self._res = (503, f"Failed to start HLS stream for '{self.logical_channel_name}' from any source.")
                     return
-                hls_key = min(self._results, key=lambda x: x[1]["priority"])[0]
+                hls_key = min(self._results, key=lambda x: self._source_priorities[x[1]["source_service_id"]])[0]
                 self._selected = True
                 threading.Thread(target=self.hls_manager.stop_hls_ffmpeg_processes, args=([k for k in self._active_hls_keys if k != hls_key],), daemon=True).start()
 

@@ -42,7 +42,7 @@ try:
     handler = ChannelHandler(config)
     hls_manager = HLSStreamManager(config, handler)
     GhostSessionMonitor(config, handler, hls_manager)
-    QualityMonitor(config, handler)
+    quality_monitor = QualityMonitor(config, handler)
 except ValueError as e:
     # A fatal error during startup should be logged and cause an exit
     config.log_message(f"FATAL: Could not initialize application due to a configuration error: {e}", level="FATAL")
@@ -93,7 +93,7 @@ def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str | None
         if len(lc_id_processes):
             hls_key = lc_id_processes.popitem()[0]
         else:
-            res = CreateHLSStream(config, handler, hls_manager, logical_channel_id, logical_channel_name, sources).result()
+            res = CreateHLSStream(config, handler, hls_manager, quality_monitor, logical_channel_id, logical_channel_name, sources).result()
             if isinstance(res, tuple):
                 code = res[0]
                 msg = f"[{request.method} {request.path}] {res[1]}"

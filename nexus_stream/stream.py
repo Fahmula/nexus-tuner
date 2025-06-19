@@ -4,7 +4,7 @@ import time
 import shutil
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable, NoReturn
 from nexus_stream.config import Config
 from nexus_stream.handler import ChannelHandler
 from nexus_stream.slots import ProviderName
@@ -109,7 +109,7 @@ class HLSStreamManager:
                 return self.hls_ffmpeg_processes[hls_key]['channel_hls_dir'] / segment_filename
         return None
 
-    def _hls_cleanup_loop(self) -> None:
+    def _hls_cleanup_loop(self) -> NoReturn:
         """Background thread loop to find and stop inactive or dead HLS streams."""
         self.config.log_message("HLS FFmpeg cleanup thread started.", level="INFO")
         while True:

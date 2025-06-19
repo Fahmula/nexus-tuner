@@ -1,7 +1,7 @@
 import threading
 import time
 import requests
-from typing import Set
+from typing import NoReturn, Set
 from nexus_stream.config import Config
 from nexus_stream.create_stream import HLSKey
 from nexus_stream.handler import ChannelHandler
@@ -145,7 +145,7 @@ class GhostSessionMonitor:
             self.config.log_message(f"Monitor: Terminating ghost stream for '{logical_channel_name}' [{hls_key}]...", level="INFO")
             self.hls_manager.stop_hls_ffmpeg_process(hls_key, logical_channel_name)
 
-    def _run(self) -> None:
+    def _run(self) -> NoReturn:
         """The main execution loop for the monitor thread."""
         self.config.log_message("Ghost Session Monitor thread started.", level="INFO")
         time.sleep(15) # Initial delay to allow the rest of the app to start up.
