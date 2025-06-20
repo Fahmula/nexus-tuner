@@ -123,7 +123,7 @@ class HLSStreamManager:
             with self.hls_process_lock:
                 now = datetime.now()
                 for hls_key, data in self.hls_ffmpeg_processes.items():
-                    timeout = self.config.hls_segment_duration * 2 if data['is_preview'] else self.config.ffmpeg_hls_inactivity_timeout
+                    timeout = self.config.hls_segment_prune_timeout if data['is_preview'] else self.config.ffmpeg_hls_inactivity_timeout
                     if data['process'].poll() is not None:
                         logical_channel_name = data['logical_channel_name']
                         self.config.log_message(f"Cleanup: Found dead process for '{logical_channel_name}' (PID: {data['process'].pid}).", level="INFO")
@@ -142,7 +142,7 @@ class HLSStreamManager:
             now = datetime.now()
             inactive_ids = [
                 (hls_key, data['logical_channel_name']) for hls_key, data in self.hls_ffmpeg_processes.items()
-                if now - data['last_access'] > timedelta(seconds=self.config.hls_segment_duration * 2)
+                if now - data['last_access'] > timedelta(seconds=self.config.hls_segment_prune_timeout)
             ]
         for hls_key, logical_channel_name in inactive_ids:
             self.config.log_message(f"Pruning inactive HLS stream '{logical_channel_name}' [{hls_key}].", level="INFO")
