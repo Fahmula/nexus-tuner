@@ -18,7 +18,7 @@ HLSKey = NewType("HLSKey", str)
 HLSName = NewType("HLSName", str)
 
 
-STARTUP_POLL_INTERVAL = 0.2   # seconds
+CREATE_STREAM_POLL_INTERVAL = 0.01
 
 
 def create_hls_key(logical_channel_id: str, source_service_id: str) -> HLSKey:
@@ -177,7 +177,7 @@ class CreateHLSStream:
             if hls_key in self.hls_manager.hls_ffmpeg_processes and self.hls_manager.hls_ffmpeg_processes[hls_key]["process"].poll() is None:  # Process already exists
                 if not self.hls_manager.hls_ffmpeg_processes[hls_key]["is_long_term"]:
                     self.hls_manager.hls_process_lock.release()
-                    time.sleep(0.01)
+                    time.sleep(CREATE_STREAM_POLL_INTERVAL)
                     continue  # Short term streams can be killed at any time
                 self.hls_manager.hls_process_lock.release()
                 if not self._set_result(hls_key, source):
@@ -189,7 +189,7 @@ class CreateHLSStream:
             if not provider_slots.acquire(blocking=False):
                 self.hls_manager.hls_process_lock.release()
                 self.hls_manager.prune_hls_ffmpeg_processes()  # If any inactive streams, prune them so we can start this. Allows a user to switch channels.
-                time.sleep(0.01)
+                time.sleep(CREATE_STREAM_POLL_INTERVAL)
                 continue
             
             hls_key = self._create_stream(hls_key, provider_alias, provider_slots, source)
@@ -244,6 +244,7 @@ class CreateHLSStream:
                     self.hls_manager.hls_ffmpeg_processes[hls_key] = {
                         'process': process,
                         'is_long_term': False,
+                        'is_preview': self.logical_channel_id.startswith("preview_"),
                         'provider_alias': provider_alias,
                         'logical_channel_id': self.logical_channel_id,
                         'source_service_id': source["source_service_id"],
@@ -280,7 +281,7 @@ class CreateHLSStream:
                     provider_streams = self.handler.get_active_stream_status_for_logging(provider_alias)
                     self.config.log_message(f"[{provider_alias}:{provider_streams}] FFmpeg for '{hls_name}' (PID: {process.pid}) is now healthy.", level="INFO")
                     return hls_key
-                time.sleep(STARTUP_POLL_INTERVAL)
+                time.sleep(CREATE_STREAM_POLL_INTERVAL)
             
             raise TimeoutError(f"FFmpeg for {hls_name} (PID: {process.pid}) timed out waiting for segments.")
 
@@ -295,7 +296,7 @@ class CreateHLSStream:
         try:
             while time.monotonic() < self._get_deadline():
                 if any(thread.is_alive() for thread in self._threads):
-                    time.sleep(0.1)
+                    time.sleep(CREATE_STREAM_POLL_INTERVAL)
                 else:
                     break
     

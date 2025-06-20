@@ -71,7 +71,7 @@ def serve_hls_preview(logical_channel_id: str) -> Response:
         config.log_message(msg, level="ERROR")
         abort(404, msg)
     
-    sources = [{
+    sources: list[dict[str, Any]] = [{
         'source_service_id': source_service.get('id'),
         'priority': 0,  # For a single preview, priority is always 0.
         'provider_alias': source_service.get('provider_alias'),

@@ -21,7 +21,7 @@ RESOLTUION_NORM = 2160
 BITRATE_NORM = 12_000_000
 FRAMERATE_NORM = 60
 
-QUALITY_MONITOR_INTERVAL = 300
+QUALITY_MONITOR_INTERVAL = 86400
 QUALITY_MONITOR_TIMEOUT = 5
 MAX_HISTORY_PER_SERVICE = 10
 MAX_HISTORY_FOR_STATUSES = 100
@@ -45,8 +45,12 @@ class QualityMonitor:
 
     def _run(self) -> NoReturn:
         """The main execution loop for the monitor thread."""
-        self._build_quality_scores(self.config.get_service_quality_cache())
         self.config.log_message("Quality Monitor thread started.", level="INFO")
+        quality_cache = self.config.get_service_quality_cache()
+        if quality_cache:
+            self._build_quality_scores(quality_cache)
+        else:
+            self._analyze_mapped_services()
 
         while True:
             time.sleep(QUALITY_MONITOR_INTERVAL)

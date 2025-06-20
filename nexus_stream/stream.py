@@ -33,6 +33,7 @@ class HLSStreamManager:
         "hls_key": {
             "process": subprocess.Popen,
             "is_long_term": bool,
+            "is_preview": bool,
             "provider_alias": str,
             "logical_channel_id": str,
             "source_service_id": str,
@@ -122,11 +123,12 @@ class HLSStreamManager:
             with self.hls_process_lock:
                 now = datetime.now()
                 for hls_key, data in self.hls_ffmpeg_processes.items():
+                    timeout = self.config.hls_segment_duration * 2 if data['is_preview'] else self.config.ffmpeg_hls_inactivity_timeout
                     if data['process'].poll() is not None:
                         logical_channel_name = data['logical_channel_name']
                         self.config.log_message(f"Cleanup: Found dead process for '{logical_channel_name}' (PID: {data['process'].pid}).", level="INFO")
                         inactive_ids.add((hls_key, logical_channel_name))
-                    elif now - data['last_access'] > timedelta(seconds=self.config.ffmpeg_hls_inactivity_timeout):
+                    elif now - data['last_access'] > timedelta(seconds=timeout):
                         logical_channel_name = data['logical_channel_name']
                         self.config.log_message(f"Cleanup: Stream '{logical_channel_name}' timed out due to inactivity (PID: {data['process'].pid}).", level="INFO")
                         inactive_ids.add((hls_key, logical_channel_name))
@@ -140,7 +142,7 @@ class HLSStreamManager:
             now = datetime.now()
             inactive_ids = [
                 (hls_key, data['logical_channel_name']) for hls_key, data in self.hls_ffmpeg_processes.items()
-                if now - data['last_access'] > timedelta(seconds=self.config.hls_segment_duration)
+                if now - data['last_access'] > timedelta(seconds=self.config.hls_segment_duration * 2)
             ]
         for hls_key, logical_channel_name in inactive_ids:
             self.config.log_message(f"Pruning inactive HLS stream '{logical_channel_name}' [{hls_key}].", level="INFO")
