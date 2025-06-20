@@ -63,13 +63,23 @@ def inject_now() -> dict[str, datetime]:
 @app.route('/hls/<string:logical_channel_id>/preview.m3u8')
 def serve_hls_preview(logical_channel_id: str) -> Response:
     """Serves a preview HLS playlist for a channel."""
-    logical_channel_name = logical_channel_id
-    sources: list[dict[str, Any]] = [{
-        "source_service_id": logical_channel_id,
-        "priority": 0,
-        "provider_alias": logical_channel_id,
-        "actual_stream_url": logical_channel_id,
+    source_service_id = logical_channel_id.replace("preview_", "")
+    source_service = handler.discovered_source_services.get(source_service_id, None)
+    
+    if not source_service:
+        msg = f"[{request.method} {request.path}] Preview requested for non-existent source service ID {source_service}."
+        config.log_message(msg, level="ERROR")
+        abort(404, msg)
+    
+    sources = [{
+        'source_service_id': source_service.get('id'),
+        'priority': 0,  # For a single preview, priority is always 0.
+        'provider_alias': source_service.get('provider_alias'),
+        'actual_stream_url': source_service.get('actual_stream_url')
     }]
+
+    logical_channel_name = source_service.get('display_name', 'Preview')
+
     return serve_hls_playlist(logical_channel_id, logical_channel_name=logical_channel_name, sources=sources)
 
 @app.route('/hls/<string:logical_channel_id>/playlist.m3u8')
@@ -599,6 +609,19 @@ def ui_logs_modal():
         log_lines = [f"An error occurred while reading the log file: {e}"]
 
     return render_template("_logs_modal_content.html", log_lines=log_lines)
+
+
+@app.route("/ui/service-preview/<path:service_id>")
+def ui_player_for_service(service_id: str) -> str:
+    """
+    Returns an HTML fragment containing an HLS.js video player configured
+    to play a specific source service.
+    """
+    logical_channel_id = f"preview_{service_id}"
+    playlist_url = url_for('serve_hls_preview', logical_channel_id=logical_channel_id)
+
+    return render_template("_video_player_modal.html", 
+                           playlist_url=playlist_url)
 
 
 def signal_handler(signum: int, _: object) -> None:

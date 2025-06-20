@@ -96,8 +96,7 @@
                                                     {# 2. HTMX attributes to GET content and place it in the modal's body #}
                                                     data-bs-toggle="modal"
                                                     data-bs-target="#previewModal" 
-                                                    {# placeholder #}
-                                                    {# hx-get="{{ url_for('ui_player_for_service', service_id=service.id) }}" #}
+                                                    hx-get="{{ url_for('ui_player_for_service', service_id=service.id) }}"
                                                     hx-target="#preview-modal-body"
                                                     hx-trigger="click"
                                                     title="Preview Stream URL for {{ service.original_tvg_name }}">
@@ -137,8 +136,7 @@
                                             <button type="button" class="btn btn-sm btn-outline-info"
                                                     data-bs-toggle="modal"
                                                     data-bs-target="#previewModal" 
-                                                    {# placeholder #}
-                                                    {# hx-get="{{ url_for('ui_player_for_service', service_id=service.id) }}" #}
+                                                    hx-get="{{ url_for('ui_player_for_service', service_id=service.id) }}"
                                                     hx-target="#preview-modal-body"
                                                     hx-trigger="click"
                                                     title="Preview Stream URL for {{ service.original_tvg_name }}">
@@ -198,7 +196,54 @@
             {{ "Create Channel" if not channel.logical_channel_id else "Save All Changes" }}
         </button>
     </div>
-
 </form>
+
+<!-- Preview Modal -->
+<div class="modal fade" id="previewModal" tabindex="-1" aria-labelledby="previewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg"> {# Made modal larger for video #}
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="previewModalLabel">Stream Preview</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="preview-modal-body">
+                <!-- HTMX will inject the content here -->
+                <div class="text-center">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Add this script block at the end of the file, inside {% block content %} or its own {% block extra_js %} #}
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', (event) => {
+    const previewModalEl = document.getElementById('previewModal');
+    if (previewModalEl) {
+        previewModalEl.addEventListener('hidden.bs.modal', function () {
+            // When the modal is completely hidden, destroy the player if it exists
+            if (window.destroyPreviewPlayer) {
+                window.destroyPreviewPlayer();
+            }
+            // Clear the modal body to ensure it's fresh for the next preview
+            const modalBody = document.getElementById('preview-modal-body');
+            modalBody.innerHTML = `
+                <div class="text-center">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>`;
+        });
+    }
+});
+</script>
+{% endblock %}
 
 {% endblock %}
