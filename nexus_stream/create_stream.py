@@ -261,7 +261,7 @@ class CreateHLSStream:
             self.hls_manager.hls_process_lock.release()
         provider_streams = self.handler.get_active_stream_status_for_logging(provider_alias)
         quality_score = self._quality_scores.get(source["source_service_id"])
-        quality_msg = f"Score={quality_score['total_score']:.2f} | Uptime={quality_score['uptime_100']*100:.2f}%" if quality_score else "Score=Unknown | Uptime=Unknown"
+        quality_msg = f"Score={quality_score['total_score']:.2f} | Reliability={quality_score['reliability']*100:.2f}%" if quality_score else "Score=Unknown | Reliability=Unknown"
         self.config.log_message(f"[{provider_alias}:{provider_streams}] Claimed slot and started FFmpeg for '{hls_name}' [Priority={source['priority']} | {quality_msg}] (PID: {process.pid}).", level="INFO")
 
         try:
