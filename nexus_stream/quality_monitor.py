@@ -3,6 +3,7 @@ import time
 import subprocess
 import json
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from typing import NoReturn
 from nexus_stream.config import Config
 from nexus_stream.handler import ChannelHandler
@@ -177,6 +178,7 @@ class QualityMonitor:
 
         for service_id, result in all_results:
             service_entry = quality_cache.setdefault(service_id, {
+            "updated_at": datetime.now().isoformat(),
             "statuses": [],
             "widths": [],
             "heights": [],
@@ -186,6 +188,7 @@ class QualityMonitor:
 
             if result['status'] == 'offline':
                 self.config.log_message(f"Quality Monitor: Service {service_id} is offline: {result['reason']}", level="WARN")
+                service_entry["updated_at"] = datetime.now().isoformat()
                 service_entry["statuses"].append("offline")
                 num_excess_statuses =  max(0, len(service_entry["statuses"]) - MAX_HISTORY_PER_SERVICE)
                 if num_excess_statuses > 0:
@@ -194,6 +197,7 @@ class QualityMonitor:
             elif result['status'] != 'online':
                 continue
 
+            service_entry["updated_at"] = datetime.now().isoformat()
             service_entry["statuses"].append("online")
             num_excess_statuses =  max(0, len(service_entry["statuses"]) - MAX_HISTORY_PER_SERVICE)
             if num_excess_statuses > 0:
