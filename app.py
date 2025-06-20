@@ -60,6 +60,18 @@ def inject_now() -> dict[str, datetime]:
 
 # --- Core Streaming and Playlist Endpoints ---
 
+@app.route('/hls/<string:logical_channel_id>/preview.m3u8')
+def serve_hls_preview(logical_channel_id: str) -> Response:
+    """Serves a preview HLS playlist for a channel."""
+    logical_channel_name = logical_channel_id
+    sources: list[dict[str, Any]] = [{
+        "source_service_id": logical_channel_id,
+        "priority": 0,
+        "provider_alias": logical_channel_id,
+        "actual_stream_url": logical_channel_id,
+    }]
+    return serve_hls_playlist(logical_channel_id, logical_channel_name=logical_channel_name, sources=sources)
+
 @app.route('/hls/<string:logical_channel_id>/playlist.m3u8')
 def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str | None = None, sources: list[dict[str, Any]] | None = None) -> Response:
     """
