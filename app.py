@@ -22,7 +22,7 @@ from flask import (Flask, Response, abort, flash, redirect, render_template,
                    request, send_from_directory, url_for)
 
 from nexus_stream.config import Config
-from nexus_stream.create_stream import CreateHLSStream
+from nexus_stream.create_stream import CREATE_STREAM_POLL_INTERVAL, CreateHLSStream
 from nexus_stream.handler import ChannelHandler
 from nexus_stream.quality_monitor import QualityMonitor
 from nexus_stream.session_monitor import GhostSessionMonitor
@@ -72,13 +72,13 @@ def serve_hls_preview(logical_channel_id: str) -> Response:
         abort(404, msg)
     
     sources: list[dict[str, Any]] = [{
-        'source_service_id': source_service.get('id'),
-        'priority': 0,  # For a single preview, priority is always 0.
-        'provider_alias': source_service.get('provider_alias'),
-        'actual_stream_url': source_service.get('actual_stream_url')
+        'source_service_id': source_service['id'],
+        'priority': 5,
+        'provider_alias': source_service['provider_alias'],
+        'actual_stream_url': source_service['actual_stream_url']
     }]
 
-    logical_channel_name = source_service.get('display_name', 'Preview')
+    logical_channel_name = source_service.get('original_display_name_extinf', source_service.get('original_tvg_name', 'Preview'))
 
     return serve_hls_playlist(logical_channel_id, logical_channel_name=logical_channel_name, sources=sources)
 
@@ -100,7 +100,7 @@ def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str | None
                 msg = f"[{request.method} {request.path}] Exceeded timeout while waiting for earlier request for {logical_channel_id} to complete."
                 config.log_message(msg, level="ERROR")
                 abort(503, msg)
-            time.sleep(0.01)
+            time.sleep(CREATE_STREAM_POLL_INTERVAL)
         added_pending_stream = True
 
         if logical_channel_name is None:

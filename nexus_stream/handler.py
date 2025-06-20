@@ -9,6 +9,7 @@ from nexus_stream.config import Config
 from nexus_stream.slots import ProviderName, ProviderSlots
 
 # --- Constants ---
+DEFAULT_PRIORITY = 5
 PROVIDER_FETCH_TIMEOUT = 20
 PROVIDER_PARSE_MAX_WORKERS = 10
 NEXUS_USER_AGENT = 'NexusStream/1.0'
@@ -180,9 +181,9 @@ class ChannelHandler:
 
             mapped_sources_for_lc = self.channel_mappings_data_from_json.get(logical_channel_id, [])
             processed_sources: list[dict[str, Any]] = []
-            for mapping in sorted(mapped_sources_for_lc, key=lambda x: x.get("priority", 0)):
+            for mapping in sorted(mapped_sources_for_lc, key=lambda x: x.get("priority", DEFAULT_PRIORITY)):
                 source_id = mapping.get("source_service_id")
-                priority = mapping.get("priority", 0)
+                priority = mapping.get("priority", DEFAULT_PRIORITY)
                 discovered_service = self.discovered_source_services.get(source_id)
                 if discovered_service:
                     processed_sources.append({
