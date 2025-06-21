@@ -127,13 +127,13 @@
         },
         {
             "num": "97",
-            "title": "Cash HD",
-            "names": ["Cash HD"]
+            "title": "Cash",
+            "names": ["Cash"]
         },
         {
             "num": "98",
-            "title": "Interactive Advertising Channel HD",
-            "names": ["Interactive Advertising Channel HD"]
+            "title": "Interactive Advertising Channel",
+            "names": ["Interactive Advertising Channel"]
         },
         {
             "num": "98-1",
@@ -257,8 +257,8 @@
         },
         {
             "num": "205",
-            "title": "SPORTSMIX HD",
-            "names": ["SPORTSMIX HD"]
+            "title": "SPORTSMIX",
+            "names": ["SPORTSMIX"]
         },
         {
             "num": "206",
@@ -312,8 +312,8 @@
         },
         {
             "num": "215-1",
-            "title": "NHL Network alternate",
-            "names": ["NHL Network alternate"]
+            "title": "NHL Network Alternate",
+            "names": ["NHL Network Alternate"]
         },
         {
             "num": "216",
@@ -698,7 +698,7 @@
         {
             "num": "289",
             "title": "Disney Jr.",
-            "names": ["Disney Jr."]
+            "names": ["Disney Jr"]
         },
         {
             "num": "290",
@@ -728,12 +728,12 @@
         {
             "num": "296",
             "title": "Cartoon Network/Adult Swim (East)",
-            "names": ["Cartoon Network/Adult Swim (East)"]
+            "names": ["Cartoon Network", "Adult Swim"]
         },
         {
             "num": "297",
             "title": "Cartoon Network/Adult Swim (West)",
-            "names": ["Cartoon Network/Adult Swim (West)"]
+            "names": ["Cartoon Network", "Adult Swim"]
         },
         {
             "num": "298",
@@ -743,22 +743,22 @@
         {
             "num": "299",
             "title": "Nickelodeon/Nick at Nite (East)",
-            "names": ["Nickelodeon/Nick at Nite (East)"]
+            "names": ["Nickelodeon", "Nick at Nite"]
         },
         {
             "num": "300",
             "title": "Nickelodeon/Nick at Nite (West)",
-            "names": ["Nickelodeon/Nick at Nite (West)"]
+            "names": ["Nickelodeon", "Nick at Nite"]
         },
         {
             "num": "301",
-            "title": "Nick Jr. Channel",
-            "names": ["Nick Jr. Channel"]
+            "title": "Nick Jr.",
+            "names": ["Nick Jr"]
         },
         {
             "num": "302",
-            "title": "NickSpongebob",
-            "names": ["NickSpongebob"]
+            "title": "NickToons",
+            "names": ["NickToons", "NickSpongebob"]
         },
         {
             "num": "303",
@@ -847,8 +847,8 @@
         },
         {
             "num": "322",
-            "title": "NHK World-Japan",
-            "names": ["NHK World-Japan"]
+            "title": "NHK World Japan",
+            "names": ["NHK World Japan"]
         },
         {
             "num": "323",
@@ -947,8 +947,8 @@
         },
         {
             "num": "338",
-            "title": "UP tv",
-            "names": ["UP tv"]
+            "title": "UP TV",
+            "names": ["UP TV"]
         },
         {
             "num": "339",
@@ -982,8 +982,8 @@
         },
         {
             "num": "345",
-            "title": "RFD-TV",
-            "names": ["RFD-TV"]
+            "title": "RFD TV",
+            "names": ["RFD TV"]
         },
         {
             "num": "346",
@@ -1163,7 +1163,7 @@
         {
             "num": "382",
             "title": "Comedy.TV",
-            "names": ["Comedy.TV"]
+            "names": ["Comedy TV"]
         },
         {
             "num": "383",
@@ -1182,8 +1182,8 @@
         },
         {
             "num": "388",
-            "title": "Jewish Broadcasting Service (JBS)",
-            "names": ["Jewish Broadcasting Service (JBS)"]
+            "title": "Jewish Broadcasting Service",
+            "names": ["Jewish Broadcasting Service", "JBS"]
         },
         {
             "num": "389",
@@ -1193,52 +1193,52 @@
         {
             "num": "390",
             "title": "WCBS-TV (New York) CBS (East)",
-            "names": ["WCBS-TV (New York) CBS (East)"]
+            "names": ["WCBS TV", "CBS (East)"]
         },
         {
             "num": "391",
             "title": "KCBS-TV (Los Angeles) CBS (West)",
-            "names": ["KCBS-TV (Los Angeles) CBS (West)"]
+            "names": ["KCBS TV", "CBS (West)"]
         },
         {
             "num": "392",
             "title": "WNBC (New York) NBC (East)",
-            "names": ["WNBC (New York) NBC (East)"]
+            "names": ["WNBC", "NBC (East)"]
         },
         {
             "num": "393",
             "title": "KNBC (Los Angeles) NBC (West)",
-            "names": ["KNBC (Los Angeles) NBC (West)"]
+            "names": ["KNBC", "NBC (West)"]
         },
         {
             "num": "394",
             "title": "The CW Plus (East feed) The CW (East)",
-            "names": ["The CW Plus (East feed) The CW (East)"]
+            "names": ["The CW (East)"]
         },
         {
             "num": "395",
             "title": "KTLA (Los Angeles) The CW (West)",
-            "names": ["KTLA (Los Angeles) The CW (West)"]
+            "names": ["KTLA", "The CW (West)"]
         },
         {
             "num": "396",
             "title": "WABC-TV (New York) ABC (East)",
-            "names": ["WABC-TV (New York) ABC (East)"]
+            "names": ["WABC TV", "ABC (East)"]
         },
         {
             "num": "397",
             "title": "KABC-TV (Los Angeles) ABC (West)",
-            "names": ["KABC-TV (Los Angeles) ABC (West)"]
+            "names": ["KABC TV", "ABC (West)"]
         },
         {
             "num": "398",
             "title": "WNYW (New York) Fox (East)",
-            "names": ["WNYW (New York) Fox (East)"]
+            "names": ["WNYW", "Fox (East)"]
         },
         {
             "num": "399",
             "title": "KTTV (Los Angeles) Fox (West)",
-            "names": ["KTTV (Los Angeles) Fox (West)"]
+            "names": ["KTTV", "Fox (West)"]
         },
         {
             "num": "400",
@@ -1248,7 +1248,7 @@
         {
             "num": "401",
             "title": "Aquí",
-            "names": ["Aquí"]
+            "names": ["Aquí", "Aqui"]
         },
         {
             "num": "402",
@@ -1283,7 +1283,7 @@
         {
             "num": "408",
             "title": "UniMás (West)",
-            "names": ["UniMás (West)"]
+            "names": ["UniMás (West)", "UniMas (West)"]
         },
         {
             "num": "409",
@@ -1308,7 +1308,7 @@
         {
             "num": "413",
             "title": "Discovery en Español",
-            "names": ["Discovery en Español"]
+            "names": ["Discovery en Español", "Discovery en Espanol"]
         },
         {
             "num": "414",
@@ -1338,7 +1338,7 @@
         {
             "num": "419",
             "title": "CNN en Español",
-            "names": ["CNN en Español"]
+            "names": ["CNN en Español", "CNN en Espanol"]
         },
         {
             "num": "420",
@@ -1368,12 +1368,12 @@
         {
             "num": "426",
             "title": "Starz Encore Español",
-            "names": ["Starz Encore Español"]
+            "names": ["Starz Encore Español", "Starz Encore Espanol"]
         },
         {
             "num": "428",
             "title": "Centroamérica TV",
-            "names": ["Centroamérica TV"]
+            "names": ["Centroamérica TV", "Centroamerica TV"]
         },
         {
             "num": "429",
@@ -1388,7 +1388,7 @@
         {
             "num": "431",
             "title": "Perú Mágico",
-            "names": ["Perú Mágico"]
+            "names": ["Perú Mágico", "Peru Magico"]
         },
         {
             "num": "432",
@@ -1428,12 +1428,12 @@
         {
             "num": "439",
             "title": "SUR Perú",
-            "names": ["SUR Perú"]
+            "names": ["SUR Perú", "SUR Peru"]
         },
         {
             "num": "440",
             "title": "V-me",
-            "names": ["V-me"]
+            "names": ["V me"]
         },
         {
             "num": "442",
@@ -1443,7 +1443,7 @@
         {
             "num": "443",
             "title": "History en Español",
-            "names": ["History en Español"]
+            "names": ["History en Español", "History en Espanol"]
         },
         {
             "num": "444",
@@ -1483,12 +1483,12 @@
         {
             "num": "451",
             "title": "De Película",
-            "names": ["De Película"]
+            "names": ["De Película", "De Pelicula"]
         },
         {
             "num": "452",
             "title": "De Película Clásico",
-            "names": ["De Película Clásico"]
+            "names": ["De Película Clásico", "De Pelicula Clasico"]
         },
         {
             "num": "453",
@@ -1508,7 +1508,7 @@
         {
             "num": "456",
             "title": "ESNE (El Sembrador Nueva Evangelización)",
-            "names": ["ESNE (El Sembrador Nueva Evangelización)"]
+            "names": ["ESNE", "El Sembrador Nueva Evangelización", "El Sembrador Nueva Evangelizacion"]
         },
         {
             "num": "457",
@@ -1523,7 +1523,7 @@
         {
             "num": "459",
             "title": "Atrés Cine",
-            "names": ["Atrés Cine"]
+            "names": ["Atrés Cine", "Atres Cine"]
         },
         {
             "num": "460",
@@ -1543,7 +1543,7 @@
         {
             "num": "463",
             "title": "Daystar en Español",
-            "names": ["Daystar en Español"]
+            "names": ["Daystar en Español", "Daystar en Espanol"]
         },
         {
             "num": "464",
@@ -1573,7 +1573,7 @@
         {
             "num": "472",
             "title": "Nuestra Visión",
-            "names": ["Nuestra Visión"]
+            "names": ["Nuestra Visión", "Nuestra Vision"]
         },
         {
             "num": "473",
@@ -1588,7 +1588,7 @@
         {
             "num": "475",
             "title": "EWTN Español",
-            "names": ["EWTN Español"]
+            "names": ["EWTN", "EWTN Español", "EWTN Espanol"]
         },
         {
             "num": "501",
@@ -1683,7 +1683,7 @@
         {
             "num": "523",
             "title": "Cinemáx",
-            "names": ["Cinemáx"]
+            "names": ["Cinemáx", "Cinemax"]
         },
         {
             "num": "525",
@@ -1907,8 +1907,8 @@
         },
         {
             "num": "576",
-            "title": "Playboy TV HD",
-            "names": ["Playboy TV HD"]
+            "title": "Playboy TV",
+            "names": ["Playboy TV"]
         },
         {
             "num": "577",
@@ -1918,7 +1918,7 @@
         {
             "num": "578",
             "title": "Playboy TV en Español",
-            "names": ["Playboy TV en Español"]
+            "names": ["Playboy TV en Español", "Playboy TV en Espanol"]
         },
         {
             "num": "581",
@@ -1928,12 +1928,12 @@
         {
             "num": "585",
             "title": "Playboy TV en Español Interactive Ordering",
-            "names": ["Playboy TV en Español Interactive Ordering"]
+            "names": ["Playboy TV en Español Interactive Ordering", "Playboy TV en Espanol Interactive Ordering"]
         },
         {
             "num": "586",
             "title": "Playboy TV en Español",
-            "names": ["Playboy TV en Español"]
+            "names": ["Playboy TV en Español", "Playboy TV en Espanol"]
         },
         {
             "num": "587",
@@ -1952,23 +1952,23 @@
         },
         {
             "num": "590",
-            "title": "Playboy TV HD",
-            "names": ["Playboy TV HD"]
+            "title": "Playboy TV",
+            "names": ["Playboy TV"]
         },
         {
             "num": "591",
             "title": "Club Erotix 1 - IPPV Channel",
-            "names": ["Club Erotix 1 - IPPV Channel"]
+            "names": ["Club Erotix 1"]
         },
         {
             "num": "592",
             "title": "Club Erotix 2 - IPPV Channel",
-            "names": ["Club Erotix 2 - IPPV Channel"]
+            "names": ["Club Erotix 2"]
         },
         {
             "num": "593",
             "title": "Adult Billboard IPPV",
-            "names": ["Adult Billboard IPPV"]
+            "names": ["Adult Billboard"]
         },
         {
             "num": "594",
