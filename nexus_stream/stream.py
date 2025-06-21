@@ -148,7 +148,7 @@ class HLSStreamManager:
             self.config.log_message(f"Pruning inactive HLS stream '{logical_channel_name}' [{hls_key}].", level="INFO")
             self.stop_hls_ffmpeg_process(hls_key, logical_channel_name)
 
-    def stop_hls_ffmpeg_process(self, hls_key: 'HLSKey', logical_channel_name: str) -> None:
+    def stop_hls_ffmpeg_process(self, hls_key: 'HLSKey', name: str) -> None:
         """Public method to stop an HLS stream and its associated process."""
         with self.hls_process_lock:
             if (data_to_cleanup := self.hls_ffmpeg_processes.pop(hls_key, None)) is None:
@@ -164,14 +164,14 @@ class HLSStreamManager:
             try:
                 process.wait(timeout=FFMPEG_TERMINATE_TIMEOUT)
             except subprocess.TimeoutExpired:
-                self.config.log_message(f"Killing unresponsive FFmpeg process for '{logical_channel_name}' [{hls_key}].", level="WARN")
+                self.config.log_message(f"{name}: Killing unresponsive FFmpeg process.", level="WARN")
                 process.kill()
         
         if log_file:
             try:
                 log_file.close()
             except Exception as e:
-                self.config.log_message(f"Error closing FFmpeg log file for '{logical_channel_name}' [{hls_key}]: {e}", level="ERROR")
+                self.config.log_message(f"{name}: Error closing FFmpeg log file: {e}", level="ERROR")
 
         provider_slots = self.handler.slots.get(provider).release()
         provider_streams = self.handler.get_active_stream_status_for_logging(provider)
@@ -180,22 +180,20 @@ class HLSStreamManager:
             if hls_dir.exists():
                 shutil.rmtree(hls_dir)
         except OSError as e:
-            self.config.log_message(f"Failed to clean HLS directory {hls_dir}: {e}", level="ERROR")
+            self.config.log_message(f"{name}: Failed to clean HLS directory {hls_dir}: {e}", level="ERROR")
             
         self.config.cleanup_ffmpeg_logs_by_age()
 
-        self.config.log_message(f"[{provider}:{provider_streams}] Successfully stopped and cleaned up all resources for '{logical_channel_name}' [{hls_key}].", level="INFO")
+        self.config.log_message(f"{name}: Successfully stopped and cleaned up all resources {{{provider}:{provider_streams}}}", level="INFO")
 
     def stop_hls_ffmpeg_processes(self, hls_keys: Iterable['HLSKey'] | None = None) -> None:
         """Stops all active HLS FFmpeg processes and cleans up resources."""
         if hls_keys is None:
-            msg = "Stopping all active HLS FFmpeg processes:"
+            self.config.log_message("Stopping all active HLS FFmpeg processes.", level="INFO")
             with self.hls_process_lock:
                 processes_to_stop = self.hls_ffmpeg_processes.copy()
         else:
-            msg = f"Stopping specified HLS FFmpeg processes:"
             with self.hls_process_lock:
                 processes_to_stop = {hls_key: self.hls_ffmpeg_processes[hls_key] for hls_key in hls_keys if hls_key in self.hls_ffmpeg_processes}
-        self.config.log_message(f"{msg} {', '.join(f"'{v['logical_channel_name']}' [{k}]" for k, v in processes_to_stop.items())}", level="INFO")
         for lc_id, data in processes_to_stop.items():
             self.stop_hls_ffmpeg_process(lc_id, data['logical_channel_name'])

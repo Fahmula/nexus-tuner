@@ -23,7 +23,7 @@ from flask import (Flask, Response, abort, flash, redirect, render_template,
 
 from nexus_stream.config import Config
 from nexus_stream.create_stream import CREATE_STREAM_POLL_INTERVAL, CreateHLSStream
-from nexus_stream.handler import ChannelHandler
+from nexus_stream.handler import ChannelHandler, DEFAULT_PRIORITY
 from nexus_stream.quality_monitor import QualityMonitor
 from nexus_stream.session_monitor import GhostSessionMonitor
 from nexus_stream.stream import HLSStreamManager
@@ -70,10 +70,17 @@ def serve_hls_preview(logical_channel_id: str) -> Response:
         msg = f"[{request.method} {request.path}] Preview requested for non-existent source service ID {source_service}."
         config.log_message(msg, level="ERROR")
         abort(404, msg)
-    
+
+    priority = DEFAULT_PRIORITY
+    for channels in handler.channel_mappings_data_from_json.values():
+        for channel in channels:
+            if channel['source_service_id'] == source_service_id:
+                priority = channel['priority']
+                break
+
     sources: list[dict[str, Any]] = [{
         'source_service_id': source_service['id'],
-        'priority': 5,
+        'priority': priority,
         'provider_alias': source_service['provider_alias'],
         'actual_stream_url': source_service['actual_stream_url']
     }]
