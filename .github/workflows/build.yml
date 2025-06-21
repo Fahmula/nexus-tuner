@@ -1,9 +1,18 @@
-name: Release and Push Docker Image
+name: Manual Release and Push Docker Image
 
+# This workflow is now triggered manually from the GitHub Actions UI
 on:
-  push:
-    branches:
-      - 'main'
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Optional: Force a release type (major, minor, or patch)'
+        required: false
+        type: choice
+        options:
+          - '' # This empty option allows semantic-release to decide automatically
+          - 'patch'
+          - 'minor'
+          - 'major'
 
 jobs:
   release:
@@ -28,19 +37,31 @@ jobs:
       - name: Semantic Release
         id: semantic
         uses: cycjimmy/semantic-release-action@v4
+        # This 'with' block is new. It uses the manual input if provided.
+        with:
+          semantic_version: 19 # Use a recent version of semantic-release
+          extra_plugins: |
+            @semantic-release/changelog@6
+            @semantic-release/git@10
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # This line forces a release type if you selected one in the UI
+          SEMANTIC_RELEASE_RELEASE_TYPE: ${{ github.event.inputs.release_type }}
 
   build-and-push:
     needs: release 
-    if: ${{ needs.release.outputs.new_release_version != '' }} # Run only if a new version was created
+    # This condition is still important. It only runs if the 'release' job actually created a version.
+    if: ${{ needs.release.outputs.new_release_version != '' }} 
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     steps:
       - name: Set up repository
+        # We check out the specific tag created by the release job to ensure we build the correct code
         uses: actions/checkout@v3
+        with:
+          ref: ${{ needs.release.outputs.new_release_version }}
 
       - name: Convert GITHUB_REPOSITORY to lowercase
         run: echo "IMAGE_NAME=$(echo $GITHUB_REPOSITORY | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
