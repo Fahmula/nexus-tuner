@@ -28,7 +28,7 @@
         {
             "num": "74",
             "title": "Sale Network",
-            "names": ["Sale Network"]
+            "names": ["Sale"]
         },
         {
             "num": "75",
@@ -133,12 +133,12 @@
         {
             "num": "98",
             "title": "Interactive Advertising Channel",
-            "names": ["Interactive Advertising Channel"]
+            "names": ["Interactive Advertising"]
         },
         {
             "num": "98-1",
             "title": "America's Value Channel",
-            "names": ["America's Value Channel"]
+            "names": ["America's Value", "America Value"]
         },
         {
             "num": "99",
@@ -178,7 +178,7 @@
         {
             "num": "111",
             "title": "Interactive Advertising Channel",
-            "names": ["Interactive Advertising Channel"]
+            "names": ["Interactive Advertising"]
         },
         {
             "num": "112",
@@ -198,37 +198,37 @@
         {
             "num": "119",
             "title": "Pay-Per-View Events",
-            "names": ["Pay-Per-View Events"]
+            "names": ["Pay-Per-View Events", "Pay Per View Events"]
         },
         {
             "num": "120",
             "title": "Pay-Per-View Events",
-            "names": ["Pay-Per-View Events"]
+            "names": ["Pay-Per-View Events", "Pay Per View Events"]
         },
         {
             "num": "121",
             "title": "Pay-Per-View Events",
-            "names": ["Pay-Per-View Events"]
+            "names": ["Pay-Per-View Events", "Pay Per View Events"]
         },
         {
             "num": "122",
             "title": "Pay-Per-View Events",
-            "names": ["Pay-Per-View Events"]
+            "names": ["Pay-Per-View Events", "Pay Per View Events"]
         },
         {
             "num": "123",
             "title": "Pay-Per-View Events",
-            "names": ["Pay-Per-View Events"]
+            "names": ["Pay-Per-View Events", "Pay Per View Events"]
         },
         {
             "num": "124",
             "title": "Pay-Per-View Events",
-            "names": ["Pay-Per-View Events"]
+            "names": ["Pay-Per-View Events", "Pay Per View Events"]
         },
         {
             "num": "196",
             "title": "Discovery+",
-            "names": ["Discovery+"]
+            "names": ["Discovery+", "Discovery Plus"]
         },
         {
             "num": "199",
@@ -288,17 +288,17 @@
         {
             "num": "212",
             "title": "NFL Network",
-            "names": ["NFL Network"]
+            "names": ["NFL"]
         },
         {
             "num": "213",
             "title": "MLB Network",
-            "names": ["MLB Network"]
+            "names": ["MLB"]
         },
         {
             "num": "213-1",
-            "title": "MLB Network alternate",
-            "names": ["MLB Network alternate"]
+            "title": "MLB Network Alternate",
+            "names": ["MLB Alternate"]
         },
         {
             "num": "214",
@@ -308,12 +308,12 @@
         {
             "num": "215",
             "title": "NHL Network",
-            "names": ["NHL Network"]
+            "names": ["NHL"]
         },
         {
             "num": "215-1",
             "title": "NHL Network Alternate",
-            "names": ["NHL Network Alternate"]
+            "names": ["NHL Alternate"]
         },
         {
             "num": "216",
@@ -323,12 +323,12 @@
         {
             "num": "217",
             "title": "Tennis Channel",
-            "names": ["Tennis Channel"]
+            "names": ["Tennis"]
         },
         {
             "num": "218",
             "title": "Golf Channel",
-            "names": ["Golf Channel"]
+            "names": ["Golf"]
         },
         {
             "num": "219",
@@ -338,7 +338,7 @@
         {
             "num": "221",
             "title": "CBS Sports Network",
-            "names": ["CBS Sports Network"]
+            "names": ["CBS Sports"]
         },
         {
             "num": "222",
@@ -353,12 +353,12 @@
         {
             "num": "224",
             "title": "Shepherd's Chapel",
-            "names": ["Shepherd's Chapel"]
+            "names": ["Shepherd's Chapel", "Shepherd Chapel]
         },
         {
             "num": "225",
             "title": "America's Value Channel",
-            "names": ["America's Value Channel"]
+            "names": ["America's Value", "America Value"]
         },
         {
             "num": "226",
@@ -383,22 +383,22 @@
         {
             "num": "230",
             "title": "Magnolia Network",
-            "names": ["Magnolia Network"]
+            "names": ["Magnolia"]
         },
         {
             "num": "231",
             "title": "Food Network",
-            "names": ["Food Network"]
+            "names": ["Food"]
         },
         {
             "num": "232",
             "title": "Cooking Channel",
-            "names": ["Cooking Channel"]
+            "names": ["Cooking"]
         },
         {
             "num": "233",
             "title": "Game Show Network",
-            "names": ["Game Show Network"]
+            "names": ["Game Show"]
         },
         {
             "num": "234",
@@ -438,7 +438,7 @@
         {
             "num": "241",
             "title": "Paramount Network",
-            "names": ["Paramount Network"]
+            "names": ["Paramount"]
         },
         {
             "num": "242",
@@ -523,7 +523,7 @@
         {
             "num": "255",
             "title": "Xtra Network",
-            "names": ["Xtra Network"]
+            "names": ["Xtra"]
         },
         {
             "num": "256",
@@ -588,7 +588,7 @@
         {
             "num": "268",
             "title": "Best Channel",
-            "names": ["Best Channel"]
+            "names": ["Best"]
         },
         {
             "num": "269",
@@ -598,7 +598,7 @@
         {
             "num": "270",
             "title": "Idea Channel",
-            "names": ["Idea Channel"]
+            "names": ["Idea"]
         },
         {
             "num": "271",
@@ -633,7 +633,7 @@
         {
             "num": "277",
             "title": "Travel Channel",
-            "names": ["Travel Channel"]
+            "names": ["Travel"]
         },
         {
             "num": "278",
@@ -643,12 +643,12 @@
         {
             "num": "279",
             "title": "Oprah Winfrey Network (East)",
-            "names": ["Oprah Winfrey Network (East)"]
+            "names": ["Oprah Winfrey (East)"]
         },
         {
             "num": "279-1",
             "title": "Oprah Winfrey Network (West)",
-            "names": ["Oprah Winfrey Network (West)"]
+            "names": ["Oprah Winfrey (West)"]
         },
         {
             "num": "280",
@@ -688,7 +688,7 @@
         {
             "num": "287",
             "title": "American Heroes Channel",
-            "names": ["American Heroes Channel"]
+            "names": ["American Heroes"]
         },
         {
             "num": "288",
@@ -698,17 +698,17 @@
         {
             "num": "289",
             "title": "Disney Jr.",
-            "names": ["Disney Jr"]
+            "names": ["Disney Jr", "Disney Junior"]
         },
         {
             "num": "290",
             "title": "Disney Channel (East)",
-            "names": ["Disney Channel (East)"]
+            "names": ["Disney (East)"]
         },
         {
             "num": "291",
             "title": "Disney Channel (West)",
-            "names": ["Disney Channel (West)"]
+            "names": ["Disney (West)"]
         },
         {
             "num": "292",
@@ -753,7 +753,7 @@
         {
             "num": "301",
             "title": "Nick Jr.",
-            "names": ["Nick Jr"]
+            "names": ["Nick Jr", "Nick Junior"]
         },
         {
             "num": "302",
@@ -793,7 +793,7 @@
         {
             "num": "309",
             "title": "Sale Network",
-            "names": ["Sale Network"]
+            "names": ["Sale"]
         },
         {
             "num": "310",
@@ -808,7 +808,7 @@
         {
             "num": "312",
             "title": "Hallmark Channel",
-            "names": ["Hallmark Channel"]
+            "names": ["Hallmark"]
         },
         {
             "num": "313",
@@ -843,7 +843,7 @@
         {
             "num": "320",
             "title": "Scientology Network",
-            "names": ["Scientology Network"]
+            "names": ["Scientology"]
         },
         {
             "num": "322",
@@ -858,7 +858,7 @@
         {
             "num": "324",
             "title": "In Touch+",
-            "names": ["Touch+"]
+            "names": ["Touch+", "Touch Plus"]
         },
         {
             "num": "324-1",
@@ -978,7 +978,7 @@
         {
             "num": "344",
             "title": "SonLife Broadcasting Network",
-            "names": ["SonLife Broadcasting Network"]
+            "names": ["SonLife Broadcasting"]
         },
         {
             "num": "345",
@@ -1008,12 +1008,12 @@
         {
             "num": "350",
             "title": "C-SPAN",
-            "names": ["C-SPAN"]
+            "names": ["C-SPAN", "CSPAN"]
         },
         {
             "num": "351",
             "title": "C-SPAN 2",
-            "names": ["C-SPAN 2"]
+            "names": ["C-SPAN 2", "CSPAN 2"]
         },
         {
             "num": "353",
@@ -1048,22 +1048,22 @@
         {
             "num": "359",
             "title": "Fox Business Network",
-            "names": ["Fox Business Network"]
+            "names": ["Fox Business"]
         },
         {
             "num": "360",
             "title": "Fox News Channel",
-            "names": ["Fox News Channel"]
+            "names": ["Fox News"]
         },
         {
             "num": "361",
             "title": "AccuWeather Network",
-            "names": ["AccuWeather Network"]
+            "names": ["AccuWeather"]
         },
         {
             "num": "362",
             "title": "The Weather Channel",
-            "names": ["Weather Channel"]
+            "names": ["Weather"]
         },
         {
             "num": "363",
@@ -1078,7 +1078,7 @@
         {
             "num": "365",
             "title": "GEB Network",
-            "names": ["GEB Network"]
+            "names": ["GEB"]
         },
         {
             "num": "366",
@@ -1093,7 +1093,7 @@
         {
             "num": "368",
             "title": "Hope Channel",
-            "names": ["Hope Channel"]
+            "names": ["Hope"]
         },
         {
             "num": "369",
@@ -1118,7 +1118,7 @@
         {
             "num": "373",
             "title": "The Word Network",
-            "names": ["Word Network"]
+            "names": ["Word"]
         },
         {
             "num": "374",
@@ -1153,7 +1153,7 @@
         {
             "num": "380",
             "title": "The Impact Network",
-            "names": ["Impact Network"]
+            "names": ["Impact"]
         },
         {
             "num": "381",
@@ -1193,12 +1193,12 @@
         {
             "num": "390",
             "title": "WCBS-TV (New York) CBS (East)",
-            "names": ["WCBS TV", "CBS (East)"]
+            "names": ["WCBS-TV", "WCBS TV", "CBS (East)"]
         },
         {
             "num": "391",
             "title": "KCBS-TV (Los Angeles) CBS (West)",
-            "names": ["KCBS TV", "CBS (West)"]
+            "names": ["KCBS-TV", "KCBS TV", "CBS (West)"]
         },
         {
             "num": "392",
@@ -1223,12 +1223,12 @@
         {
             "num": "396",
             "title": "WABC-TV (New York) ABC (East)",
-            "names": ["WABC TV", "ABC (East)"]
+            "names": ["WABC-TV", "WABC TV", "ABC (East)"]
         },
         {
             "num": "397",
             "title": "KABC-TV (Los Angeles) ABC (West)",
-            "names": ["KABC TV", "ABC (West)"]
+            "names": ["KABC-TV", "KABC TV", "ABC (West)"]
         },
         {
             "num": "398",
@@ -1243,7 +1243,7 @@
         {
             "num": "400",
             "title": "Pay-Per-View Events",
-            "names": ["Pay-Per-View Events"]
+            "names": ["Pay-Per-View Events", "Pay Per View Events"]
         },
         {
             "num": "401",
@@ -1433,7 +1433,7 @@
         {
             "num": "440",
             "title": "V-me",
-            "names": ["V me"]
+            "names": ["V-me", "V me"]
         },
         {
             "num": "442",
@@ -1493,7 +1493,7 @@
         {
             "num": "453",
             "title": "N+ Foro",
-            "names": ["N+ Foro"]
+            "names": ["Foro"]
         },
         {
             "num": "454",
@@ -1642,8 +1642,8 @@
         },
         {
             "num": "512",
-            "title": "Order HBO Interactive channel",
-            "names": ["Order HBO Interactive channel"]
+            "title": "Order HBO Interactive Channel",
+            "names": ["Order HBO Interactive"]
         },
         {
             "num": "515",
@@ -1763,12 +1763,12 @@
         {
             "num": "545",
             "title": "Paramount+ with Showtime (East)",
-            "names": ["Paramount+ Showtime (East)"]
+            "names": ["Paramount+ Showtime (East)", "Paramount Plus Showtime (East)"]
         },
         {
             "num": "546",
             "title": "Paramount+ with Showtime (West)",
-            "names": ["Paramount+ Showtime (West)"]
+            "names": ["Paramount+ Showtime (West)", "Paramount Plus Showtime (West)"]
         },
         {
             "num": "547",
@@ -1803,17 +1803,17 @@
         {
             "num": "553",
             "title": "The Movie Channel (East)",
-            "names": ["Movie Channel (East)"]
+            "names": ["Movie (East)"]
         },
         {
             "num": "554",
             "title": "The Movie Channel (West)",
-            "names": ["Movie Channel (West)"]
+            "names": ["Movie (West)"]
         },
         {
             "num": "555",
             "title": "The Movie Channel Xtra (East)",
-            "names": ["Movie Channel Xtra (East)"]
+            "names": ["Movie Xtra (East)"]
         },
         {
             "num": "556",
@@ -1823,32 +1823,32 @@
         {
             "num": "557",
             "title": "AMC+",
-            "names": ["AMC+"]
+            "names": ["AMC+", "AMC Plus"]
         },
         {
             "num": "557-1",
             "title": "The Walking Dead Channel",
-            "names": ["Walking Dead Channel"]
+            "names": ["Walking Dead"]
         },
         {
             "num": "558",
             "title": "MGM+",
-            "names": ["MGM+"]
+            "names": ["MGM+", "MGM Plus"]
         },
         {
             "num": "559",
             "title": "MGM+ Hits",
-            "names": ["MGM+ Hits"]
+            "names": ["MGM+ Hits", "MGM Plus Hits"]
         },
         {
             "num": "560",
             "title": "MGM+ Marquee",
-            "names": ["MGM+ Marquee"]
+            "names": ["MGM+ Marquee", "MGM Plus Marquee"]
         },
         {
             "num": "561",
-            "title": "Order MGM+ Interactive channel",
-            "names": ["Order MGM+ Interactive channel"]
+            "title": "Order MGM+ Interactive Channel",
+            "names": ["Order MGM+ Interactive", "Order MGM Plus Interactive"]
         },
         {
             "num": "562",
@@ -1883,7 +1883,7 @@
         {
             "num": "570",
             "title": "Smithsonian Channel",
-            "names": ["Smithsonian Channel"]
+            "names": ["Smithsonian"]
         },
         {
             "num": "571",
