@@ -157,7 +157,7 @@ class ChannelHandler:
                     }
             self.config.log_message(f"Discovered {len(parsed_channels)} services from provider '{provider_alias}'.", level="INFO")
         except requests.RequestException as e:
-            self.config.log_message(f"Failed to fetch or parse provider '{provider_alias}' ({m3u_url}): {e}", level="ERROR")
+            self.config.log_message(f"Failed to fetch or parse provider '{provider_alias}': {e}", level="ERROR")
         except Exception as e:
             self.config.log_message(f"An unexpected error occurred while processing provider '{provider_alias}': {e}", level="ERROR")
 
