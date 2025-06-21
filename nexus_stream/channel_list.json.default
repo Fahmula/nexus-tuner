@@ -298,7 +298,7 @@
         {
             "num": "213-1",
             "title": "MLB Network Alternate",
-            "names": ["MLB Alternate"]
+            "names": ["MLB Alt"]
         },
         {
             "num": "214",
@@ -313,7 +313,7 @@
         {
             "num": "215-1",
             "title": "NHL Network Alternate",
-            "names": ["NHL Alternate"]
+            "names": ["NHL Alt"]
         },
         {
             "num": "216",
@@ -458,12 +458,12 @@
         {
             "num": "245",
             "title": "TNT (East)",
-            "names": ["TNT (East)"]
+            "names": ["TNT"]
         },
         {
             "num": "245-1",
             "title": "TNT (West)",
-            "names": ["TNT (West)"]
+            "names": ["TNT"]
         },
         {
             "num": "246",
@@ -473,12 +473,12 @@
         {
             "num": "247",
             "title": "TBS (East)",
-            "names": ["TBS (East)"]
+            "names": ["TBS"]
         },
         {
             "num": "247-1",
             "title": "TBS (West)",
-            "names": ["TBS (West)"]
+            "names": ["TBS"]
         },
         {
             "num": "248",
@@ -488,12 +488,12 @@
         {
             "num": "249",
             "title": "Comedy Central (East)",
-            "names": ["Comedy Central (East)"]
+            "names": ["Comedy Central"]
         },
         {
             "num": "249-1",
             "title": "Comedy Central (West)",
-            "names": ["Comedy Central (West)"]
+            "names": ["Comedy Central"]
         },
         {
             "num": "250",
@@ -643,12 +643,12 @@
         {
             "num": "279",
             "title": "Oprah Winfrey Network (East)",
-            "names": ["Oprah Winfrey (East)"]
+            "names": ["Oprah Winfrey"]
         },
         {
             "num": "279-1",
             "title": "Oprah Winfrey Network (West)",
-            "names": ["Oprah Winfrey (West)"]
+            "names": ["Oprah Winfrey"]
         },
         {
             "num": "280",
@@ -703,12 +703,12 @@
         {
             "num": "290",
             "title": "Disney Channel (East)",
-            "names": ["Disney (East)"]
+            "names": ["Disney Channel"]
         },
         {
             "num": "291",
             "title": "Disney Channel (West)",
-            "names": ["Disney (West)"]
+            "names": ["Disney Channel"]
         },
         {
             "num": "292",
@@ -893,12 +893,12 @@
         {
             "num": "329",
             "title": "BET (East)",
-            "names": ["BET (East)"]
+            "names": ["BET"]
         },
         {
             "num": "329-1",
             "title": "BET (West)",
-            "names": ["BET (West)"]
+            "names": ["BET"]
         },
         {
             "num": "330",
@@ -908,12 +908,12 @@
         {
             "num": "331",
             "title": "MTV (East)",
-            "names": ["MTV (East)"]
+            "names": ["MTV"]
         },
         {
             "num": "331-1",
             "title": "MTV (West)",
-            "names": ["MTV (West)"]
+            "names": ["MTV"]
         },
         {
             "num": "332",
@@ -1193,52 +1193,52 @@
         {
             "num": "390",
             "title": "WCBS-TV (New York) CBS (East)",
-            "names": ["WCBS-TV", "WCBS TV", "CBS (East)"]
+            "names": ["WCBS-TV", "WCBS TV", "CBS"]
         },
         {
             "num": "391",
             "title": "KCBS-TV (Los Angeles) CBS (West)",
-            "names": ["KCBS-TV", "KCBS TV", "CBS (West)"]
+            "names": ["KCBS-TV", "KCBS TV", "CBS"]
         },
         {
             "num": "392",
             "title": "WNBC (New York) NBC (East)",
-            "names": ["WNBC", "NBC (East)"]
+            "names": ["WNBC", "NBC"]
         },
         {
             "num": "393",
             "title": "KNBC (Los Angeles) NBC (West)",
-            "names": ["KNBC", "NBC (West)"]
+            "names": ["KNBC", "NBC"]
         },
         {
             "num": "394",
             "title": "The CW Plus (East feed) The CW (East)",
-            "names": ["CW (East)"]
+            "names": ["CW"]
         },
         {
             "num": "395",
             "title": "KTLA (Los Angeles) The CW (West)",
-            "names": ["KTLA", "CW (West)"]
+            "names": ["KTLA", "CW"]
         },
         {
             "num": "396",
             "title": "WABC-TV (New York) ABC (East)",
-            "names": ["WABC-TV", "WABC TV", "ABC (East)"]
+            "names": ["WABC-TV", "WABC TV", "ABC"]
         },
         {
             "num": "397",
             "title": "KABC-TV (Los Angeles) ABC (West)",
-            "names": ["KABC-TV", "KABC TV", "ABC (West)"]
+            "names": ["KABC-TV", "KABC TV", "ABC"]
         },
         {
             "num": "398",
             "title": "WNYW (New York) Fox (East)",
-            "names": ["WNYW", "Fox (East)"]
+            "names": ["WNYW", "Fox"]
         },
         {
             "num": "399",
             "title": "KTTV (Los Angeles) Fox (West)",
-            "names": ["KTTV", "Fox (West)"]
+            "names": ["KTTV", "Fox"]
         },
         {
             "num": "400",
@@ -1253,12 +1253,12 @@
         {
             "num": "402",
             "title": "Univision (East)",
-            "names": ["Univision (East)"]
+            "names": ["Univision"]
         },
         {
             "num": "403",
             "title": "Univision (West)",
-            "names": ["Univision (West)"]
+            "names": ["Univision"]
         },
         {
             "num": "404",
@@ -1273,17 +1273,17 @@
         {
             "num": "406",
             "title": "Telemundo (East)",
-            "names": ["Telemundo (East)"]
+            "names": ["Telemundo"]
         },
         {
             "num": "407",
             "title": "Telemundo (West)",
-            "names": ["Telemundo (West)"]
+            "names": ["Telemundo"]
         },
         {
             "num": "408",
             "title": "UniMás (West)",
-            "names": ["UniMás (West)", "UniMas (West)"]
+            "names": ["UniMás", "UniMas"]
         },
         {
             "num": "409",
@@ -1593,12 +1593,12 @@
         {
             "num": "501",
             "title": "HBO (East)",
-            "names": ["HBO (East)"]
+            "names": ["HBO"]
         },
         {
             "num": "502",
             "title": "HBO2 (East)",
-            "names": ["HBO2 (East)"]
+            "names": ["HBO2"]
         },
         {
             "num": "503",
@@ -1608,12 +1608,12 @@
         {
             "num": "504",
             "title": "HBO (West)",
-            "names": ["HBO (West)"]
+            "names": ["HBO"]
         },
         {
             "num": "505",
             "title": "HBO2 (West)",
-            "names": ["HBO2 (West)"]
+            "names": ["HBO2"]
         },
         {
             "num": "506",
@@ -1623,12 +1623,12 @@
         {
             "num": "507",
             "title": "HBO Family (East)",
-            "names": ["HBO Family (East)"]
+            "names": ["HBO Family"]
         },
         {
             "num": "508",
             "title": "HBO Family (West)",
-            "names": ["HBO Family (West)"]
+            "names": ["HBO Family"]
         },
         {
             "num": "509",
@@ -1648,12 +1648,12 @@
         {
             "num": "515",
             "title": "Cinemax (East)",
-            "names": ["Cinemax (East)"]
+            "names": ["Cinemax"]
         },
         {
             "num": "516",
             "title": "Cinemax (West)",
-            "names": ["Cinemax (West)"]
+            "names": ["Cinemax"]
         },
         {
             "num": "517",
@@ -1688,12 +1688,12 @@
         {
             "num": "525",
             "title": "Starz (East)",
-            "names": ["Starz (East)"]
+            "names": ["Starz"]
         },
         {
             "num": "526",
             "title": "Starz (West)",
-            "names": ["Starz (West)"]
+            "names": ["Starz"]
         },
         {
             "num": "527",
@@ -1723,12 +1723,12 @@
         {
             "num": "535",
             "title": "Starz Encore (East)",
-            "names": ["Starz Encore (East)"]
+            "names": ["Starz Encore"]
         },
         {
             "num": "536",
             "title": "Starz Encore (West)",
-            "names": ["Starz Encore (West)"]
+            "names": ["Starz Encore"]
         },
         {
             "num": "537",
@@ -1763,12 +1763,12 @@
         {
             "num": "545",
             "title": "Paramount+ with Showtime (East)",
-            "names": ["Paramount+ Showtime (East)", "Paramount Plus Showtime (East)"]
+            "names": ["Paramount+ Showtime", "Paramount Plus Showtime"]
         },
         {
             "num": "546",
             "title": "Paramount+ with Showtime (West)",
-            "names": ["Paramount+ Showtime (West)", "Paramount Plus Showtime (West)"]
+            "names": ["Paramount+ Showtime", "Paramount Plus Showtime"]
         },
         {
             "num": "547",
@@ -1803,17 +1803,17 @@
         {
             "num": "553",
             "title": "The Movie Channel (East)",
-            "names": ["Movie (East)"]
+            "names": ["Movie"]
         },
         {
             "num": "554",
             "title": "The Movie Channel (West)",
-            "names": ["Movie (West)"]
+            "names": ["Movie"]
         },
         {
             "num": "555",
             "title": "The Movie Channel Xtra (East)",
-            "names": ["Movie Xtra (East)"]
+            "names": ["Movie Xtra"]
         },
         {
             "num": "556",
