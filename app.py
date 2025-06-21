@@ -572,35 +572,6 @@ def ui_logical_channel_delete(logical_channel_id: str) -> Response:
         flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "warning")
     return redirect(url_for('ui_logical_channels_list'))
 
-
-@app.route("/ui/logical-channels/new-mapping-row")
-def ui_get_new_mapping_row() -> str:
-    """Returns an HTML partial for a new, empty mapping row for the UI."""
-    logical_channel_id = request.args.get('logical_channel_id', "")
-    current_channel = {}
-    if logical_channel_id:
-        current_channel = handler.get_logical_channel_by_id(logical_channel_id)
-    
-    all_services = handler.get_all_discovered_source_services_for_ui()
-    filter_query = current_channel.get('display_name', '').lower().strip()
-    
-    suggested_services = []
-    if filter_query:
-        for service in all_services:
-            name_to_check = service.get('original_tvg_name', '').lower()
-            extinf_name_to_check = service.get('original_display_name_extinf', '').lower()
-            if filter_query in name_to_check or filter_query in extinf_name_to_check:
-                suggested_services.append(service)
-    
-    row_idx_for_names = int(time.time() * 1000)
-    
-    return render_template('_mapping_row.html',
-                           current_row_index=row_idx_for_names,
-                           mapping=None,
-                           all_services=all_services,
-                           suggested_services=suggested_services,
-                           channel=current_channel)
-
 @app.route("/ui/logs/modal")
 def ui_logs_modal():
     """Renders the inner content for the log viewer modal."""
