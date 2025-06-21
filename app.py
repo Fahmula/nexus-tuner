@@ -624,11 +624,15 @@ def ui_player_for_service(service_id: str) -> str:
     Returns an HTML fragment containing an HLS.js video player configured
     to play a specific source service.
     """
+    source_service = handler.discovered_source_services.get(service_id)
+    if not source_service:
+        flash(f"Error source service ID not found.", "error")
+    service_name = source_service.get('original_display_name_extinf', source_service.get('original_tvg_name', 'Preview') )
     logical_channel_id = f"preview_{service_id}"
     playlist_url = url_for('serve_hls_preview', logical_channel_id=logical_channel_id)
 
     return render_template("_video_player_modal.html", 
-                           playlist_url=playlist_url)
+                           playlist_url=playlist_url, service_name=service_name)
 
 
 def signal_handler(signum: int, _: object) -> None:
