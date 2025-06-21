@@ -743,12 +743,12 @@
         {
             "num": "299",
             "title": "Nickelodeon/Nick at Nite (East)",
-            "names": ["Nickelodeon", "Nick at Nite"]
+            "names": ["Nickelodeon", "Nick Nite"]
         },
         {
             "num": "300",
             "title": "Nickelodeon/Nick at Nite (West)",
-            "names": ["Nickelodeon", "Nick at Nite"]
+            "names": ["Nickelodeon", "Nick Nite"]
         },
         {
             "num": "301",
@@ -968,7 +968,7 @@
         {
             "num": "342",
             "title": "TheGrio",
-            "names": ["TheGrio"]
+            "names": ["Grio"]
         },
         {
             "num": "343",
@@ -993,7 +993,7 @@
         {
             "num": "347",
             "title": "The First",
-            "names": ["The First"]
+            "names": ["First"]
         },
         {
             "num": "348",
@@ -1063,7 +1063,7 @@
         {
             "num": "362",
             "title": "The Weather Channel",
-            "names": ["The Weather Channel"]
+            "names": ["Weather Channel"]
         },
         {
             "num": "363",
@@ -1118,7 +1118,7 @@
         {
             "num": "373",
             "title": "The Word Network",
-            "names": ["The Word Network"]
+            "names": ["Word Network"]
         },
         {
             "num": "374",
@@ -1153,7 +1153,7 @@
         {
             "num": "380",
             "title": "The Impact Network",
-            "names": ["The Impact Network"]
+            "names": ["Impact Network"]
         },
         {
             "num": "381",
@@ -1173,7 +1173,7 @@
         {
             "num": "385",
             "title": "Heroes & Icons",
-            "names": ["Heroes & Icons"]
+            "names": ["Heroes Icons"]
         },
         {
             "num": "386",
@@ -1213,12 +1213,12 @@
         {
             "num": "394",
             "title": "The CW Plus (East feed) The CW (East)",
-            "names": ["The CW (East)"]
+            "names": ["CW (East)"]
         },
         {
             "num": "395",
             "title": "KTLA (Los Angeles) The CW (West)",
-            "names": ["KTLA", "The CW (West)"]
+            "names": ["KTLA", "CW (West)"]
         },
         {
             "num": "396",
@@ -1698,7 +1698,7 @@
         {
             "num": "527",
             "title": "Starz Kids & Family",
-            "names": ["Starz Kids & Family"]
+            "names": ["Starz Kids Family"]
         },
         {
             "num": "528",
@@ -1763,12 +1763,12 @@
         {
             "num": "545",
             "title": "Paramount+ with Showtime (East)",
-            "names": ["Paramount+ with Showtime (East)"]
+            "names": ["Paramount+ Showtime (East)"]
         },
         {
             "num": "546",
             "title": "Paramount+ with Showtime (West)",
-            "names": ["Paramount+ with Showtime (West)"]
+            "names": ["Paramount+ Showtime (West)"]
         },
         {
             "num": "547",
@@ -1803,17 +1803,17 @@
         {
             "num": "553",
             "title": "The Movie Channel (East)",
-            "names": ["The Movie Channel (East)"]
+            "names": ["Movie Channel (East)"]
         },
         {
             "num": "554",
             "title": "The Movie Channel (West)",
-            "names": ["The Movie Channel (West)"]
+            "names": ["Movie Channel (West)"]
         },
         {
             "num": "555",
             "title": "The Movie Channel Xtra (East)",
-            "names": ["The Movie Channel Xtra (East)"]
+            "names": ["Movie Channel Xtra (East)"]
         },
         {
             "num": "556",
@@ -1828,7 +1828,7 @@
         {
             "num": "557-1",
             "title": "The Walking Dead Channel",
-            "names": ["The Walking Dead Channel"]
+            "names": ["Walking Dead Channel"]
         },
         {
             "num": "558",
@@ -1888,7 +1888,7 @@
         {
             "num": "571",
             "title": "Crime & Investigation",
-            "names": ["Crime & Investigation"]
+            "names": ["Crime Investigation"]
         },
         {
             "num": "572",
