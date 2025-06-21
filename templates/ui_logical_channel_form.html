@@ -10,15 +10,10 @@
     </a>
 </div>
 
-<form method="POST" action="{{ action_url }}">
+<form method="POST" action="">
 
-    {# If we are editing, we need to pass the ID and an action hint #}
-    {% if channel.logical_channel_id %}
-        <input type="hidden" name="logical_channel_id" value="{{ channel.logical_channel_id }}">
-        {# This tells the backend to expect both details and mappings #}
-        <input type="hidden" name="form_action" value="update_all">
-    {% endif %}
-
+    <input type="hidden" name="logical_channel_id" value="{{ channel.logical_channel_id or '' }}">
+    
     <div class="row">
         <div class="col-md-6">
             <div class="card mb-4">
@@ -27,193 +22,44 @@
                 </div>
                 <div class="card-body">
                     <p class="text-muted small">
-                        Start by typing a channel name to get suggestions, or fill out the form manually.
+                        Start by filling out the channel details. Service mapping options will appear on the right.
                     </p>
+                    
                     <div id="form-content-wrapper">
-                        {# This include will now contain ONLY the input fields, NOT a form tag #}
                         {% include '_logical_channel_form_fields.html' %}
                     </div>
                 </div>
             </div>
         </div>
 
-        {% if channel.logical_channel_id %} {# Only show mapping if we are editing an existing channel #}
         <div class="col-md-6">
-            <div class="card">
-                <div class="card-header">
-                    Map Source Services to "<span id="channel-name-header">{{ channel.display_name }}</span>"
-                </div>
-                <div class="card-body">
-
-                    <h6 class="card-subtitle my-2 text-muted">Manage Mappings</h6>
-                    <p class="small text-muted">
-                        Check services to enable, or uncheck to disable. Set the priority for failover (0 is highest).
-                    </p>
-
-                    <div class="table-responsive">
-                        <table class="table table-sm table-hover">
-                            <thead class="table-light">
-                                <tr>
-                                    <th style="width: 5%;" class="text-center">Enable</th>
-                                    <th>Service</th>
-                                    <th style="width: 20%;">Priority</th>
-                                    <th style="width: 15%;" class="text-end">Preview</th>
-                                </tr>
-                            </thead>
-                            
-                            <!-- SECTION 1: SERVICES THAT ARE CURRENTLY MAPPED -->
-                            <tbody>
-                                {% if mapped_services %}
-                                    {% for service in mapped_services %}
-                                    <tr>
-                                        <td class="text-center align-middle">
-                                            <input class="form-check-input" 
-                                                type="checkbox" 
-                                                name="mapping_service_id" 
-                                                value="{{ service.id }}"
-                                                aria-label="Map service {{ service.original_tvg_name }}"
-                                                checked>
-                                        </td>
-                                        <td class="align-middle">
-                                            {{ service.original_tvg_name }}
-                                            <small class="text-muted">({{ service.provider_alias }})</small>
-                                            <span class="badge bg-success ms-2">Mapped</span>
-                                        </td>
-                                        <td class="align-middle">
-                                            <input type="number"
-                                                class="form-control form-control-sm"
-                                                name="priority_{{ service.id }}"
-                                                value="{{ service.priority }}" {# SHOWS SAVED PRIORITY #}
-                                                min="0"
-                                                max="10"
-                                                required>
-                                        </td>
-                                        <td class="text-end align-middle">
-                                            <button type="button" class="btn btn-sm btn-outline-info"
-                                                    {# 1. Bootstrap attributes to TARGET and TOGGLE the modal #}
-                                                    data-bs-toggle="modal"
-                                                    data-bs-target="#previewModal" 
-
-                                                    {# 2. HTMX attributes to GET content and place it in the modal's body #}
-                                                    data-bs-toggle="modal"
-                                                    data-bs-target="#previewModal" 
-                                                    hx-get="{{ url_for('ui_player_for_service', service_id=service.id) }}"
-                                                    hx-target="#preview-modal-body"
-                                                    hx-trigger="click"
-                                                    title="Preview Stream URL for {{ service.original_tvg_name }}">
-                                                <i class="fas fa-play"></i>
-                                            </button>
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                {% endif %}
-                            </tbody>
-
-                            <!-- SECTION 2: SUGGESTED SERVICES TO ADD (UNMAPPED) -->
-                            <tbody>
-                                {% if unmapped_suggestions_for_page %}
-                                    {% for service in unmapped_suggestions_for_page %}
-                                    <tr>
-                                        <td class="text-center align-middle">
-                                            <input class="form-check-input" 
-                                                type="checkbox" 
-                                                name="mapping_service_id" 
-                                                value="{{ service.id }}"
-                                                aria-label="Map service {{ service.original_tvg_name }}">
-                                        </td>
-                                        <td class="align-middle">
-                                            {{ service.original_tvg_name }}
-                                            <small class="text-muted">({{ service.provider_alias }})</small>
-                                        </td>
-                                        <td class="align-middle">
-                                            <input type="number"
-                                                class="form-control form-control-sm"
-                                                name="priority_{{ service.id }}"
-                                                value="5"
-                                                min="0"
-                                                max="10"
-                                                required>
-                                        </td>
-                                        <td class="text-end align-middle">
-                                            <button type="button" class="btn btn-sm btn-outline-info"
-                                                    data-bs-toggle="modal"
-                                                    data-bs-target="#previewModal" 
-                                                    hx-get="{{ url_for('ui_player_for_service', service_id=service.id) }}"
-                                                    hx-target="#preview-modal-body"
-                                                    hx-trigger="click"
-                                                    title="Preview Stream URL for {{ service.original_tvg_name }}">
-                                                <i class="fas fa-play"></i>
-                                            </button>
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                {% else %}
-                                    {% if not mapped_services %}
-                                    <tr>
-                                        <td colspan="4" class="text-center text-muted fst-italic">No suggested or mapped services found.</td>
-                                    </tr>
-                                    {% endif %}
-                                {% endif %}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    {% if total_pages > 1 %}
-                    <p class="text-muted small mt-2">
-                        Showing {{ unmapped_suggestions_for_page|length }} of {{ total_unmapped_items }} total unmapped suggestions.
-                    </p>
-                    <nav aria-label="Suggestions navigation" class="mt-2">
-                        <ul class="pagination justify-content-center">
-                            {# Previous Button #}
-                            <li class="page-item {% if current_page <= 1 %}disabled{% endif %}">
-                                <a class="page-link" href="{{ url_for('ui_logical_channel_form', logical_channel_id=channel.logical_channel_id, page=current_page-1) }}">
-                                    « Previous
-                                </a>
-                            </li>
-                            
-                            {# Page Status #}
-                            <li class="page-item disabled">
-                                <span class="page-link">Page {{ current_page }} of {{ total_pages }}</span>
-                            </li>
-
-                            {# Next Button #}
-                            <li class="page-item {% if current_page >= total_pages %}disabled{% endif %}">
-                                <a class="page-link" href="{{ url_for('ui_logical_channel_form', logical_channel_id=channel.logical_channel_id, page=current_page+1) }}">
-                                    Next »
-                                </a>
-                            </li>
-                        </ul>
-                    </nav>
-                    {% endif %}
-                </div>
+            {# The service mapping card is now ALWAYS rendered. #}
+            <div id="service-mapping-section">
+                 {% include '_service_mapping_card.html' %}
             </div>
         </div>
-        {% endif %}
     </div>
 
     <hr>
     <div class="mt-3">
         <button type="submit" class="btn btn-primary btn-lg">
             <i class="fas fa-save"></i> 
-            {{ "Create Channel" if not channel.logical_channel_id else "Save All Changes" }}
+            {{ "Create Channel and Map Sources" if not channel.logical_channel_id else "Save All Changes" }}
         </button>
     </div>
 </form>
 
 <!-- Preview Modal -->
 <div class="modal fade" id="previewModal" tabindex="-1" aria-labelledby="previewModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg"> {# Made modal larger for video #}
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title" id="previewModalLabel">Stream Preview</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body" id="preview-modal-body">
-                <!-- HTMX will inject the content here -->
                 <div class="text-center">
-                    <div class="spinner-border" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
+                    <div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -222,30 +68,4 @@
         </div>
     </div>
 </div>
-
-{# Add this script block at the end of the file, inside {% block content %} or its own {% block extra_js %} #}
-{% block extra_js %}
-<script>
-document.addEventListener('DOMContentLoaded', (event) => {
-    const previewModalEl = document.getElementById('previewModal');
-    if (previewModalEl) {
-        previewModalEl.addEventListener('hidden.bs.modal', function () {
-            // When the modal is completely hidden, destroy the player if it exists
-            if (window.destroyPreviewPlayer) {
-                window.destroyPreviewPlayer();
-            }
-            // Clear the modal body to ensure it's fresh for the next preview
-            const modalBody = document.getElementById('preview-modal-body');
-            modalBody.innerHTML = `
-                <div class="text-center">
-                    <div class="spinner-border" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                </div>`;
-        });
-    }
-});
-</script>
-{% endblock %}
-
 {% endblock %}

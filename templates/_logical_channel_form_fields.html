@@ -3,16 +3,14 @@
         <label for="display_name" class="form-label">Display Name</label>
         <input type="text" class="form-control" id="display_name" name="display_name"
             value="{{ channel.display_name if channel else '' }}" required
+            {# SIMPLIFIED: Only targets its own suggestion box now. #}
             hx-get="{{ url_for('ui_channel_suggest') }}"
             hx-trigger="input changed delay:500ms, search"
             hx-target="#suggestion-box"
             hx-indicator="#search-indicator"
-            autocomplete="off"
-            hx-sync="this:replace"
-            {# JS to update the other card's header live #}
-            oninput="document.getElementById('channel-name-header').textContent = this.value">
-        <div class="form-text">Start typing to search for a channel. <span id="search-indicator" class="htmx-indicator spinner-border spinner-border-sm"></span></div>
-        <div id="suggestion-box" class="list-group mt-1 position-absolute" style="z-index: 1000;"></div>
+            autocomplete="off">
+        <div class="form-text">Start typing to search for a pre-defined channel. <span id="search-indicator" class="htmx-indicator spinner-border spinner-border-sm"></span></div>
+        <div id="suggestion-box" class="list-group mt-1 position-absolute" style="z-index: 1000; width: 100%;"></div>
     </div>
 
     <div class="mb-3">

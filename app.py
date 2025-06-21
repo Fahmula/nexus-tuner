@@ -233,79 +233,15 @@ def ui_logical_channels_list() -> str:
     channels = handler.get_all_logical_channels_for_ui()
     return render_template("ui_logical_channels.html", channels=channels, handler=handler)
 
-@app.route("/ui/logical-channels/form", methods=["GET", "POST"])
+@app.route("/ui/logical-channels/form/", methods=["GET", "POST"])
 @app.route("/ui/logical-channels/form/<string:logical_channel_id>", methods=["GET", "POST"])
 def ui_logical_channel_form(logical_channel_id: str | None = None):
-    """Handles both adding and editing a logical channel and its mappings."""
-    if request.method == "GET":
-        channel = {}
-        if logical_channel_id:
-            channel = handler.get_logical_channel_by_id(logical_channel_id)
-            if not channel:
-                flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
-                return redirect(url_for('ui_logical_channels_list'))
-
-        all_services = handler.get_all_discovered_source_services_for_ui()
-        
-        current_mappings = handler.get_mappings_for_logical_channel(logical_channel_id)
-        current_mapping_info = {m['source_service_id']: m['priority'] for m in current_mappings}
-
-        filter_query = channel.get('display_name', '').lower().strip()
-        
-        suggested_services = []
-        if filter_query:
-            for service in all_services:
-                name_to_check = service.get('original_tvg_name', '').lower()
-                extinf_name_to_check = service.get('original_display_name_extinf', '').lower()
-
-                if filter_query in name_to_check or filter_query in extinf_name_to_check:
-                    suggested_services.append(service)
-
-        per_page = 20
-        page = request.args.get('page', 1, type=int)
-
-        mapped_services = []
-        unmapped_suggestions = []
-        all_mapped_service_ids = set(current_mapping_info.keys())
-        
-        all_services_map = {s['id']: s for s in all_services}
-        for service_id, priority in current_mapping_info.items():
-            if service_id in all_services_map:
-                service_details = all_services_map[service_id].copy() # Use a copy
-                service_details['priority'] = priority
-                mapped_services.append(service_details)
-        
-        for service in suggested_services:
-            if service['id'] not in all_mapped_service_ids:
-                unmapped_suggestions.append(service)
-
-        total_unmapped_items = len(unmapped_suggestions)
-        total_pages = math.ceil(total_unmapped_items / per_page) if per_page > 0 else 1
-        if page > total_pages:
-            page = total_pages
-        if page < 1:
-            page = 1
-
-        start_index = (page - 1) * per_page
-        end_index = start_index + per_page
-
-        unmapped_suggestions_for_page = unmapped_suggestions[start_index:end_index]
-
-        action_url = url_for('ui_logical_channel_form', logical_channel_id=logical_channel_id) if logical_channel_id else url_for('ui_logical_channel_form')
-
-        return render_template("ui_logical_channel_form.html", 
-                               channel=channel,
-                               all_services=all_services,
-                               unmapped_suggestions_for_page=unmapped_suggestions_for_page,
-                               logical_channel_id=logical_channel_id,
-                               current_page=page,
-                               total_pages=total_pages,
-                               total_unmapped_items=total_unmapped_items,
-                               mapped_services=mapped_services,
-                               action_url=action_url)
-
+    """Handles adding/editing a logical channel and its mappings in a unified form."""
     if request.method == "POST":
-        
+        # Get the ID from the form, which could be empty for new channels
+        submitted_id = request.form.get("logical_channel_id")
+        is_update = bool(submitted_id)
+
         lc_data = {
             "display_name": request.form.get("display_name", "").strip(),
             "channel_num": request.form.get("channel_num", "").strip(),
@@ -316,48 +252,113 @@ def ui_logical_channel_form(logical_channel_id: str | None = None):
 
         if not lc_data['display_name'] or not lc_data['channel_num']:
             flash("Display Name and Channel Number are required.", "error")
-            return render_template("ui_logical_channel_form.html", channel=lc_data)
+            # Re-render form with user's data; need to reconstruct the page state
+            return redirect(request.url)
 
-        if logical_channel_id:  # This is an UPDATE of an existing channel
-            lc_data['logical_channel_id'] = logical_channel_id
-            if not handler.update_logical_channel(logical_channel_id, lc_data):
-                flash("Error updating channel details.", "error")
-                return redirect(url_for('ui_logical_channel_form', logical_channel_id=logical_channel_id))
+        mappings_to_save = []
+        service_ids_to_map = request.form.getlist('mapping_service_id')
+        for service_id_str in service_ids_to_map:
+            try:
+                mappings_to_save.append({
+                    'source_service_id': service_id_str,
+                    'priority': int(request.form.get(f"priority_{service_id_str}", '5'))
+                })
+            except (ValueError, TypeError):
+                flash(f"Skipping a mapping with invalid priority (service_id: '{service_id_str}').", "warning")
 
-            final_mappings_to_save = []
-    
-            service_ids_to_map = request.form.getlist('mapping_service_id')
-
-            for service_id_str in service_ids_to_map:
-                priority_form_key = f"priority_{service_id_str}"
-                priority_str = request.form.get(priority_form_key, '0')
-
-                try:
-                    final_mappings_to_save.append({
-                        'source_service_id': service_id_str,
-                        'priority': int(priority_str)
-                    })
-                except (ValueError, TypeError):
-                    flash(f"Skipping a mapping row with invalid priority data (service_id: '{service_id_str}').", "warning")
-                    continue
-            
-            handler.update_mappings_for_logical_channel(logical_channel_id, final_mappings_to_save)
-            flash(f"Channel '{lc_data['display_name']}' and its mappings were updated successfully.", "success")
+        if is_update:  # This is an UPDATE of an existing channel
+            handler.update_logical_channel(submitted_id, lc_data)
+            handler.update_mappings_for_logical_channel(submitted_id, mappings_to_save)
+            flash(f"Channel '{lc_data['display_name']}' and its mappings updated successfully.", "success")
             handler.reload_handler_config(update_providers=False)
-            return redirect(url_for('ui_logical_channel_form', logical_channel_id=logical_channel_id))
-        
-        else: 
+            return redirect(url_for('ui_logical_channel_form', logical_channel_id=submitted_id))
+        else:  # This is a CREATE for a new channel
             new_id = handler.add_logical_channel(lc_data)
             if new_id:
-                flash(f"Channel '{lc_data['display_name']}' added. You can now map its sources.", "success")
+                if mappings_to_save:
+                    handler.update_mappings_for_logical_channel(new_id, mappings_to_save)
+                flash(f"Channel '{lc_data['display_name']}' created successfully.", "success")
                 handler.reload_handler_config(update_providers=False)
                 return redirect(url_for('ui_logical_channel_form', logical_channel_id=new_id))
             else:
-                flash("Error adding channel. A channel with that number may already exist.", "error")
+                flash("Error creating channel. A channel with that number may already exist.", "error")
                 return render_template("ui_logical_channel_form.html", channel=lc_data)
 
-    return redirect(url_for('ui_logical_channels_list'))
+    # --- GET Request Handling ---
+    # Check if this is an HTMX request targeting the service list (for search or pagination)
+    is_htmx_service_list_request = (
+        request.headers.get('HX-Request') and 
+        request.headers.get('HX-Target') == 'service-list-container'
+    )
 
+    # 1. Load the main channel object if we are editing
+    channel = {}
+    if logical_channel_id:
+        channel = handler.get_logical_channel_by_id(logical_channel_id)
+        if not channel:
+            flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
+            return redirect(url_for('ui_logical_channels_list'))
+
+    # Priority 1: An explicit search query from the user (e.g., typing in the box).
+    search_query = request.args.get('search_query')
+
+    # Priority 2: If no explicit search, and it's the initial page load for an
+    # existing channel, use the channel's name as the default search term.
+    if search_query is None and not is_htmx_service_list_request and logical_channel_id:
+        search_query = channel.get('display_name')
+
+    filter_query = search_query.lower().strip() if search_query else None
+
+    # 3. Prepare data for the service list
+    unmapped_suggestions = []
+    mapped_services = []
+    page = request.args.get('page', 1, type=int)
+    per_page = 20
+    
+    # Load all services and mappings
+    all_services = handler.get_all_discovered_source_services_for_ui()
+    current_mappings = handler.get_mappings_for_logical_channel(logical_channel_id) if logical_channel_id else []
+    current_mapping_info = {m['source_service_id']: m['priority'] for m in current_mappings}
+    all_services_map = {s['id']: s for s in all_services}
+
+    # Populate the list of currently mapped services
+    for service_id, priority in current_mapping_info.items():
+        if service_id in all_services_map:
+            service_details = all_services_map[service_id].copy()
+            service_details['priority'] = priority
+            mapped_services.append(service_details)
+    mapped_services.sort(key=lambda s: s['priority'])
+    
+    # Populate unmapped suggestions ONLY if there is a filter query.
+    if filter_query:
+        all_mapped_service_ids = set(current_mapping_info.keys())
+        for service in all_services:
+            if service['id'] not in all_mapped_service_ids:
+                if filter_query in service.get('original_tvg_name', '').lower() or filter_query in service.get('original_display_name_extinf', '').lower():
+                    unmapped_suggestions.append(service)
+
+    # Paginate the results
+    total_unmapped_items = len(unmapped_suggestions)
+    total_pages = math.ceil(total_unmapped_items / per_page) if per_page > 0 else 1
+    if page > total_pages and total_pages > 0: page = total_pages
+    if page < 1: page = 1
+    start_index = (page - 1) * per_page
+    unmapped_suggestions_for_page = unmapped_suggestions[start_index:start_index + per_page]
+
+    # 4. Determine which template to render
+    template_to_render = "_service_list_content.html" if is_htmx_service_list_request else "ui_logical_channel_form.html"
+    
+    return render_template(
+        template_to_render,
+        channel=channel,
+        unmapped_suggestions_for_page=unmapped_suggestions_for_page,
+        mapped_services=mapped_services,
+        current_page=page,
+        total_pages=total_pages,
+        total_unmapped_items=total_unmapped_items,
+        search_query=search_query, 
+        filter_query=filter_query,
+    )
 
 @app.route("/ui/source-services")
 def ui_source_services_list() -> str:
@@ -527,35 +528,68 @@ def ui_provider_status() -> str:
                            active_streams=active,
                            max_total_streams=max_total)
 
+@app.route("/ui/channels/populate-from-suggestion")
+def ui_channel_populate_from_suggestion():
+    """
+    Called when a user clicks a channel suggestion.
+    Returns multiple OOB fragments to:
+    1. Populate the channel details form.
+    2. Populate the service mapping card with pre-filtered results.
+    3. Clear the suggestion dropdown.
+    """
+    prefilled_data = {
+        'display_name': request.args.get('name', ''),
+        'channel_num': request.args.get('num', ''),
+        'group_title': request.args.get('group', 'Uncategorized'),
+        'tvg_logo': ''
+    }
+    # This becomes the main response, targeting #form-content-wrapper
+    form_html = render_template("_logical_channel_form_fields.html", channel=prefilled_data)
+
+    # 2. Pre-filter services based on the suggested name
+    filter_query = prefilled_data['display_name'].lower().strip()
+    all_services = handler.get_all_discovered_source_services_for_ui()
+    unmapped_suggestions = []
+    
+    if filter_query:
+        for service in all_services:
+            if filter_query in service.get('original_tvg_name', '').lower() or filter_query in service.get('original_display_name_extinf', '').lower():
+                unmapped_suggestions.append(service)
+
+    # 3. Paginate the pre-filtered results
+    page = 1
+    per_page = 20
+    total_unmapped_items = len(unmapped_suggestions)
+    total_pages = math.ceil(total_unmapped_items / per_page) if per_page > 0 else 1
+    unmapped_suggestions_for_page = unmapped_suggestions[:per_page]
+
+    # 4. OOB swap to update the entire service mapping card, now with data.
+    search_card_html = render_template(
+        "_service_mapping_card.html",
+        search_query=prefilled_data['display_name'], 
+        channel={},
+        unmapped_suggestions_for_page=unmapped_suggestions_for_page,
+        mapped_services=[], # New channel has no mapped services
+        current_page=page,
+        total_pages=total_pages,
+        total_unmapped_items=total_unmapped_items,
+        filter_query=filter_query
+    )
+    oob_search_card = f'<div id="service-mapping-section" hx-swap-oob="innerHTML">{search_card_html}</div>'
+
+    # 5. OOB swap to clear the suggestion dropdown
+    clear_suggestions_html = '<div id="suggestion-box" hx-swap-oob="true"></div>'
+    
+    return form_html + oob_search_card + clear_suggestions_html
 
 @app.route("/ui/channels/suggest", methods=["GET"])
 def ui_channel_suggest() -> str:
-    """Provides channel suggestions based on user input for HTMX active search."""
+    """Provides channel suggestions based on user input for the display_name field."""
     query = request.args.get('display_name', '')
     if len(query) < 2:
-        return ""
+        return "" # Return empty to clear suggestions
     suggestions = handler.search_predefined_channels(query)
     return render_template("_channel_suggestions.html", suggestions=suggestions)
-
-
-@app.route("/ui/channels/select-suggestion")
-def ui_channel_select_suggestion() -> str:
-    """Returns a pre-filled form partial when a user selects a suggestion."""
-    num = request.args.get('num', '')
-    name = request.args.get('name', '')
-    group = request.args.get('group', 'Uncategorized')
-    
-    prefilled_data = {
-        'display_name': name,
-        'channel_num': num,
-        'group_title': group,
-        'tvg_logo': ''
-    }
-
-    form_html = render_template("_logical_channel_form_fields.html", channel=prefilled_data)
-    clear_suggestions_html = '<div id="suggestion-box" hx-swap-oob="true"></div>'
-
-    return form_html + clear_suggestions_html
 
 
 @app.route("/ui/logical-channels/delete/<string:logical_channel_id>", methods=["POST"])
