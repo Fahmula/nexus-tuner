@@ -121,6 +121,13 @@ class HLSStreamManager:
             time.sleep(CLEANUP_POLL_INTERVAL)
             inactive_ids: set[tuple['HLSKey', str]] = set()
             with self.hls_process_lock:
+                providers_to_kill = self.handler.reset_kill_provider_streams()
+                provider_keys_to_kill = [hls_key for hls_key, data in self.hls_ffmpeg_processes.items() if data['provider_alias'] in providers_to_kill]
+                if provider_keys_to_kill:
+                    self.config.log_message(f"Cleanup: Killing HLS streams for providers: {', '.join(providers_to_kill)}", level="WARN")
+                    for hls_key in provider_keys_to_kill:
+                        data = self.hls_ffmpeg_processes.pop(hls_key)
+                        self._stop_hls_ffmpeg_process(hls_key, data['logical_channel_name'], data_to_cleanup=data)
                 now = datetime.now()
                 for hls_key, data in self.hls_ffmpeg_processes.items():
                     timeout = self.config.hls_segment_prune_timeout if data['is_preview'] else self.config.ffmpeg_hls_inactivity_timeout
@@ -149,10 +156,20 @@ class HLSStreamManager:
             self.stop_hls_ffmpeg_process(hls_key, logical_channel_name)
 
     def stop_hls_ffmpeg_process(self, hls_key: 'HLSKey', name: str) -> None:
-        """Public method to stop an HLS stream and its associated process."""
-        with self.hls_process_lock:
-            if (data_to_cleanup := self.hls_ffmpeg_processes.pop(hls_key, None)) is None:
-                return
+        """Stops an HLS FFmpeg process and cleans up resources."""
+        return self._stop_hls_ffmpeg_process(hls_key, name, data_to_cleanup=None)
+
+    def _stop_hls_ffmpeg_process(self, hls_key: 'HLSKey', name: str, *, data_to_cleanup: dict[str, Any] | None) -> None:
+        """If data_to_cleanup is provided, it will NOT release the slot or pop from hls_ffmpeg_processes,
+        the caller is responsible for those. If data_to_cleanup is None, it will find the process if it exists.
+        """
+        if data_to_cleanup is None:
+            with self.hls_process_lock:
+                if (data_to_cleanup := self.hls_ffmpeg_processes.pop(hls_key, None)) is None:
+                    return
+            should_release_slot = True
+        else:
+            should_release_slot = False
 
         process = data_to_cleanup['process']
         provider = ProviderName(data_to_cleanup['provider_alias'])
@@ -173,7 +190,8 @@ class HLSStreamManager:
             except Exception as e:
                 self.config.log_message(f"{name}: Error closing FFmpeg log file: {e}", level="ERROR")
 
-        provider_slots = self.handler.slots.get(provider).release()
+        if should_release_slot:
+            self.handler.slots.get(provider).release()
         provider_streams = self.handler.get_active_stream_status_for_logging(provider)
 
         try:

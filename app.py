@@ -199,7 +199,7 @@ def reload_configuration() -> Response:
     """Triggers a full reload of all configurations and channel data."""
     config.log_message("Received request to reload configuration via UI.", level="INFO")
     try:
-        handler.reload_handler_config()
+        handler.reload_handler_config(update_providers=True)
         flash("Configuration and source services reloaded successfully!", "success")
     except Exception as e:
         config.log_message(f"An error occurred during manual reload: {e}", level="ERROR")
@@ -343,14 +343,14 @@ def ui_logical_channel_form(logical_channel_id: str | None = None):
             
             handler.update_mappings_for_logical_channel(logical_channel_id, final_mappings_to_save)
             flash(f"Channel '{lc_data['display_name']}' and its mappings were updated successfully.", "success")
-            handler.reload_handler_config()
+            handler.reload_handler_config(update_providers=False)
             return redirect(url_for('ui_logical_channel_form', logical_channel_id=logical_channel_id))
         
         else: 
             new_id = handler.add_logical_channel(lc_data)
             if new_id:
                 flash(f"Channel '{lc_data['display_name']}' added. You can now map its sources.", "success")
-                handler.reload_handler_config()
+                handler.reload_handler_config(update_providers=False)
                 return redirect(url_for('ui_logical_channel_form', logical_channel_id=new_id))
             else:
                 flash("Error adding channel. A channel with that number may already exist.", "error")
@@ -565,7 +565,7 @@ def ui_logical_channel_delete(logical_channel_id: str) -> Response:
     if channel:
         if handler.delete_logical_channel(logical_channel_id):
             flash(f"Logical Channel '{channel['display_name']}' deleted.", "success")
-            handler.reload_handler_config()
+            handler.reload_handler_config(update_providers=False)
         else:
             flash(f"Error deleting logical channel '{channel['display_name']}'.", "error")
     else:
