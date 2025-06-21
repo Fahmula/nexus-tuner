@@ -3,16 +3,17 @@
 [![Latest Release](https://img.shields.io/github/v/release/Fahmula/nexus-stream?style=for-the-badge&logo=github)](https://github.com/Fahmula/nexus-stream/releases/latest)
 [![License](https://img.shields.io/github/license/Fahmula/nexus-stream?style=for-the-badge)](https://github.com/Fahmula/nexus-stream/blob/main/LICENSE)
 
-NexusStream is a smart, self-hosted IPTV proxy that empowers you to aggregate multiple M3U sources into a single, stable, and feature-rich playlist for your clients (like Plex, Jellyfin, or Emby). It solves common IPTV pain points by introducing powerful features like reliable parallel stream initiation, provider-level concurrent stream limiting, and intelligent session management, all controlled through an intuitive web interface.
+NexusStream is a smart, self-hosted IPTV proxy that empowers you to aggregate multiple M3U sources into a single, stable, and feature-rich playlist for your clients (like Plex, Jellyfin, or Emby). It solves common IPTV pain points by introducing powerful features like seamless configuration with previews, multiple channel sources, parallel stream initiation, automatic source priority by stream quality, provider-level concurrent stream limiting, and intelligent session management, all controlled through an intuitive web interface.
 
 ## Key Features
 
-*   **M3U Aggregation:** Combine multiple IPTV provider playlists into one unified and consistent channel lineup.
-*   **Reliable & Fast Stream Startup:** When a channel is requested, NexusStream attempts to start multiple mapped sources in parallel (up to the provider's limit). It then instantly selects the best healthy stream based on quality and priority, leading to faster and more reliable channel starts.
-*   **Concurrent Stream Limiting:** Set a maximum number of simultaneous streams allowed for each provider to prevent account locks or service interruptions.
-*   **Web-Based UI:** A modern, user-friendly interface to manage providers, create logical channels, map sources, and view application logs.
+*   **M3U Aggregation:** Combine multiple IPTV provider playlists into one unified and consistent channel lineup. Each provider can be configured with their maximum concurrent streams, which NexusStream will manage intelligently.
+*   **Web-Based UI:** A modern, user-friendly UI to manage providers, create logical channels, map sources, and view application logs. Mapping channels has never been easier with automatic suggestions and prefilled data to make the setup process frictionless.
+*   **In-Browser Previews:** Easily preview streams directly in your browser while configuring channels. No more guesswork and fiddling with external players to check stream region and language.
+*   **Automatic Quality Monitoring:** NexusStream continuously monitors the health of each source along with its resolution, bitrate, and framerate. No more endless tinkering to find the best source, just select them all and NexusStream automatically chooses the highest quality and reliable stream from your configured sources when a channel is requested.
+*   **Reliable & Fast Stream Startup:** When a channel is requested, NexusStream starts multiple mapped sources in parallel (up to the provider's limit). It then instantly selects the best healthy stream based on quality and priority, leading to faster, more reliable, and more consistent channel startup times.
 *   **On-the-Fly HLS Remux:** All streams are processed via FFmpeg to produce a standardized HLS format, maximizing compatibility across a wide range of client devices and applications.
-*   **Ghost Session Cleanup:** Integrates with Emby and Jellyfin to detect and terminate "ghost" streams—FFmpeg processes that are still running after a client has disconnected improperly, freeing up valuable provider slots.
+*   **Ghost Session Cleanup:** Integrates with Emby and Jellyfin to detect and terminate "ghost" streams, FFmpeg processes that are still running after a client has disconnected improperly, freeing up valuable provider slots.
 
 ## Getting Started
 
@@ -59,9 +60,9 @@ This project is designed to be run as a Docker container, which is the recommend
     | :------------------------------------ | :------------------------------------------------------------------------------------------------------ | :------------------------------------ |
     | **`NEXUS_URL`** (Required)            | The full public URL of your NexusStream instance, including the port. Used to build playlist URLs.        | `http://192.168.1.100:4040`             |
     | `NEXUS_PORT`                          | The internal port the application listens on. Default is `4040`.                                        | `4040`                                |
-    | `NEXUS_LOG_LEVEL`                     | Sets the logging verbosity. Options: `DEBUG`, `INFO`, `WARNING`, `ERROR`. Default is `INFO`.              | `DEBUG`                               |
-    | `NEXUS_GHOST_SESSION_CHECK_INTERVAL`  | Interval in seconds to check media servers for ghost sessions. Default is `60`.                         | `120`                                 |
     | `NEXUS_FFMPEG_HLS_INACTIVITY_TIMEOUT` | Seconds of inactivity before an HLS stream is automatically stopped. Default is `900`.                    | `900`                                 |
+    | `NEXUS_LOG_LEVEL`                     | Sets the logging verbosity. Options: `DEBUG`, `INFO`, `WARNING`, `ERROR`. Default is `INFO`.              | `DEBUG`                               |
+    | `NEXUS_GHOST_SESSION_CHECK_INTERVAL`  | Interval in seconds to check Jellyfin/Emby servers for ghost sessions. Default is `60`.                         | `120`                                 |
     | `NEXUS_EMBY_URL`                      | (Optional) URL for your Emby server to enable ghost session cleanup.                                      | `http://emby.local:8096`              |
     | `NEXUS_EMBY_API_KEY`                  | (Optional) API key for your Emby server.                                                                | `your_emby_api_key`                   |
     | `NEXUS_JELLYFIN_URL`                  | (Optional) URL for your Jellyfin server to enable ghost session cleanup.                                  | `http://jellyfin.local:8096`          |
