@@ -538,7 +538,7 @@ def ui_channel_populate_from_suggestion():
     3. Clear the suggestion dropdown.
     """
     prefilled_data = {
-        'display_name': request.args.get('name', ''),
+        'display_name': request.args.get('title', ''),
         'channel_num': request.args.get('num', ''),
         'group_title': request.args.get('group', 'Uncategorized'),
         'tvg_logo': ''

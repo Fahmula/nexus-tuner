@@ -342,19 +342,27 @@ class ChannelHandler:
         return f"{active}/{max_streams}"
 
     # --- UI Interaction Methods ---
-    def search_predefined_channels(self, query: str) -> list[dict[str, Any]]:
+    def search_predefined_channels(self, raw_query: str) -> list[dict[str, Any]]:
         """Searches the predefined channel list"""
-        if not query:
+        if not raw_query:
             return []
         
-        query = query.lower()
+        query = raw_query.lower()
         matches: list[dict[str, Any]] = []
+        found_with: dict[str, str] = {}
         for group, channels in self.predefined_channel_list.items():
             for channel in channels:
-                if query in channel.get('name', '').lower():
+                if query in channel.get('title', '').lower():
                     matches.append({**channel, 'group': group})
+                    found_with[channel['title']] = channel['title']
+                    continue
+                for name in channel.get('names', []):
+                    if query in name.lower():
+                        matches.append({**channel, 'group': group})
+                        found_with[channel.get('title', channel.get('num', ''))] = name
+                        break
         # Sort matches by how early the query appears in the name
-        matches.sort(key=lambda x: x['name'].lower().find(query))
+        matches.sort(key=lambda x: found_with[x.get('title', x.get('num', ''))].lower().find(query))
         return matches[:10] # Return a max of 10 suggestions
 
     def _generate_next_logical_channel_id(self) -> str:
