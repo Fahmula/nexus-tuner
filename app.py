@@ -52,6 +52,37 @@ except Exception as e:
     exit(1)
 
 
+def calculate_channel_uptime(channel: dict[str, Any], mapped_services: list[dict[str, Any]], all_quality_scores: dict[str, dict[str, float]]) -> None:
+    """Calculates uptime metrics for a channel based on its mapped services."""
+    uptime_scores: list[float] = []
+    if mapped_services:
+        for service_object in mapped_services[:8]:  # Assuming 2s to test a stream, 16s is the max time clients will wait
+            service_id = service_object.get('source_service_id')
+            if not service_id:
+                continue
+            
+            raw_uptime = all_quality_scores.get(service_id, {}).get('uptime')
+            if raw_uptime is not None:
+                uptime_scores.append(raw_uptime)
+
+    if uptime_scores:
+        # METRIC 1: Lowest Uptime (Weakest Link)
+        lowest_raw = min(uptime_scores)
+        channel['lowest_uptime'] = int(lowest_raw * 100)
+
+        # METRIC 2: Health (Overall Uptime with Failover)
+        # This calculates 1 - (Prob of A failing * Prob of B failing * ...)
+        # We use math.prod for a clean way to multiply all items in a list.
+        prob_all_services_fail = math.prod([(1 - score) for score in uptime_scores])
+        overall_health_raw = 1 - prob_all_services_fail
+        channel['health_score'] = int(overall_health_raw * 100)
+
+    else:
+        # If no scores exist, set both metrics to None
+        channel['lowest_uptime'] = None
+        channel['health_score'] = None
+
+
 @app.context_processor
 def inject_now() -> dict[str, datetime]:
     """Injects the current UTC time into all templates for display purposes."""
@@ -242,35 +273,7 @@ def ui_logical_channels_list() -> str:
     for channel in channels:
         mapped_services = handler.get_mappings_for_logical_channel(channel['logical_channel_id'])
         sort_sources(mapped_services, all_quality_scores, reverse=False)
-        mapped_services = mapped_services[:8]  # Assuming 2s to test a stream, 16s is the max time clients will wait
-
-        uptime_scores = []
-        if mapped_services:
-            for service_object in mapped_services:
-                service_id = service_object.get('source_service_id')
-                if not service_id:
-                    continue
-                
-                raw_uptime = all_quality_scores.get(service_id, {}).get('uptime')
-                if raw_uptime is not None:
-                    uptime_scores.append(raw_uptime)
-
-        if uptime_scores:
-            # METRIC 1: Lowest Uptime (Weakest Link)
-            lowest_raw = min(uptime_scores)
-            channel['lowest_uptime'] = int(lowest_raw * 100)
-
-            # METRIC 2: Health (Overall Uptime with Failover)
-            # This calculates 1 - (Prob of A failing * Prob of B failing * ...)
-            # We use math.prod for a clean way to multiply all items in a list.
-            prob_all_services_fail = math.prod([(1 - score) for score in uptime_scores])
-            overall_health_raw = 1 - prob_all_services_fail
-            channel['health_score'] = int(overall_health_raw * 100)
-
-        else:
-            # If no scores exist, set both metrics to None
-            channel['lowest_uptime'] = None
-            channel['health_score'] = None
+        calculate_channel_uptime(channel, mapped_services, all_quality_scores)
 
     return render_template("ui_logical_channels.html", channels=channels, handler=handler)
 
@@ -356,7 +359,7 @@ def ui_logical_channel_form(logical_channel_id: str | None = None):
 
     # 3. Prepare data for the service list
     unmapped_suggestions = []
-    mapped_services = []
+    mapped_services: list[dict[str, Any]] = []
     page = request.args.get('page', 1, type=int)
     per_page = 20
     
@@ -378,7 +381,11 @@ def ui_logical_channel_form(logical_channel_id: str | None = None):
             service_details['uptime'] = int(raw_score * 100) if raw_score is not None else None
             mapped_services.append(service_details)
     mapped_services.sort(key=lambda s: s['priority'])
-        
+
+    # Calculate channel uptime for display in logical channel form
+    sort_sources(current_mappings, all_quality_scores, reverse=False)
+    calculate_channel_uptime(channel, current_mappings, all_quality_scores)
+
     # Populate unmapped suggestions ONLY if there is a filter query.
     if filter_query:
         all_mapped_service_ids = set(current_mapping_info.keys())
@@ -402,7 +409,7 @@ def ui_logical_channel_form(logical_channel_id: str | None = None):
 
     # 4. Determine which template to render
     template_to_render = "_service_list_content.html" if is_htmx_service_list_request else "ui_logical_channel_form.html"
-    
+
     return render_template(
         template_to_render,
         channel=channel,
