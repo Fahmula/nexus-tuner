@@ -238,6 +238,39 @@ def ui_main_dashboard() -> str:
 def ui_logical_channels_list() -> str:
     """Renders the list of all configured logical channels."""
     channels = handler.get_all_logical_channels_for_ui()
+    all_quality_scores = quality_monitor.get_quality_scores()
+
+    for channel in channels:
+        mapped_services = handler.get_mappings_for_logical_channel(channel['logical_channel_id'])
+        
+        uptime_scores = []
+        if mapped_services:
+            for service_object in mapped_services:
+                service_id = service_object.get('source_service_id')
+                if not service_id:
+                    continue
+                
+                raw_uptime = all_quality_scores.get(service_id, {}).get("reliability")
+                if raw_uptime is not None:
+                    uptime_scores.append(raw_uptime)
+
+        if uptime_scores:
+            # METRIC 1: Lowest Uptime (Weakest Link)
+            lowest_raw = min(uptime_scores)
+            channel['lowest_uptime'] = int(lowest_raw * 100)
+
+            # METRIC 2: Health (Overall Uptime with Failover)
+            # This calculates 1 - (Prob of A failing * Prob of B failing * ...)
+            # We use math.prod for a clean way to multiply all items in a list.
+            prob_all_services_fail = math.prod([(1 - score) for score in uptime_scores])
+            overall_health_raw = 1 - prob_all_services_fail
+            channel['health_score'] = int(overall_health_raw * 100)
+
+        else:
+            # If no scores exist, set both metrics to None
+            channel['lowest_uptime'] = None
+            channel['health_score'] = None
+
     return render_template("ui_logical_channels.html", channels=channels, handler=handler)
 
 @app.route("/ui/logical-channels/form/", methods=["GET", "POST"])

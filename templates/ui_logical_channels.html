@@ -18,24 +18,57 @@
         <thead class="table-light">
             <tr>
                 <th>Display Name</th>
-                <th>Chanel Number</th>
-                <th>Internal ID (Slug)</th>
+                <th>Channel Number</th>
                 <th>Group Title</th>
                 <th>EPG ID (tvg-id)</th>
-                <th>Logo</th>
-                <th>Mapped Sources</th>
+                <th>Internal ID (Slug)</th>
+                <th class="text-center">Sources</th>
+                <th class="text-center">Health</th>
+                <th class="text-center">Lowest Uptime</th>
+                <th class="text-center">Logo</th>
                 <th style="width: 15%;">Actions</th>
             </tr>
         </thead>
         <tbody>
             {% for channel in channels %}
             <tr>
-                <td><strong>{{ channel.display_name }}</strong></td>
-                <td>{{ channel.channel_num if channel.channel_num else '-' }}</td>
-                <td><small class="text-muted">{{ channel.logical_channel_id }}</small></td>
-                <td>{{ channel.group_title if channel.group_title else '-' }}</td>
-                <td>{{ channel.tvg_id if channel.tvg_id else '-' }}</td>
-                <td>
+                <td class="align-middle"><strong>{{ channel.display_name }}</strong></td>
+                <td class="align-middle">{{ channel.channel_num if channel.channel_num else '-' }}</td>
+                <td class="align-middle">{{ channel.group_title if channel.group_title else '-' }}</td>
+                <td class="align-middle">{{ channel.tvg_id if channel.tvg_id else '-' }}</td>
+                <td class="align-middle"><small class="text-muted">{{ channel.logical_channel_id }}</small></td>
+                <td class="text-center align-middle">
+                    {% set mapping_count = handler.get_mappings_for_logical_channel(channel.logical_channel_id)|length %}
+                    <span class="badge bg-info">{{ mapping_count }}</span>
+                </td>
+
+                <td class="text-center align-middle">
+                    {% if channel.health_score is not none %}
+                        {% set score = channel.health_score %}
+                        {% if score >= 75 %}<span class="badge bg-success" data-bs-toggle="tooltip" title="Overall Channel Uptime (with failover)">{{ score }}%</span>
+                        {% elif score >= 50 %}<span class="badge bg-warning text-dark" data-bs-toggle="tooltip" title="Overall Channel Uptime (with failover)">{{ score }}%</span>
+                        {% elif score >= 25 %}<span class="badge bg-orange" data-bs-toggle="tooltip" title="Overall Channel Uptime (with failover)">{{ score }}%</span>
+                        {% else %}<span class="badge bg-danger" data-bs-toggle="tooltip" title="Overall Channel Uptime (with failover)">{{ score }}%</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="badge bg-secondary">N/A</span>
+                    {% endif %}
+                </td>
+
+                <td class="text-center align-middle">
+                    {% if channel.lowest_uptime is not none %}
+                        {% set score = channel.lowest_uptime %}
+                        {% if score >= 75 %}<span class="badge bg-success" data-bs-toggle="tooltip" title="Uptime of the least reliable mapped service">{{ score }}%</span>
+                        {% elif score >= 50 %}<span class="badge bg-warning text-dark" data-bs-toggle="tooltip" title="Uptime of the least reliable mapped service">{{ score }}%</span>
+                        {% elif score >= 25 %}<span class="badge bg-orange" data-bs-toggle="tooltip" title="Uptime of the least reliable mapped service">{{ score }}%</span>
+                        {% else %}<span class="badge bg-danger" data-bs-toggle="tooltip" title="Uptime of the least reliable mapped service">{{ score }}%</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="badge bg-secondary">N/A</span>
+                    {% endif %}
+                </td>
+
+                <td class="text-center align-middle">
                     {% if channel.tvg_logo %}
                     <img src="{{ channel.tvg_logo }}" alt="logo" style="max-height: 20px; max-width: 40px;"
                          onerror="this.style.display='none'" loading="lazy">
@@ -43,11 +76,8 @@
                     -
                     {% endif %}
                 </td>
-                <td>
-                    {% set mapping_count = handler.get_mappings_for_logical_channel(channel.logical_channel_id)|length %}
-                    <span class="badge bg-info">{{ mapping_count }}</span>
-                </td>
-                <td>
+                
+                <td class="align-middle">
                     <a href="{{ url_for('ui_logical_channel_form', logical_channel_id=channel.logical_channel_id) }}" class="btn btn-sm btn-outline-primary me-1" title="Edit & Map Sources">
                         <i class="fas fa-edit"></i> Edit
                     </a>
