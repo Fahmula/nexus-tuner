@@ -25,6 +25,9 @@
                     {{ service.original_tvg_name }}
                     <small class="text-muted">({{ service.provider_alias }})</small>
                     <span class="badge bg-success ms-2">Mapped</span>
+                    {% if service.id in services_mapped_elsewhere %}
+                    <span class="badge bg-warning ms-2">Duplicated</span>
+                    {% endif %}
                 </td>
                 <td class="align-middle">
                     <input type="number" class="form-control form-control-sm" name="priority_{{ service.id }}" value="{{ service.priority }}" min="0" max="10" required>
