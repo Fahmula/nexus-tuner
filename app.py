@@ -321,8 +321,10 @@ def ui_logical_channel_form(logical_channel_id: str | None = None):
     
     # Load all services and mappings
     all_services = handler.get_all_discovered_source_services_for_ui()
-    current_mappings = handler.get_mappings_for_logical_channel(logical_channel_id) if logical_channel_id else []
+    other_mappings:dict[str, list[dict[str, Any]]] = handler.channel_mappings_data_from_json.copy()
+    current_mappings = other_mappings.pop(logical_channel_id, []) if logical_channel_id else []
     current_mapping_info = {m['source_service_id']: m['priority'] for m in current_mappings}
+    services_mapped_elsewhere: set[str] = {mapping['source_service_id'] for mappings in other_mappings.values() for mapping in mappings}
     all_services_map = {s['id']: s for s in all_services}
 
     # Populate the list of currently mapped services
@@ -357,6 +359,7 @@ def ui_logical_channel_form(logical_channel_id: str | None = None):
         channel=channel,
         unmapped_suggestions_for_page=unmapped_suggestions_for_page,
         mapped_services=mapped_services,
+        services_mapped_elsewhere=services_mapped_elsewhere,
         current_page=page,
         total_pages=total_pages,
         total_unmapped_items=total_unmapped_items,

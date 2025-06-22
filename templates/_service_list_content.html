@@ -49,6 +49,9 @@
                 <td class="align-middle">
                     {{ service.original_tvg_name }}
                     <small class="text-muted">({{ service.provider_alias }})</small>
+                    {% if service.id in services_mapped_elsewhere %}
+                    <span class="badge bg-secondary ms-2">In Use</span>
+                    {% endif %}
                 </td>
                 <td class="align-middle">
                     <input type="number" class="form-control form-control-sm" name="priority_{{ service.id }}" value="5" min="0" max="10" required>
