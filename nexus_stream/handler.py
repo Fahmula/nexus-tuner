@@ -365,6 +365,35 @@ class ChannelHandler:
         matches.sort(key=lambda x: found_with[x.get('title', x.get('num', ''))].lower().find(query))
         return matches[:10] # Return a max of 10 suggestions
 
+    def find_matching_predefined_channel(self, channel_name: str, channel_num: str) -> dict[str, Any]:
+        """Finds a matching predefined channel based on name or number."""
+        predefined_channel_lists = list(self.predefined_channel_list.values())
+        for channel_list in predefined_channel_lists:
+            for pre_channel in channel_list:
+                if channel_name == pre_channel.get('title'):
+                    return pre_channel
+        for channel_list in predefined_channel_lists:
+            for pre_channel in channel_list:
+                if channel_name in pre_channel.get('names', []):
+                    return pre_channel
+        for channel_list in predefined_channel_lists:
+            for pre_channel in channel_list:
+                if channel_num == pre_channel.get('num'):
+                    return pre_channel
+        for channel_list in predefined_channel_lists:
+            for pre_channel in channel_list:
+                pre_channel_title = pre_channel.get('title', '')
+                if channel_name in pre_channel_title:
+                    return pre_channel
+                if pre_channel_title and pre_channel_title in channel_name:
+                    return pre_channel
+                for pre_channel_name in pre_channel.get('names', []):
+                    if channel_name in pre_channel_name:
+                        return pre_channel
+                    if pre_channel_name in channel_name:
+                        return pre_channel
+        return {}
+
     def _generate_next_logical_channel_id(self) -> str:
         """Generates the next available auto-incrementing ID as a string, starting at '1000'."""
         

@@ -293,19 +293,23 @@ def ui_logical_channel_form(logical_channel_id: str | None = None):
 
     # 1. Load the main channel object if we are editing
     channel = {}
+    predefined_channel: dict[str, str] = {}
     if logical_channel_id:
         channel = handler.get_logical_channel_by_id(logical_channel_id)
         if not channel:
             flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
             return redirect(url_for('ui_logical_channels_list'))
-
+        predefined_channel = handler.find_matching_predefined_channel(channel['display_name'], channel['channel_num'])
     # Priority 1: An explicit search query from the user (e.g., typing in the box).
     search_query = request.args.get('search_query')
 
     # Priority 2: If no explicit search, and it's the initial page load for an
     # existing channel, use the channel's name as the default search term.
     if search_query is None and not is_htmx_service_list_request and logical_channel_id:
-        search_query = channel.get('display_name')
+        if predefined_channel.get('names'):
+            search_query = " OR ".join(predefined_channel['names'])
+        else:
+            search_query = predefined_channel.get('title', channel.get('display_name'))
 
     filter_query = search_query.lower().strip() if search_query else None
 
@@ -564,9 +568,14 @@ def ui_channel_populate_from_suggestion():
     unmapped_suggestions_for_page = unmapped_suggestions[:per_page]
 
     # 4. OOB swap to update the entire service mapping card, now with data.
+    search_query = prefilled_data['display_name']
+    for channel_list in handler.predefined_channel_list.values():
+        for pre_channel in channel_list:
+            if search_query == pre_channel.get('title'):
+                search_query = " OR ".join(pre_channel.get('names', []))
     search_card_html = render_template(
         "_service_mapping_card.html",
-        search_query=prefilled_data['display_name'], 
+        search_query=search_query,
         channel={},
         unmapped_suggestions_for_page=unmapped_suggestions_for_page,
         mapped_services=[], # New channel has no mapped services
