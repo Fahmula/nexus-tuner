@@ -214,7 +214,7 @@ class CreateHLSStream:
             hls_name = create_hls_name(self.logical_channel_name, source["source_service_id"])
             self._hls_names[hls_key] = hls_name
             quality_score = self._quality_scores.get(source["source_service_id"])
-            score_msg = f"Score={quality_score['total_score']:.2f} | Reliability={quality_score['reliability']*100:.0f}%" if quality_score else "Score=Unknown | Reliability=Unknown"
+            score_msg = f"Score={quality_score['total_score']:.2f} | Uptime={quality_score['uptime']*100:.0f}%" if quality_score else "Score=Unknown | Uptime=Unknown"
             full_msg = f"[Priority={source['priority']} | {score_msg}]"
             self._source_quality_messages[hls_key] = full_msg
 

@@ -249,7 +249,7 @@ def ui_logical_channels_list() -> str:
                 if not service_id:
                     continue
                 
-                raw_uptime = all_quality_scores.get(service_id, {}).get("reliability")
+                raw_uptime = all_quality_scores.get(service_id, {}).get('uptime')
                 if raw_uptime is not None:
                     uptime_scores.append(raw_uptime)
 
@@ -372,8 +372,8 @@ def ui_logical_channel_form(logical_channel_id: str | None = None):
         if service_id in all_services_map:
             service_details = all_services_map[service_id].copy()
             service_details['priority'] = priority
-            raw_score = all_quality_scores.get(service_id, {}).get("reliability", None)
-            service_details["uptime"] = int(raw_score * 100) if raw_score is not None else None
+            raw_score = all_quality_scores.get(service_id, {}).get('uptime', None)
+            service_details['uptime'] = int(raw_score * 100) if raw_score is not None else None
             mapped_services.append(service_details)
     mapped_services.sort(key=lambda s: s['priority'])
         
@@ -386,7 +386,7 @@ def ui_logical_channel_form(logical_channel_id: str | None = None):
                 # Check if it matches the user's filter/search criteria
                 if handler.filter_sources(search_query, service):
                     service_id = service['id']
-                    raw_score = all_quality_scores.get(service_id, {}).get("reliability", None)
+                    raw_score = all_quality_scores.get(service_id, {}).get('uptime', None)
                     service['uptime'] = int(raw_score * 100) if raw_score is not None else None
                     unmapped_suggestions.append(service)
 

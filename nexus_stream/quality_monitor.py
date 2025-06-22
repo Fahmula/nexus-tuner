@@ -14,7 +14,7 @@ from nexus_stream.slots import ProviderName
 RESOLUTION_WEIGHT = 50
 BITRATE_WEIGHT = 30
 FRAMERATE_WEIGHT = 20
-RELIABILITY_WEIGHT = 0  # Since we test multiple streams at once when selecting, reliability is not critical
+UPTIME_WEIGHT = 0  # Since we test multiple streams at once when selecting, uptime is not critical
 
 # These cap the maximum values for each metric, any higher will return the same score
 # Essentially, values *_NORM+ will all return the weights above
@@ -232,13 +232,13 @@ class QualityMonitor:
 
     def _build_quality_scores(self, quality_cache: dict[str, dict[str, list[str | float | int]]]) -> None:
         """
-        Calculate quality scores for each source based on resolution, bitrate, framerate, and reliability.
+        Calculate quality scores for each source based on resolution, bitrate, framerate, and uptime.
         
         Quality metrics are scored and weighted using constants defined at the top of the file:
         - Resolution (height): 0-RESOLUTION_WEIGHT points (normalized against RESOLTUION_NORM)
         - Bitrate: 0-BITRATE_WEIGHT points (normalized against BITRATE_NORM)
         - Framerate: 0-FRAMERATE_WEIGHT points (normalized against FRAMERATE_NORM)
-        - Reliability: 0-RELIABILITY_WEIGHT points (percentage of time online)
+        - Uptime: 0-UPTIME_WEIGHT points (percentage of time online)
         
         Returns:
             Dictionary mapping source_service_id to dict containing:
@@ -246,11 +246,11 @@ class QualityMonitor:
             - height: float - Average height of the stream
             - bitrate: float - Average bitrate of the stream
             - framerate: float - Average framerate of the stream
-            - reliability: float - Uptime over last 10 status checks (0.0-1.0)
+            - uptime: float - Uptime over last 10 status checks (0.0-1.0)
             - resolution_score: float - Score for resolution (0-RESOLUTION_WEIGHT)
             - bitrate_score: float - Score for bitrate (0-BITRATE_WEIGHT)
             - framerate_score: float - Score for framerate (0-FRAMERATE_WEIGHT)
-            - reliability_score: float - Score for reliability (0-RELIABILITY_WEIGHT)
+            - uptime_score: float - Score for uptime (0-UPTIME_WEIGHT)
             - total_score: float - Combined quality score
         """
         self.config.log_message("Quality Monitor: Building quality scores from cache.", level="DEBUG")
@@ -271,13 +271,13 @@ class QualityMonitor:
             avg_framerate: float = sum(framerates) / len(framerates) if framerates else 0.0
             
             statuses: list[str] = cache_entry["statuses"]
-            reliability: float = sum(1 for s in statuses if s == "online") / len(statuses) if statuses else 0.0
+            uptime: float = sum(1 for s in statuses if s == "online") / len(statuses) if statuses else 0.0
             
             # Calculate normalized scores
             height_score: float = RESOLUTION_WEIGHT * min(avg_height / float(RESOLTUION_NORM), 1.0)
             bitrate_score: float = BITRATE_WEIGHT * min(avg_bitrate / float(BITRATE_NORM), 1.0)
             framerate_score: float = FRAMERATE_WEIGHT * min(avg_framerate / float(FRAMERATE_NORM), 1.0)
-            reliability_score: float = RELIABILITY_WEIGHT * reliability
+            uptime_score: float = UPTIME_WEIGHT * uptime
             
             # Store final scores
             quality_scores[service_id] = {
@@ -285,12 +285,12 @@ class QualityMonitor:
                 "height": avg_height,
                 "bitrate": avg_bitrate,
                 "framerate": avg_framerate,
-                "reliability": reliability,
+                "uptime": uptime,
                 "resolution_score": height_score,
                 "bitrate_score": bitrate_score,
                 "framerate_score": framerate_score,
-                "reliability_score": reliability_score,
-                "total_score": height_score + bitrate_score + framerate_score + reliability_score,
+                "uptime_score": uptime_score,
+                "total_score": height_score + bitrate_score + framerate_score + uptime_score,
             }
 
         with self._mutex:
