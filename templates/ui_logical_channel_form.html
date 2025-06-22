@@ -24,7 +24,7 @@
                     {% if health_score >= 75 %}
                     <span class="badge bg-success">Health: {{ health_score }}%</span>
                     {% elif health_score >= 50 %}
-                    <span class="badge bg-warning text-dark">Health:{{ health_score }}%</span>
+                    <span class="badge bg-warning">Health:{{ health_score }}%</span>
                     {% elif health_score >= 25 %}
                     <span class="badge bg-orange">Health:{{ health_score }}%</span>
                     {% else %}
@@ -38,7 +38,7 @@
                     {% if lowest_uptime >= 75 %}
                     <span class="badge bg-success">Lowest Uptime: {{ lowest_uptime }}%</span>
                     {% elif lowest_uptime >= 50 %}
-                    <span class="badge bg-warning text-dark">Lowest Uptime: {{ lowest_uptime }}%</span>
+                    <span class="badge bg-warning">Lowest Uptime: {{ lowest_uptime }}%</span>
                     {% elif lowest_uptime >= 25 %}
                     <span class="badge bg-orange">Lowest Uptime: {{ lowest_uptime }}%</span>
                     {% else %}
