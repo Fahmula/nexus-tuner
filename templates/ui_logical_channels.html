@@ -12,6 +12,19 @@
     </div>
 </div>
 
+<div class="p-3 mb-4 bg-body-tertiary rounded-3 small text-muted">
+    <h6 class="border-bottom pb-2 mb-2 text-body-emphasis">Metric Definitions</h6>
+    <p class="mb-1">
+        <i class="fas fa-heart-pulse text-success me-2" style="width: 1.25em;"></i>
+        <strong>Health (Overall Uptime):</strong> Calculates the total probability that the channel will be online, considering all mapped sources for failover. A higher number indicates better redundancy.
+    </p>
+    <p class="mb-0">
+        <i class="fas fa-triangle-exclamation text-warning me-2" style="width: 1.25em;"></i>
+        <strong>Lowest Uptime:</strong> Shows the uptime of the single least reliable source. This helps identify the "weakest link" in your channel's mappings.
+    </p>
+</div>
+
+
 {% if channels %}
 <div class="table-responsive">
     <table class="table table-striped table-hover table-sm">
