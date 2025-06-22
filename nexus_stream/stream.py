@@ -159,6 +159,12 @@ class HLSStreamManager:
         """Stops an HLS FFmpeg process and cleans up resources."""
         return self._stop_hls_ffmpeg_process(hls_key, name, data_to_cleanup=None)
 
+    def stop_hls_ffmpeg_processes_with_logical_channel_id(self, logical_channel_id: str) -> None:
+        """Stops HLS FFmpeg processes by logical channel ID and cleans up resources."""
+        with self.hls_process_lock:
+            hls_keys = [hls_key for hls_key, data in self.hls_ffmpeg_processes.items() if data['logical_channel_id'] == logical_channel_id]
+        self.stop_hls_ffmpeg_processes(hls_keys)
+
     def _stop_hls_ffmpeg_process(self, hls_key: 'HLSKey', name: str, *, data_to_cleanup: dict[str, Any] | None) -> None:
         """If data_to_cleanup is provided, it will NOT release the slot or pop from hls_ffmpeg_processes,
         the caller is responsible for those. If data_to_cleanup is None, it will find the process if it exists.

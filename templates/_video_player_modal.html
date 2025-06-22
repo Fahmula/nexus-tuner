@@ -11,13 +11,39 @@
     Initializing player...
 </div>
 
+<div id="stream-control" class="d-none">
+    <button id="stop-stream-btn" hx-post="/hls/{{ logical_channel_id }}/stop"
+        hx-trigger="click" hx-swap="none">Stop Stream</button>
+</div>
+
 <script>
     // This script runs when the content is injected into the modal
     (function() {
         const video = document.getElementById('preview-video-player');
         const statusDiv = document.getElementById('player-status');
         const src = '{{ playlist_url }}';
+        const logicalChannelId = '{{ logical_channel_id }}';
+        const stopStreamBtn = document.getElementById('stop-stream-btn');
         let hls = null;
+
+        // Set up modal close event listener
+        // This finds the parent modal and sets up the listener
+        let modal_hidden = false;
+        const setupModalListener = function () {
+            const modalElement = video.closest('.modal');
+            if (modalElement) {
+                console.log("Setting up modal hidden event listener");
+                modalElement.addEventListener('hidden.bs.modal', function () {
+                    if (modal_hidden) return;
+                    modal_hidden = true;
+                    console.log("Modal hidden event triggered");
+                    destroyPreviewPlayer();
+                });
+            } else {
+                // If we can't find the modal immediately, try again after a short delay
+                setTimeout(setupModalListener, 100);
+            }
+        };
 
         function initPlayer() {
             if (Hls.isSupported()) {
@@ -68,7 +94,7 @@
         }
 
         // Function to clean up the player
-        window.destroyPreviewPlayer = function() {
+        function destroyPreviewPlayer() {
             console.log("Destroying preview player...");
             if (hls) {
                 hls.destroy();
@@ -77,10 +103,13 @@
             video.pause();
             video.removeAttribute('src');
             video.load();
-            // The backend's inactivity timeout will handle stopping the FFmpeg process.
-        };
+            console.log("Stopping stream for logical channel:", logicalChannelId);
+            stopStreamBtn.click();
+        }
+        window.destroyPreviewPlayer = destroyPreviewPlayer;
 
         // Initialize the player
         initPlayer();
+        setupModalListener();
     })();
 </script>

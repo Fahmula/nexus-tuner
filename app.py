@@ -188,6 +188,13 @@ def serve_hls_segment(logical_channel_id: str, segment_filename: str) -> Respons
     return send_from_directory(str(segment_path.parent), segment_path.name, mimetype="video/mp2t")
 
 
+@app.route("/hls/<string:logical_channel_id>/stop", methods=["POST"])
+def stop_hls_stream(logical_channel_id: str) -> Response:
+    """Stops the HLS stream for a logical channel."""
+    hls_manager.stop_hls_ffmpeg_processes_with_logical_channel_id(logical_channel_id)
+    return Response(status=204) 
+
+
 @app.route("/playlist.m3u")
 def serve_master_playlist() -> Response:
     """Serves the master M3U playlist for clients."""
@@ -651,7 +658,7 @@ def ui_player_for_service(service_id: str) -> str:
     playlist_url = url_for('serve_hls_preview', logical_channel_id=logical_channel_id)
 
     return render_template("_video_player_modal.html", 
-                           playlist_url=playlist_url, service_name=service_name)
+                           playlist_url=playlist_url, logical_channel_id=logical_channel_id, service_name=service_name)
 
 
 def signal_handler(signum: int, _: object) -> None:
