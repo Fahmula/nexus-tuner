@@ -347,17 +347,20 @@ class ChannelHandler:
         if not raw_query:
             return []
         
-        query = raw_query.lower()
+        query = raw_query.strip().lower()
         matches: list[dict[str, Any]] = []
         found_with: dict[str, str] = {}
         for group, channels in self.predefined_channel_list.items():
             for channel in channels:
-                if query in channel.get('title', '').lower():
+                title = channel.get('title', '').lower()
+                words = query.split()
+                if all(word in title for word in words):
                     matches.append({**channel, 'group': group})
                     found_with[channel['title']] = channel['title']
                     continue
                 for name in channel.get('names', []):
-                    if query in name.lower():
+                    title = name.lower()
+                    if all(word in title for word in words):
                         matches.append({**channel, 'group': group})
                         found_with[channel.get('title', channel.get('num', ''))] = name
                         break
@@ -393,6 +396,15 @@ class ChannelHandler:
                     if pre_channel_name in channel_name:
                         return pre_channel
         return {}
+
+    def filter_sources(self, raw_query: str, service: dict[str, str]) -> bool:
+        tvg_name = service.get('original_tvg_name', '').lower()
+        display_name = service.get('original_display_name_extinf', '').lower()
+        for raw_q in raw_query.split(" OR "):
+            words = raw_q.strip().lower().split()
+            if all(word in tvg_name or word in display_name for word in words):
+                return True
+        return False
 
     def _generate_next_logical_channel_id(self) -> str:
         """Generates the next available auto-incrementing ID as a string, starting at '1000'."""

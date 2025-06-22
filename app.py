@@ -311,7 +311,7 @@ def ui_logical_channel_form(logical_channel_id: str | None = None):
         else:
             search_query = predefined_channel.get('title', channel.get('display_name'))
 
-    filter_query = search_query.lower().strip() if search_query else None
+    filter_query = search_query.strip().lower() if search_query else None
 
     # 3. Prepare data for the service list
     unmapped_suggestions = []
@@ -338,7 +338,7 @@ def ui_logical_channel_form(logical_channel_id: str | None = None):
         all_mapped_service_ids = set(current_mapping_info.keys())
         for service in all_services:
             if service['id'] not in all_mapped_service_ids:
-                if filter_query in service.get('original_tvg_name', '').lower() or filter_query in service.get('original_display_name_extinf', '').lower():
+                if handler.filter_sources(search_query, service):
                     unmapped_suggestions.append(service)
 
     # Paginate the results
@@ -551,13 +551,20 @@ def ui_channel_populate_from_suggestion():
     form_html = render_template("_logical_channel_form_fields.html", channel=prefilled_data)
 
     # 2. Pre-filter services based on the suggested name
-    filter_query = prefilled_data['display_name'].lower().strip()
+    filter_query = prefilled_data['display_name'].strip().lower()
     all_services = handler.get_all_discovered_source_services_for_ui()
     unmapped_suggestions = []
+
+    search_query = prefilled_data['display_name']
+    for channel_list in handler.predefined_channel_list.values():
+        for pre_channel in channel_list:
+            if search_query == pre_channel.get('title'):  # Only need this check since we are populating this
+                search_query = " OR ".join(pre_channel.get('names', []))
+                break
     
     if filter_query:
         for service in all_services:
-            if filter_query in service.get('original_tvg_name', '').lower() or filter_query in service.get('original_display_name_extinf', '').lower():
+            if handler.filter_sources(search_query, service):
                 unmapped_suggestions.append(service)
 
     # 3. Paginate the pre-filtered results
@@ -568,11 +575,6 @@ def ui_channel_populate_from_suggestion():
     unmapped_suggestions_for_page = unmapped_suggestions[:per_page]
 
     # 4. OOB swap to update the entire service mapping card, now with data.
-    search_query = prefilled_data['display_name']
-    for channel_list in handler.predefined_channel_list.values():
-        for pre_channel in channel_list:
-            if search_query == pre_channel.get('title'):
-                search_query = " OR ".join(pre_channel.get('names', []))
     search_card_html = render_template(
         "_service_mapping_card.html",
         search_query=search_query,
