@@ -10,8 +10,9 @@
             <tr>
                 <th style="width: 5%;" class="text-center">Enable</th>
                 <th>Service</th>
-                <th style="width: 20%;">Priority</th>
-                <th style="width: 15%;" class="text-end">Preview</th>
+                <th style="width: 15%;" class="text-center">Uptime</th>
+                <th style="width: 15%;">Priority</th>
+                <th style="width: 10%;" class="text-end">Preview</th>
             </tr>
         </thead>
         
@@ -27,6 +28,22 @@
                     <span class="badge bg-success ms-2">Mapped</span>
                     {% if service.id in services_mapped_elsewhere %}
                     <span class="badge bg-warning ms-2">Duplicated</span>
+                    {% endif %}
+                </td>
+                <td class="text-center align-middle">
+                    {% if service.uptime is not none %}
+                        {% set uptime_val = service.uptime|int %}
+                        {% if uptime_val >= 75 %}
+                            <span class="badge bg-success">{{ uptime_val }}%</span>
+                        {% elif uptime_val >= 50 %}
+                            <span class="badge bg-warning text-dark">{{ uptime_val }}%</span>
+                        {% elif uptime_val >= 25 %}
+                            <span class="badge bg-orange">{{ uptime_val }}%</span>
+                        {% else %}
+                            <span class="badge bg-danger">{{ uptime_val }}%</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="badge bg-secondary">N/A</span>
                     {% endif %}
                 </td>
                 <td class="align-middle">
@@ -56,6 +73,22 @@
                     <span class="badge bg-secondary ms-2">In Use</span>
                     {% endif %}
                 </td>
+                <td class="text-center align-middle">
+                    {% if service.uptime is not none %}
+                        {% set uptime_val = service.uptime|int %}
+                        {% if uptime_val >= 75 %}
+                            <span class="badge bg-success">{{ uptime_val }}%</span>
+                        {% elif uptime_val >= 50 %}
+                            <span class="badge bg-warning text-dark">{{ uptime_val }}%</span>
+                        {% elif uptime_val >= 25 %}
+                            <span class="badge bg-orange">{{ uptime_val }}%</span>
+                        {% else %}
+                            <span class="badge bg-danger">{{ uptime_val }}%</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="badge bg-secondary">N/A</span>
+                    {% endif %}
+                </td>
                 <td class="align-middle">
                     <input type="number" class="form-control form-control-sm" name="priority_{{ service.id }}" value="5" min="0" max="10" required>
                 </td>
@@ -72,11 +105,11 @@
             {# Helpful messages for different states #}
             {% if filter_query is not none and not unmapped_suggestions_for_page and not mapped_services %}
                 <tr>
-                    <td colspan="4" class="text-center text-muted fst-italic py-3">No services found matching your criteria.</td>
+                    <td colspan="5" class="text-center text-muted fst-italic py-3">No services found matching your criteria.</td>
                 </tr>
             {% elif not mapped_services and filter_query is none %}
                  <tr>
-                    <td colspan="4" class="text-center text-muted fst-italic py-3">
+                    <td colspan="5" class="text-center text-muted fst-italic py-3">
                         Type in the "Display Name" field on the left to automatically find matching services,
                         or use the search bar above to search all available services.
                     </td>

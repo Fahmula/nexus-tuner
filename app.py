@@ -233,7 +233,6 @@ def ui_main_dashboard() -> str:
                            discovered_services_count=len(handler.discovered_source_services),
                            logical_channels_count=len(handler.logical_channels_data_from_json))
 
-
 @app.route("/ui/logical-channels")
 def ui_logical_channels_list() -> str:
     """Renders the list of all configured logical channels."""
@@ -367,20 +366,28 @@ def ui_logical_channel_form(logical_channel_id: str | None = None):
     services_mapped_elsewhere: set[str] = {mapping['source_service_id'] for mappings in other_mappings.values() for mapping in mappings}
     all_services_map = {s['id']: s for s in all_services}
 
-    # Populate the list of currently mapped services
+    all_quality_scores = quality_monitor.get_quality_scores()
+
     for service_id, priority in current_mapping_info.items():
         if service_id in all_services_map:
             service_details = all_services_map[service_id].copy()
             service_details['priority'] = priority
+            raw_score = all_quality_scores.get(service_id, {}).get("reliability", None)
+            service_details["uptime"] = int(raw_score * 100) if raw_score is not None else None
             mapped_services.append(service_details)
     mapped_services.sort(key=lambda s: s['priority'])
-    
+        
     # Populate unmapped suggestions ONLY if there is a filter query.
     if filter_query:
         all_mapped_service_ids = set(current_mapping_info.keys())
         for service in all_services:
+            # Check if the service is NOT already mapped
             if service['id'] not in all_mapped_service_ids:
+                # Check if it matches the user's filter/search criteria
                 if handler.filter_sources(search_query, service):
+                    service_id = service['id']
+                    raw_score = all_quality_scores.get(service_id, {}).get("reliability", None)
+                    service['uptime'] = int(raw_score * 100) if raw_score is not None else None
                     unmapped_suggestions.append(service)
 
     # Paginate the results
