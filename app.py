@@ -22,7 +22,7 @@ from flask import (Flask, Response, abort, flash, redirect, render_template,
                    request, send_from_directory, url_for)
 
 from nexus_stream.config import Config
-from nexus_stream.create_stream import CREATE_STREAM_POLL_INTERVAL, CreateHLSStream
+from nexus_stream.create_stream import CREATE_STREAM_POLL_INTERVAL, CreateHLSStream, sort_sources
 from nexus_stream.handler import ChannelHandler, DEFAULT_PRIORITY
 from nexus_stream.quality_monitor import QualityMonitor
 from nexus_stream.session_monitor import GhostSessionMonitor
@@ -241,7 +241,9 @@ def ui_logical_channels_list() -> str:
 
     for channel in channels:
         mapped_services = handler.get_mappings_for_logical_channel(channel['logical_channel_id'])
-        
+        sort_sources(mapped_services, all_quality_scores, reverse=False)
+        mapped_services = mapped_services[:8]  # Assuming 2s to test a stream, 16s is the max time clients will wait
+
         uptime_scores = []
         if mapped_services:
             for service_object in mapped_services:

@@ -14,13 +14,23 @@
 
 <div class="p-3 mb-4 bg-body-tertiary rounded-3 small text-muted">
     <h6 class="border-bottom pb-2 mb-2 text-body-emphasis">Metric Definitions</h6>
+    <p class="mb-2">
+        <i class="fas fa-layer-group text-primary me-2" style="width: 1.25em;"></i>
+        <strong>Highest Priority Sources:</strong> There is no limit on the number of sources that can be mapped, however,
+        clients will likely timeout before more than 8 sources can be checked. These calculations consider only the 8 highest
+        priority sources for each channel as determined for playback, representing the real-world metrics. Manual priority takes
+        precedence, with quality score as a secondary factor.
+    </p>
     <p class="mb-1">
         <i class="fas fa-heart-pulse text-success me-2" style="width: 1.25em;"></i>
-        <strong>Health (Overall Uptime):</strong> Calculates the total probability that the channel will be online, considering all mapped sources for failover. A higher number indicates better redundancy.
+        <strong>Health (Overall Uptime):</strong> Calculates the total probability that the channel will be online using
+        the <span class="fst-italic text-primary-emphasis">Highest Priority Sources</span>.
     </p>
     <p class="mb-0">
         <i class="fas fa-triangle-exclamation text-warning me-2" style="width: 1.25em;"></i>
-        <strong>Lowest Uptime:</strong> Shows the uptime of the single least reliable source. This helps identify the "weakest link" in your channel's mappings.
+        <strong>Lowest Uptime:</strong> Shows the uptime of the single least reliable source from the <span
+            class="fst-italic text-primary-emphasis">Highest Priority Sources</span>. This helps identify the "weakest
+        link" in your channel's mappings.
     </p>
 </div>
 

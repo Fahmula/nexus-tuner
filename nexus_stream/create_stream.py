@@ -58,6 +58,27 @@ def create_hls_ffmpeg_command(hls_manager: HLSStreamManager, config: Config, inp
     return command, channel_hls_dir
 
 
+def sort_sources(sources: list[dict[str, Any]], quality_scores: dict[str, dict[str, float]], *, reverse: bool) -> dict[str, int]:
+    """Sorts the input sources in based on their manual priority and quality scores.
+    Returns a mapping of source_service_id to their priority (the input is sorted in place so this is not needed most of the time).
+    """
+    prev_score = None
+    curr_priority = -1
+    source_scores = sorted(((source["priority"],
+                             -quality_scores.get(source["source_service_id"], {}).get("total_score", 0),
+                             -quality_scores.get(source["source_service_id"], {}).get("uptime", 0),
+                             source["source_service_id"]),
+                    source["source_service_id"]) for source in sources)
+    source_priorities: dict[str, int] = {}
+    for score, source_service_id in source_scores:
+        if score != prev_score:
+            prev_score = score
+            curr_priority += 1
+        source_priorities[source_service_id] = curr_priority
+    sources.sort(key=lambda x: source_priorities[x["source_service_id"]], reverse=reverse)  # Highest priority last since we use `pop()`
+    return source_priorities
+
+
 class CreateHLSStream:
     """
     A class to acquire and use resources for creating a stream.
@@ -85,17 +106,7 @@ class CreateHLSStream:
         # Convert these into a integer 0, 1, 2, ... relative to these sources
         # Ones that are exactly equal to have the same number, lower is better
         self._quality_scores = self.quality_monitor.get_quality_scores()
-        prev_score = None
-        curr_priority = -1
-        source_scores = sorted(((source["priority"], -self._quality_scores.get(source["source_service_id"], {}).get("total_score", 0)), source["source_service_id"]) for source in self._sources)
-        source_priorities: dict[str, int] = {}
-        for score, source_service_id in source_scores:
-            if score != prev_score:
-                prev_score = score
-                curr_priority += 1
-            source_priorities[source_service_id] = curr_priority
-        self._sources.sort(key=lambda x: source_priorities[x["source_service_id"]], reverse=True)  # Highest priority last since we use `pop()`
-        self._remaining_priorities = source_priorities.copy()  # To know if the stream we just found is the best one (exculding failed sources)
+        self._remaining_priorities = sort_sources(self._sources, self._quality_scores, reverse=True)  # Highest priority last since we use `pop()`
 
         self._results: list[tuple[HLSKey, dict[str, Any]]] = []  # All the successful streams that we will choose from for self._res
         self._selected = False  # If a stream has been chosen, stop the other threads early
