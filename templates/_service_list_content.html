@@ -32,7 +32,7 @@
                     {% endif %}
                 </td>
                 <td class="text-center align-middle">
-                    {% if service.uptime is not none %}
+                    {% if service.uptime is defined and service.uptime is not none %}
                         {% set uptime_val = service.uptime|int %}
                         {% if uptime_val >= 75 %}
                             <span class="badge bg-success">{{ uptime_val }}%</span>
@@ -75,7 +75,7 @@
                     {% endif %}
                 </td>
                 <td class="text-center align-middle">
-                    {% if service.uptime is not none %}
+                    {% if service.uptime is defined and service.uptime is not none %}
                         {% set uptime_val = service.uptime|int %}
                         {% if uptime_val >= 75 %}
                             <span class="badge bg-success">{{ uptime_val }}%</span>
