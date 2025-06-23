@@ -1,0 +1,104 @@
+<!-- This is the main content that will be swapped into the #service-list-container target -->
+<h6 class="card-subtitle my-2 text-muted">Manage Mappings</h6>
+<p class="small text-muted">
+    Check services to enable, or uncheck to disable. Set the priority for failover (0 is highest with 5 as default).
+</p>
+
+<div class="table-responsive">
+   <table class="table table-sm table-hover">
+        <thead class="table-light">
+            <tr>
+                <th style="width: 5%;" class="text-center">Enable</th>
+                <th>Service</th>
+                <th style="width: 20%;">Priority</th>
+                <th style="width: 15%;" class="text-end">Preview</th>
+            </tr>
+        </thead>
+        
+        <tbody>
+            {% for service in mapped_services %}
+            <tr>
+                <td class="text-center align-middle">
+                    <input class="form-check-input" type="checkbox" name="mapping_service_id" value="{{ service.id }}" checked>
+                </td>
+                <td class="align-middle">
+                    {{ service.original_tvg_name }}
+                    <small class="text-muted">({{ service.provider_alias }})</small>
+                    <span class="badge bg-success ms-2">Mapped</span>
+                    {% if service.id in services_mapped_elsewhere %}
+                    <span class="badge bg-warning ms-2">Duplicated</span>
+                    {% endif %}
+                </td>
+                <td class="align-middle">
+                    <input type="number" class="form-control form-control-sm" name="priority_{{ service.id }}" value="{{ service.priority }}" min="0" max="10" required>
+                </td>
+                <td class="text-end align-middle">
+                    <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#previewModal" 
+                            hx-get="{{ url_for('ui_player_for_service', service_id=service.id) }}" hx-target="#preview-modal-body" hx-trigger="click"
+                            title="Preview Stream URL for {{ service.original_tvg_name }}">
+                        <i class="fas fa-play"></i>
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+
+        <tbody>
+            {% for service in unmapped_suggestions_for_page %}
+            <tr>
+                <td class="text-center align-middle">
+                    <input class="form-check-input" type="checkbox" name="mapping_service_id" value="{{ service.id }}">
+                </td>
+                <td class="align-middle">
+                    {{ service.original_tvg_name }}
+                    <small class="text-muted">({{ service.provider_alias }})</small>
+                    {% if service.id in services_mapped_elsewhere %}
+                    <span class="badge bg-secondary ms-2">In Use</span>
+                    {% endif %}
+                </td>
+                <td class="align-middle">
+                    <input type="number" class="form-control form-control-sm" name="priority_{{ service.id }}" value="5" min="0" max="10" required>
+                </td>
+                <td class="text-end align-middle">
+                    <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#previewModal" 
+                            hx-get="{{ url_for('ui_player_for_service', service_id=service.id) }}" hx-target="#preview-modal-body" hx-trigger="click"
+                            title="Preview Stream URL for {{ service.original_tvg_name }}">
+                        <i class="fas fa-play"></i>
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+
+            {# Helpful messages for different states #}
+            {% if filter_query is not none and not unmapped_suggestions_for_page and not mapped_services %}
+                <tr>
+                    <td colspan="4" class="text-center text-muted fst-italic py-3">No services found matching your criteria.</td>
+                </tr>
+            {% elif not mapped_services and filter_query is none %}
+                 <tr>
+                    <td colspan="4" class="text-center text-muted fst-italic py-3">
+                        Type in the "Display Name" field on the left to automatically find matching services,
+                        or use the search bar above to search all available services.
+                    </td>
+                </tr>
+            {% endif %}
+        </tbody>
+    </table>
+    
+    {% if total_pages > 1 %}
+        <p class="text-muted small mt-2">
+            Showing {{ unmapped_suggestions_for_page|length }} of {{ total_unmapped_items }} total matching services.
+        </p>
+        <nav aria-label="Suggestions navigation" class="mt-2">
+            <ul class="pagination justify-content-center">
+                <li class="page-item {% if current_page <= 1 %}disabled{% endif %}">
+                    <a class="page-link" hx-get="{{ url_for('ui_logical_channel_form', logical_channel_id=channel.logical_channel_id, page=current_page-1, search_query=search_query) }}" hx-target="#service-list-container" hx-push-url="true" hx-include="[name='logical_channel_id'], [name='display_name'], [name='search_query']">« Previous</a>
+                </li>
+                <li class="page-item disabled"><span class="page-link">Page {{ current_page }} of {{ total_pages }}</span></li>
+                <li class="page-item {% if current_page >= total_pages %}disabled{% endif %}">
+                    <a class="page-link" hx-get="{{ url_for('ui_logical_channel_form', logical_channel_id=channel.logical_channel_id, page=current_page+1, search_query=search_query) }}" hx-target="#service-list-container" hx-push-url="true" hx-include="[name='logical_channel_id'], [name='display_name'], [name='search_query']">Next »</a>
+                </li>
+            </ul>
+        </nav>
+    {% endif %}
+</div>

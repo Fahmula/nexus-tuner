@@ -9,6 +9,7 @@ from nexus_stream.config import Config
 from nexus_stream.slots import ProviderName, ProviderSlots
 
 # --- Constants ---
+DEFAULT_PRIORITY = 5
 PROVIDER_FETCH_TIMEOUT = 20
 PROVIDER_PARSE_MAX_WORKERS = 10
 NEXUS_USER_AGENT = 'NexusStream/1.0'
@@ -42,6 +43,7 @@ class ChannelHandler:
         Args:
             config: The main application Config object.
         """
+        self._startup = True
         self.config = config
         self._mutex = threading.RLock()
 
@@ -57,25 +59,36 @@ class ChannelHandler:
         self.master_m3u_content: str = "#EXTM3U\n"
 
         self.slots: dict[ProviderName, ProviderSlots] = {}
+        self._kill_provider_streams: set[str] = set()
         self.pending_streams: set[str] = set()
 
-        self._load_and_process_configurations()
+        self._load_and_process_configurations(update_providers=True)
+        self._startup = False
+
+    def reset_kill_provider_streams(self) -> set[str]:
+        """Resets the kill_provider_streams, returns the aliases that should be killed."""
+        with self._mutex:
+            if not self._kill_provider_streams:
+                return set()
+            tmp = self._kill_provider_streams
+            self._kill_provider_streams = set()
+            return tmp
 
     def _generate_source_service_id(self, provider_alias: str, actual_stream_url: str) -> str:
         """Creates a stable, unique ID for a source stream."""
         id_material = f"{provider_alias}:{actual_stream_url}"
         return f"{provider_alias}:{hashlib.md5(id_material.encode('utf-8')).hexdigest()}"
 
-    def _load_and_process_configurations(self) -> None:
+    def _load_and_process_configurations(self, *, update_providers: bool) -> None:
         """
         Loads all data from JSON files and rebuilds the in-memory channel structures.
         This is the main "reload" function for the handler.
         """
         self.config.log_message("Loading/Reloading ChannelHandler configurations", level="INFO")
-        
-        self.providers_data_from_json = self.config.get_providers_config().get("source_m3u_providers", {})
 
-        self._update_providers_slots()
+        if update_providers:
+            self.providers_data_from_json = self.config.get_providers_config().get("source_m3u_providers", {})
+            self._update_providers_slots()
 
         self.logical_channels_data_from_json = self.config.get_logical_channels_config()
         self.channel_mappings_data_from_json = self.config.get_channel_mappings_config()
@@ -96,7 +109,7 @@ class ChannelHandler:
 
     def _parse_source_m3u_lines(self, lines: list[str]) -> list[dict[str, str]]:
         """Parses the text lines of an M3U file into a structured list of channels."""
-        parsed_channels = []
+        parsed_channels: list[dict[str, str]] = []
         current_extinf = None
         for line in lines:
             line = line.strip()
@@ -144,7 +157,7 @@ class ChannelHandler:
                     }
             self.config.log_message(f"Discovered {len(parsed_channels)} services from provider '{provider_alias}'.", level="INFO")
         except requests.RequestException as e:
-            self.config.log_message(f"Failed to fetch or parse provider '{provider_alias}' ({m3u_url}): {e}", level="ERROR")
+            self.config.log_message(f"Failed to fetch or parse provider '{provider_alias}': {e}", level="ERROR")
         except Exception as e:
             self.config.log_message(f"An unexpected error occurred while processing provider '{provider_alias}': {e}", level="ERROR")
 
@@ -180,9 +193,9 @@ class ChannelHandler:
 
             mapped_sources_for_lc = self.channel_mappings_data_from_json.get(logical_channel_id, [])
             processed_sources: list[dict[str, Any]] = []
-            for mapping in sorted(mapped_sources_for_lc, key=lambda x: x.get("priority", 0)):
+            for mapping in sorted(mapped_sources_for_lc, key=lambda x: x.get("priority", DEFAULT_PRIORITY)):
                 source_id = mapping.get("source_service_id")
-                priority = mapping.get("priority", 0)
+                priority = mapping.get("priority", DEFAULT_PRIORITY)
                 discovered_service = self.discovered_source_services.get(source_id)
                 if discovered_service:
                     processed_sources.append({
@@ -253,11 +266,32 @@ class ChannelHandler:
         channel_data = self.client_facing_channels.get(logical_channel_id)
         return channel_data.get("sources", []) if channel_data else []
     
-    def _update_providers_slots(self,) -> bool:
+    def _update_providers_slots(self) -> None:
         """Initializes or updates the slots for each provider based on their max concurrent streams."""
         with self._mutex:
-            self.slots.clear()
+            providers_to_delete: set[ProviderName] = set()
+            for alias, curr_details in self.slots.items():
+                if alias not in self.providers_data_from_json:
+                    self.config.log_message(f"Removing slots for provider '{alias}' as it no longer exists in configuration.", level="INFO")
+                    providers_to_delete.add(alias)
+                    self._kill_provider_streams.add(alias)
+                    continue
+                m3u_url = self.providers_data_from_json[alias].get("url", "")
+                max_streams = self.providers_data_from_json[alias].get("max_concurrent_streams", 1)
+                if curr_details.get_m3u_url() == m3u_url and curr_details.get_total_slots() == max_streams:
+                    continue
+                self.config.log_message(f"Updating slots for provider '{alias}' with new URL or max streams.", level="INFO")
+                self.slots[alias] = ProviderSlots(
+                    name=ProviderName(alias),
+                    m3u_url=m3u_url,
+                    total_slots=max_streams
+                )
+                self._kill_provider_streams.add(alias)
+            for alias in providers_to_delete:
+                del self.slots[alias]
             for alias, details in self.providers_data_from_json.items():
+                if alias in self.slots:
+                    continue
                 name = ProviderName(alias)
                 max_streams = details.get("max_concurrent_streams", 1)
                 self.slots[name] = ProviderSlots(
@@ -265,12 +299,12 @@ class ChannelHandler:
                     m3u_url=details.get("url", ""),
                     total_slots=max_streams
                 )
-                self.config.log_message(f"Initialized slots for provider '{alias}' with capacity {max_streams}", level="DEBUG")
-        return True
+                self.config.log_message(f"Initialized slots for provider '{alias}' with capacity {max_streams}", level="INFO")
+        return
         
-    def reload_handler_config(self) -> None:
+    def reload_handler_config(self, *, update_providers: bool) -> None:
         """Public method to trigger a full reload of the handler's configuration."""
-        self._load_and_process_configurations()
+        self._load_and_process_configurations(update_providers=update_providers)
 
     def get_provider_stream_status(self) -> dict[str, dict[str, int]]:
         """
@@ -308,26 +342,75 @@ class ChannelHandler:
         return f"{active}/{max_streams}"
 
     # --- UI Interaction Methods ---
-    def search_predefined_channels(self, query: str) -> list[dict[str, Any]]:
+    def search_predefined_channels(self, raw_query: str) -> list[dict[str, Any]]:
         """Searches the predefined channel list"""
-        if not query:
+        if not raw_query:
             return []
         
-        query = query.lower()
+        query = raw_query.strip().lower()
         matches: list[dict[str, Any]] = []
+        found_with: dict[str, str] = {}
         for group, channels in self.predefined_channel_list.items():
             for channel in channels:
-                if query in channel.get('name', '').lower():
+                title = channel.get('title', '').lower()
+                words = query.split()
+                if all(word in title for word in words):
                     matches.append({**channel, 'group': group})
+                    found_with[channel['title']] = channel['title']
+                    continue
+                for name in channel.get('names', []):
+                    title = name.lower()
+                    if all(word in title for word in words):
+                        matches.append({**channel, 'group': group})
+                        found_with[channel.get('title', channel.get('num', ''))] = name
+                        break
         # Sort matches by how early the query appears in the name
-        matches.sort(key=lambda x: x['name'].lower().find(query))
+        matches.sort(key=lambda x: found_with[x.get('title', x.get('num', ''))].lower().find(query))
         return matches[:10] # Return a max of 10 suggestions
+
+    def find_matching_predefined_channel(self, channel_name: str, channel_num: str) -> dict[str, Any]:
+        """Finds a matching predefined channel based on name or number."""
+        predefined_channel_lists = list(self.predefined_channel_list.values())
+        for channel_list in predefined_channel_lists:
+            for pre_channel in channel_list:
+                if channel_name == pre_channel.get('title'):
+                    return pre_channel
+        for channel_list in predefined_channel_lists:
+            for pre_channel in channel_list:
+                if channel_name in pre_channel.get('names', []):
+                    return pre_channel
+        for channel_list in predefined_channel_lists:
+            for pre_channel in channel_list:
+                if channel_num == pre_channel.get('num'):
+                    return pre_channel
+        for channel_list in predefined_channel_lists:
+            for pre_channel in channel_list:
+                pre_channel_title = pre_channel.get('title', '')
+                if channel_name in pre_channel_title:
+                    return pre_channel
+                if pre_channel_title and pre_channel_title in channel_name:
+                    return pre_channel
+                for pre_channel_name in pre_channel.get('names', []):
+                    if channel_name in pre_channel_name:
+                        return pre_channel
+                    if pre_channel_name in channel_name:
+                        return pre_channel
+        return {}
+
+    def filter_sources(self, raw_query: str, service: dict[str, str]) -> bool:
+        tvg_name = service.get('original_tvg_name', '').lower()
+        display_name = service.get('original_display_name_extinf', '').lower()
+        for raw_q in raw_query.split(" OR "):
+            words = raw_q.strip().lower().split()
+            if all(word in tvg_name or word in display_name for word in words):
+                return True
+        return False
 
     def _generate_next_logical_channel_id(self) -> str:
         """Generates the next available auto-incrementing ID as a string, starting at '1000'."""
         
         existing_id_strings = [
-            lc.get('logical_channel_id') 
+            lc['logical_channel_id']
             for lc in self.logical_channels_data_from_json 
             if lc.get('logical_channel_id') is not None
         ]
@@ -341,9 +424,9 @@ class ChannelHandler:
         
         return str(next_id_as_int)
 
-    def get_all_providers_for_ui(self) -> dict[str, Any]:
+    def get_all_providers_for_ui(self) -> list[dict[str, Any]]:
         all_providers = self.providers_data_from_json
-        providers_display = [
+        providers_display: list[dict[str, Any]] = [
             {
                 "alias": alias,
                 "url": details.get("url", ""),
@@ -363,7 +446,7 @@ class ChannelHandler:
             self._update_providers_slots()
         return save_successful
     
-    def add_provider(self, alias: str, url: str, max_streams: int) -> dict[str, Any]:
+    def add_provider(self, alias: str, url: str, max_streams: int) -> dict[str, Any] | None:
         """
         Adds a new provider to the configuration using the central save method.
         
@@ -452,7 +535,7 @@ class ChannelHandler:
         """Gets a logical channel by its logical channel ID."""
         return next((lc for lc in self.logical_channels_data_from_json if lc.get("logical_channel_id") == logical_channel_id), None)
 
-    def add_logical_channel(self, lc_data: dict[str, Any]) -> bool:
+    def add_logical_channel(self, lc_data: dict[str, Any]) -> str:
         """Adds a new logical channel to the configuration and returns its internal ID."""
         new_id = self._generate_next_logical_channel_id()
         lc_data['logical_channel_id'] = new_id

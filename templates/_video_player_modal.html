@@ -1,0 +1,115 @@
+{# File: templates/_video_player_modal.html #}
+
+<div class="mb-2">
+    <p class="mb-1"><strong>Previewing:</strong> {{ service_name }}</p>
+    <p class="text-muted small">This will use a provider stream slot. The stream will stop automatically when you close this modal.</p>
+</div>
+
+<video id="preview-video-player" class="w-100" controls muted autoplay></video>
+
+<div id="player-status" class="alert alert-info mt-2 small p-2" role="alert">
+    Initializing player...
+</div>
+
+<div id="stream-control" class="d-none">
+    <button id="stop-stream-btn" hx-post="/hls/{{ logical_channel_id }}/stop"
+        hx-trigger="click" hx-swap="none">Stop Stream</button>
+</div>
+
+<script>
+    // This script runs when the content is injected into the modal
+    (function() {
+        const video = document.getElementById('preview-video-player');
+        const statusDiv = document.getElementById('player-status');
+        const src = '{{ playlist_url }}';
+        const logicalChannelId = '{{ logical_channel_id }}';
+        const stopStreamBtn = document.getElementById('stop-stream-btn');
+        let hls = null;
+
+        // Set up modal close event listener
+        // This finds the parent modal and sets up the listener
+        let modal_hidden = false;
+        const setupModalListener = function () {
+            const modalElement = video.closest('.modal');
+            if (modalElement) {
+                console.log("Setting up modal hidden event listener");
+                modalElement.addEventListener('hidden.bs.modal', function () {
+                    if (modal_hidden) return;
+                    modal_hidden = true;
+                    console.log("Modal hidden event triggered");
+                    destroyPreviewPlayer();
+                });
+            } else {
+                // If we can't find the modal immediately, try again after a short delay
+                setTimeout(setupModalListener, 100);
+            }
+        };
+
+        function initPlayer() {
+            if (Hls.isSupported()) {
+                console.log("HLS.js is supported. Initializing player for:", src);
+                statusDiv.innerText = "HLS.js supported. Loading stream...";
+                hls = new Hls({
+                    // Optional: Add fine-tuning configs here if needed
+                    // e.g., lowLatencyMode: true
+                });
+                hls.loadSource(src);
+                hls.attachMedia(video);
+                hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                    console.log("Manifest parsed. Playing video.");
+                    statusDiv.innerHTML = '<i class="fas fa-check-circle text-success"></i> Stream playing.';
+                    video.play();
+                });
+                hls.on(Hls.Events.ERROR, function(event, data) {
+                    if (data.fatal) {
+                        console.error('Fatal HLS.js error:', data.type, data.details);
+                        statusDiv.className = 'alert alert-danger mt-2 small p-2';
+                        statusDiv.innerHTML = `<i class="fas fa-exclamation-triangle"></i> <strong>Error:</strong> ${data.details}`;
+                        switch(data.type) {
+                            case Hls.ErrorTypes.NETWORK_ERROR:
+                                hls.startLoad();
+                                break;
+                            case Hls.ErrorTypes.MEDIA_ERROR:
+                                hls.recoverMediaError();
+                                break;
+                            default:
+                                hls.destroy();
+                                break;
+                        }
+                    }
+                });
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                // Native HLS support (e.g., Safari)
+                console.log("Native HLS support detected.");
+                statusDiv.innerText = "Using native browser HLS support.";
+                video.src = src;
+                video.addEventListener('loadedmetadata', function() {
+                    video.play();
+                });
+            } else {
+                console.error("HLS is not supported in this browser.");
+                statusDiv.className = 'alert alert-danger mt-2 small p-2';
+                statusDiv.innerHTML = '<i class="fas fa-times-circle"></i> HLS playback is not supported in your browser.';
+            }
+        }
+
+        // Function to clean up the player
+        function destroyPreviewPlayer() {
+            console.log("Destroying preview player...");
+            if (hls) {
+                hls.destroy();
+                hls = null;
+            }
+            video.pause();
+            video.removeAttribute('src');
+            video.load();
+            console.log("Stopping stream for logical channel:", logicalChannelId);
+            stopStreamBtn.click();
+        }
+        window.destroyPreviewPlayer = destroyPreviewPlayer;
+
+        // Initialize the player
+        initPlayer();
+        setupModalListener();
+    })();
+</script>

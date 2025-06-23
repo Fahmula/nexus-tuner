@@ -1,4 +1,6 @@
 import threading
+import os
+import sys
 from time import monotonic
 from typing import NewType
 
@@ -59,6 +61,11 @@ class ProviderSlots:
                 self._cond.wait(timeout)
             else:
                 self._available_slots -= 1
+                if self._available_slots < 0:
+                    if threading.current_thread() is threading.main_thread():
+                        sys.exit(7)
+                    else:
+                        os._exit(7)
                 self._active_slots += 1
                 rc = True
         return rc
@@ -67,6 +74,11 @@ class ProviderSlots:
         with self._cond:
             self._available_slots += 1
             self._active_slots -= 1
+            if self._active_slots < 0:
+                if threading.current_thread() is threading.main_thread():
+                    sys.exit(13)
+                else:
+                    os._exit(13)
             self._cond.notify(1)
 
     __enter__ = acquire

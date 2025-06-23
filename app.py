@@ -22,8 +22,8 @@ from flask import (Flask, Response, abort, flash, redirect, render_template,
                    request, send_from_directory, url_for)
 
 from nexus_stream.config import Config
-from nexus_stream.create_stream import CreateHLSStream
-from nexus_stream.handler import ChannelHandler
+from nexus_stream.create_stream import CREATE_STREAM_POLL_INTERVAL, CreateHLSStream
+from nexus_stream.handler import ChannelHandler, DEFAULT_PRIORITY
 from nexus_stream.quality_monitor import QualityMonitor
 from nexus_stream.session_monitor import GhostSessionMonitor
 from nexus_stream.stream import HLSStreamManager
@@ -60,6 +60,35 @@ def inject_now() -> dict[str, datetime]:
 
 # --- Core Streaming and Playlist Endpoints ---
 
+@app.route('/hls/<string:logical_channel_id>/preview.m3u8')
+def serve_hls_preview(logical_channel_id: str) -> Response:
+    """Serves a preview HLS playlist for a channel."""
+    source_service_id = logical_channel_id.replace("preview_", "")
+    source_service = handler.discovered_source_services.get(source_service_id, None)
+    
+    if not source_service:
+        msg = f"[{request.method} {request.path}] Preview requested for non-existent source service ID {source_service}."
+        config.log_message(msg, level="ERROR")
+        abort(404, msg)
+
+    priority = DEFAULT_PRIORITY
+    for channels in handler.channel_mappings_data_from_json.values():
+        for channel in channels:
+            if channel['source_service_id'] == source_service_id:
+                priority = channel['priority']
+                break
+
+    sources: list[dict[str, Any]] = [{
+        'source_service_id': source_service['id'],
+        'priority': priority,
+        'provider_alias': source_service['provider_alias'],
+        'actual_stream_url': source_service['actual_stream_url']
+    }]
+
+    logical_channel_name = source_service.get('original_display_name_extinf', source_service.get('original_tvg_name', 'Preview'))
+
+    return serve_hls_playlist(logical_channel_id, logical_channel_name=logical_channel_name, sources=sources)
+
 @app.route('/hls/<string:logical_channel_id>/playlist.m3u8')
 def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str | None = None, sources: list[dict[str, Any]] | None = None) -> Response:
     """
@@ -78,7 +107,7 @@ def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str | None
                 msg = f"[{request.method} {request.path}] Exceeded timeout while waiting for earlier request for {logical_channel_id} to complete."
                 config.log_message(msg, level="ERROR")
                 abort(503, msg)
-            time.sleep(0.01)
+            time.sleep(CREATE_STREAM_POLL_INTERVAL)
         added_pending_stream = True
 
         if logical_channel_name is None:
@@ -159,6 +188,13 @@ def serve_hls_segment(logical_channel_id: str, segment_filename: str) -> Respons
     return send_from_directory(str(segment_path.parent), segment_path.name, mimetype="video/mp2t")
 
 
+@app.route("/hls/<string:logical_channel_id>/stop", methods=["POST"])
+def stop_hls_stream(logical_channel_id: str) -> Response:
+    """Stops the HLS stream for a logical channel."""
+    hls_manager.stop_hls_ffmpeg_processes_with_logical_channel_id(logical_channel_id)
+    return Response(status=204) 
+
+
 @app.route("/playlist.m3u")
 def serve_master_playlist() -> Response:
     """Serves the master M3U playlist for clients."""
@@ -170,7 +206,7 @@ def reload_configuration() -> Response:
     """Triggers a full reload of all configurations and channel data."""
     config.log_message("Received request to reload configuration via UI.", level="INFO")
     try:
-        handler.reload_handler_config()
+        handler.reload_handler_config(update_providers=True)
         flash("Configuration and source services reloaded successfully!", "success")
     except Exception as e:
         config.log_message(f"An error occurred during manual reload: {e}", level="ERROR")
@@ -204,47 +240,15 @@ def ui_logical_channels_list() -> str:
     channels = handler.get_all_logical_channels_for_ui()
     return render_template("ui_logical_channels.html", channels=channels, handler=handler)
 
-@app.route("/ui/logical-channels/form", methods=["GET", "POST"])
+@app.route("/ui/logical-channels/form/", methods=["GET", "POST"])
 @app.route("/ui/logical-channels/form/<string:logical_channel_id>", methods=["GET", "POST"])
 def ui_logical_channel_form(logical_channel_id: str | None = None):
-    """Handles both adding and editing a logical channel and its mappings."""
-
-    if request.method == "GET":
-        channel = {}
-        if logical_channel_id:
-            channel = handler.get_logical_channel_by_id(logical_channel_id)
-            if not channel:
-                flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
-                return redirect(url_for('ui_logical_channels_list'))
-
-        all_services = handler.get_all_discovered_source_services_for_ui()
-        
-        filter_query = channel.get('display_name', '').lower().strip()
-        
-        suggested_services = []
-        if filter_query:
-            for service in all_services:
-                name_to_check = service.get('original_tvg_name', '').lower()
-                extinf_name_to_check = service.get('original_display_name_extinf', '').lower()
-
-                if filter_query in name_to_check or filter_query in extinf_name_to_check:
-                    suggested_services.append(service)
-        
-        current_mappings = []
-        if logical_channel_id:
-            current_mappings = handler.get_mappings_for_logical_channel(logical_channel_id)
-
-        action_url = url_for('ui_logical_channel_form', logical_channel_id=logical_channel_id) if logical_channel_id else url_for('ui_logical_channel_form')
-
-        return render_template("ui_logical_channel_form.html", 
-                               channel=channel,
-                               all_services=all_services,
-                               suggested_services=suggested_services,
-                               current_mappings=current_mappings,
-                               action_url=action_url)
-
+    """Handles adding/editing a logical channel and its mappings in a unified form."""
     if request.method == "POST":
-        
+        # Get the ID from the form, which could be empty for new channels
+        submitted_id = request.form.get("logical_channel_id")
+        is_update = bool(submitted_id)
+
         lc_data = {
             "display_name": request.form.get("display_name", "").strip(),
             "channel_num": request.form.get("channel_num", "").strip(),
@@ -255,52 +259,120 @@ def ui_logical_channel_form(logical_channel_id: str | None = None):
 
         if not lc_data['display_name'] or not lc_data['channel_num']:
             flash("Display Name and Channel Number are required.", "error")
-            return render_template("ui_logical_channel_form.html", channel=lc_data)
+            # Re-render form with user's data; need to reconstruct the page state
+            return redirect(request.url)
 
-        if logical_channel_id:  # This is an UPDATE of an existing channel
-            lc_data['logical_channel_id'] = logical_channel_id
-            if not handler.update_logical_channel(logical_channel_id, lc_data):
-                flash("Error updating channel details.", "error")
-                return redirect(url_for('ui_logical_channel_form', logical_channel_id=logical_channel_id))
+        mappings_to_save = []
+        service_ids_to_map = request.form.getlist('mapping_service_id')
+        for service_id_str in service_ids_to_map:
+            try:
+                mappings_to_save.append({
+                    'source_service_id': service_id_str,
+                    'priority': int(request.form.get(f"priority_{service_id_str}", '5'))
+                })
+            except (ValueError, TypeError):
+                flash(f"Skipping a mapping with invalid priority (service_id: '{service_id_str}').", "warning")
 
-            mappings_from_form = []
-            
-            # Getlist to get all submitted values for these names in order
-            service_ids = request.form.getlist('mapping_service_id')
-            priorities = request.form.getlist('mapping_priority')
-
-            # Zip the lists together to process them as pairs
-            for service_id_str, priority_str in zip(service_ids, priorities):
-                if not service_id_str:
-                    continue
-
-                try:
-                    mappings_from_form.append({
-                        'source_service_id': service_id_str,
-                        'priority': int(priority_str)
-                    })
-                except (ValueError, TypeError):
-                    flash(f"Skipping a mapping row with invalid data (service_id: '{service_id_str}').", "warning")
-                    continue
-            
-            handler.update_mappings_for_logical_channel(logical_channel_id, mappings_from_form)
-
-            flash(f"Channel '{lc_data['display_name']}' and its mappings were updated successfully.", "success")
-            handler.reload_handler_config()
-            return redirect(url_for('ui_logical_channel_form', logical_channel_id=logical_channel_id))
-        
-        else: 
+        if is_update:  # This is an UPDATE of an existing channel
+            handler.update_logical_channel(submitted_id, lc_data)
+            handler.update_mappings_for_logical_channel(submitted_id, mappings_to_save)
+            flash(f"Channel '{lc_data['display_name']}' and its mappings updated successfully.", "success")
+            handler.reload_handler_config(update_providers=False)
+            return redirect(url_for('ui_logical_channel_form', logical_channel_id=submitted_id))
+        else:  # This is a CREATE for a new channel
             new_id = handler.add_logical_channel(lc_data)
             if new_id:
-                flash(f"Channel '{lc_data['display_name']}' added. You can now map its sources.", "success")
-                handler.reload_handler_config()
+                if mappings_to_save:
+                    handler.update_mappings_for_logical_channel(new_id, mappings_to_save)
+                flash(f"Channel '{lc_data['display_name']}' created successfully.", "success")
+                handler.reload_handler_config(update_providers=False)
                 return redirect(url_for('ui_logical_channel_form', logical_channel_id=new_id))
             else:
-                flash("Error adding channel. A channel with that number may already exist.", "error")
+                flash("Error creating channel. A channel with that number may already exist.", "error")
                 return render_template("ui_logical_channel_form.html", channel=lc_data)
 
-    return redirect(url_for('ui_logical_channels_list'))
+    # --- GET Request Handling ---
+    # Check if this is an HTMX request targeting the service list (for search or pagination)
+    is_htmx_service_list_request = (
+        request.headers.get('HX-Request') and 
+        request.headers.get('HX-Target') == 'service-list-container'
+    )
 
+    # 1. Load the main channel object if we are editing
+    channel = {}
+    predefined_channel: dict[str, str] = {}
+    if logical_channel_id:
+        channel = handler.get_logical_channel_by_id(logical_channel_id)
+        if not channel:
+            flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
+            return redirect(url_for('ui_logical_channels_list'))
+        predefined_channel = handler.find_matching_predefined_channel(channel['display_name'], channel['channel_num'])
+    # Priority 1: An explicit search query from the user (e.g., typing in the box).
+    search_query = request.args.get('search_query')
+
+    # Priority 2: If no explicit search, and it's the initial page load for an
+    # existing channel, use the channel's name as the default search term.
+    if search_query is None and not is_htmx_service_list_request and logical_channel_id:
+        if predefined_channel.get('names'):
+            search_query = " OR ".join(predefined_channel['names'])
+        else:
+            search_query = predefined_channel.get('title', channel.get('display_name'))
+
+    filter_query = search_query.strip().lower() if search_query else None
+
+    # 3. Prepare data for the service list
+    unmapped_suggestions = []
+    mapped_services = []
+    page = request.args.get('page', 1, type=int)
+    per_page = 20
+    
+    # Load all services and mappings
+    all_services = handler.get_all_discovered_source_services_for_ui()
+    other_mappings:dict[str, list[dict[str, Any]]] = handler.channel_mappings_data_from_json.copy()
+    current_mappings = other_mappings.pop(logical_channel_id, []) if logical_channel_id else []
+    current_mapping_info = {m['source_service_id']: m['priority'] for m in current_mappings}
+    services_mapped_elsewhere: set[str] = {mapping['source_service_id'] for mappings in other_mappings.values() for mapping in mappings}
+    all_services_map = {s['id']: s for s in all_services}
+
+    # Populate the list of currently mapped services
+    for service_id, priority in current_mapping_info.items():
+        if service_id in all_services_map:
+            service_details = all_services_map[service_id].copy()
+            service_details['priority'] = priority
+            mapped_services.append(service_details)
+    mapped_services.sort(key=lambda s: s['priority'])
+    
+    # Populate unmapped suggestions ONLY if there is a filter query.
+    if filter_query:
+        all_mapped_service_ids = set(current_mapping_info.keys())
+        for service in all_services:
+            if service['id'] not in all_mapped_service_ids:
+                if handler.filter_sources(search_query, service):
+                    unmapped_suggestions.append(service)
+
+    # Paginate the results
+    total_unmapped_items = len(unmapped_suggestions)
+    total_pages = math.ceil(total_unmapped_items / per_page) if per_page > 0 else 1
+    if page > total_pages and total_pages > 0: page = total_pages
+    if page < 1: page = 1
+    start_index = (page - 1) * per_page
+    unmapped_suggestions_for_page = unmapped_suggestions[start_index:start_index + per_page]
+
+    # 4. Determine which template to render
+    template_to_render = "_service_list_content.html" if is_htmx_service_list_request else "ui_logical_channel_form.html"
+    
+    return render_template(
+        template_to_render,
+        channel=channel,
+        unmapped_suggestions_for_page=unmapped_suggestions_for_page,
+        mapped_services=mapped_services,
+        services_mapped_elsewhere=services_mapped_elsewhere,
+        current_page=page,
+        total_pages=total_pages,
+        total_unmapped_items=total_unmapped_items,
+        search_query=search_query, 
+        filter_query=filter_query,
+    )
 
 @app.route("/ui/source-services")
 def ui_source_services_list() -> str:
@@ -470,35 +542,75 @@ def ui_provider_status() -> str:
                            active_streams=active,
                            max_total_streams=max_total)
 
+@app.route("/ui/channels/populate-from-suggestion")
+def ui_channel_populate_from_suggestion():
+    """
+    Called when a user clicks a channel suggestion.
+    Returns multiple OOB fragments to:
+    1. Populate the channel details form.
+    2. Populate the service mapping card with pre-filtered results.
+    3. Clear the suggestion dropdown.
+    """
+    prefilled_data = {
+        'display_name': request.args.get('title', ''),
+        'channel_num': request.args.get('num', ''),
+        'group_title': request.args.get('group', 'Uncategorized'),
+        'tvg_logo': ''
+    }
+    # This becomes the main response, targeting #form-content-wrapper
+    form_html = render_template("_logical_channel_form_fields.html", channel=prefilled_data)
+
+    # 2. Pre-filter services based on the suggested name
+    filter_query = prefilled_data['display_name'].strip().lower()
+    all_services = handler.get_all_discovered_source_services_for_ui()
+    unmapped_suggestions = []
+
+    search_query = prefilled_data['display_name']
+    for channel_list in handler.predefined_channel_list.values():
+        for pre_channel in channel_list:
+            if search_query == pre_channel.get('title'):  # Only need this check since we are populating this
+                search_query = " OR ".join(pre_channel.get('names', []))
+                break
+    
+    if filter_query:
+        for service in all_services:
+            if handler.filter_sources(search_query, service):
+                unmapped_suggestions.append(service)
+
+    # 3. Paginate the pre-filtered results
+    page = 1
+    per_page = 20
+    total_unmapped_items = len(unmapped_suggestions)
+    total_pages = math.ceil(total_unmapped_items / per_page) if per_page > 0 else 1
+    unmapped_suggestions_for_page = unmapped_suggestions[:per_page]
+
+    # 4. OOB swap to update the entire service mapping card, now with data.
+    search_card_html = render_template(
+        "_service_mapping_card.html",
+        search_query=search_query,
+        channel={},
+        unmapped_suggestions_for_page=unmapped_suggestions_for_page,
+        mapped_services=[], # New channel has no mapped services
+        current_page=page,
+        total_pages=total_pages,
+        total_unmapped_items=total_unmapped_items,
+        filter_query=filter_query
+    )
+    oob_search_card = f'<div id="service-mapping-section" hx-swap-oob="innerHTML">{search_card_html}</div>'
+
+    # 5. OOB swap to clear the suggestion dropdown
+    clear_suggestions_html = '<div id="suggestion-box" hx-swap-oob="true"></div>'
+    
+    return form_html + oob_search_card + clear_suggestions_html
 
 @app.route("/ui/channels/suggest", methods=["GET"])
 def ui_channel_suggest() -> str:
-    """Provides channel suggestions based on user input for HTMX active search."""
+    """Provides channel suggestions based on user input for the display_name field."""
     query = request.args.get('display_name', '')
     if len(query) < 2:
-        return ""
+        return "" # Return empty to clear suggestions
     suggestions = handler.search_predefined_channels(query)
     return render_template("_channel_suggestions.html", suggestions=suggestions)
-
-
-@app.route("/ui/channels/select-suggestion")
-def ui_channel_select_suggestion() -> str:
-    """Returns a pre-filled form partial when a user selects a suggestion."""
-    num = request.args.get('num', '')
-    name = request.args.get('name', '')
-    group = request.args.get('group', 'Uncategorized')
-    
-    prefilled_data = {
-        'display_name': name,
-        'channel_num': num,
-        'group_title': group,
-        'tvg_logo': ''
-    }
-
-    form_html = render_template("_logical_channel_form_fields.html", channel=prefilled_data)
-    clear_suggestions_html = '<div id="suggestion-box" hx-swap-oob="true"></div>'
-
-    return form_html + clear_suggestions_html
 
 
 @app.route("/ui/logical-channels/delete/<string:logical_channel_id>", methods=["POST"])
@@ -508,48 +620,12 @@ def ui_logical_channel_delete(logical_channel_id: str) -> Response:
     if channel:
         if handler.delete_logical_channel(logical_channel_id):
             flash(f"Logical Channel '{channel['display_name']}' deleted.", "success")
-            handler.reload_handler_config()
+            handler.reload_handler_config(update_providers=False)
         else:
             flash(f"Error deleting logical channel '{channel['display_name']}'.", "error")
     else:
         flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "warning")
     return redirect(url_for('ui_logical_channels_list'))
-
-
-@app.route("/ui/logical-channels/new-mapping-row")
-def ui_get_new_mapping_row() -> str:
-    """Returns an HTML partial for a new, empty mapping row for the UI."""
-    logical_channel_id = request.args.get('logical_channel_id', "")
-    current_channel = {}
-    if logical_channel_id:
-        current_channel = handler.get_logical_channel_by_id(logical_channel_id)
-    
-    all_services = handler.get_all_discovered_source_services_for_ui()
-    filter_query = current_channel.get('display_name', '').lower().strip()
-    
-    suggested_services = []
-    if filter_query:
-        for service in all_services:
-            name_to_check = service.get('original_tvg_name', '').lower()
-            extinf_name_to_check = service.get('original_display_name_extinf', '').lower()
-            if filter_query in name_to_check or filter_query in extinf_name_to_check:
-                suggested_services.append(service)
-    
-    row_idx_for_names = int(time.time() * 1000)
-    
-    return render_template('_mapping_row.html',
-                           current_row_index=row_idx_for_names,
-                           mapping=None,
-                           all_services=all_services,
-                           suggested_services=suggested_services,
-                           channel=current_channel)
-
-
-@app.route("/ui/remove-mapping-row-placeholder", methods=["DELETE"])
-def ui_remove_mapping_row_placeholder() -> tuple[str, int]:
-    """Returns an empty response for HTMX to remove a mapping row."""
-    return "", 200
-
 
 @app.route("/ui/logs/modal")
 def ui_logs_modal():
@@ -566,6 +642,23 @@ def ui_logs_modal():
         log_lines = [f"An error occurred while reading the log file: {e}"]
 
     return render_template("_logs_modal_content.html", log_lines=log_lines)
+
+
+@app.route("/ui/service-preview/<path:service_id>")
+def ui_player_for_service(service_id: str) -> str:
+    """
+    Returns an HTML fragment containing an HLS.js video player configured
+    to play a specific source service.
+    """
+    source_service = handler.discovered_source_services.get(service_id)
+    if not source_service:
+        flash(f"Error source service ID not found.", "error")
+    service_name = source_service.get('original_display_name_extinf', source_service.get('original_tvg_name', 'Preview') )
+    logical_channel_id = f"preview_{service_id}"
+    playlist_url = url_for('serve_hls_preview', logical_channel_id=logical_channel_id)
+
+    return render_template("_video_player_modal.html", 
+                           playlist_url=playlist_url, logical_channel_id=logical_channel_id, service_name=service_name)
 
 
 def signal_handler(signum: int, _: object) -> None:

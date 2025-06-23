@@ -10,15 +10,10 @@
     </a>
 </div>
 
-<form method="POST" action="{{ action_url }}">
+<form method="POST" action="">
 
-    {# If we are editing, we need to pass the ID and an action hint #}
-    {% if channel.logical_channel_id %}
-        <input type="hidden" name="logical_channel_id" value="{{ channel.logical_channel_id }}">
-        {# This tells the backend to expect both details and mappings #}
-        <input type="hidden" name="form_action" value="update_all">
-    {% endif %}
-
+    <input type="hidden" name="logical_channel_id" value="{{ channel.logical_channel_id or '' }}">
+    
     <div class="row">
         <div class="col-md-6">
             <div class="card mb-4">
@@ -27,60 +22,50 @@
                 </div>
                 <div class="card-body">
                     <p class="text-muted small">
-                        Start by typing a channel name to get suggestions, or fill out the form manually.
+                        Start by filling out the channel details. Service mapping options will appear on the right if found.
                     </p>
+                    
                     <div id="form-content-wrapper">
-                        {# This include will now contain ONLY the input fields, NOT a form tag #}
                         {% include '_logical_channel_form_fields.html' %}
                     </div>
                 </div>
             </div>
         </div>
 
-        {% if channel.logical_channel_id %} {# Only show mapping if we are editing an existing channel #}
         <div class="col-md-6">
-            <div class="card">
-                <div class="card-header">
-                    Map Source Services to "<span id="channel-name-header">{{ channel.display_name }}</span>"
-                </div>
-                <div class="card-body">
-                    <div class="mb-3 text-end">
-                        <button type="button" class="btn btn-sm btn-success"
-                                id="add-mapping-button"
-                                hx-get="{{ url_for('ui_get_new_mapping_row', logical_channel_id=channel.logical_channel_id) }}"
-                                hx-target="#mappings-container"
-                                hx-swap="beforeend"
-                                hx-include="#display_name"
-                                hx-indicator="#add-row-indicator">
-                            <i class="fas fa-plus"></i> Add Mapping Row
-                            <span id="add-row-indicator" class="htmx-indicator spinner-border spinner-border-sm ms-1" role="status" aria-hidden="true"></span>
-                        </button>
-                    </div>
-
-                    <p class="small text-muted">Select discovered services and set priority (0 is highest). Empty rows will be ignored on save.</p>
-                    <div id="mappings-container">
-                        {% for mapping in current_mappings %}
-                            {% set current_row_index = loop.index0 %}
-                            {% include '_mapping_row.html' %}
-                        {% endfor %}
-                        {% if not current_mappings %}
-                            <p id="no-mappings-yet" class="text-muted">No sources mapped yet. Click "Add Mapping Row" to start.</p>
-                        {% endif %}
-                    </div>
-                </div>
+            {# The service mapping card is now ALWAYS rendered. #}
+            <div id="service-mapping-section">
+                 {% include '_service_mapping_card.html' %}
             </div>
         </div>
-        {% endif %}
     </div>
 
     <hr>
     <div class="mt-3">
         <button type="submit" class="btn btn-primary btn-lg">
             <i class="fas fa-save"></i> 
-            {{ "Create Channel" if not channel.logical_channel_id else "Save All Changes" }}
+            {{ "Create Channel and Map Sources" if not channel.logical_channel_id else "Save All Changes" }}
         </button>
     </div>
-
 </form>
 
+<!-- Preview Modal -->
+<div class="modal fade" id="previewModal" tabindex="-1" aria-labelledby="previewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="previewModalLabel">Stream Preview</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="preview-modal-body">
+                <div class="text-center">
+                    <div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}

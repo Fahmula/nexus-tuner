@@ -3,6 +3,7 @@ import time
 import subprocess
 import json
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from typing import NoReturn
 from nexus_stream.config import Config
 from nexus_stream.handler import ChannelHandler
@@ -21,10 +22,9 @@ RESOLTUION_NORM = 2160
 BITRATE_NORM = 12_000_000
 FRAMERATE_NORM = 60
 
-QUALITY_MONITOR_INTERVAL = 300
+QUALITY_MONITOR_INTERVAL = 86400
 QUALITY_MONITOR_TIMEOUT = 5
 MAX_HISTORY_PER_SERVICE = 10
-MAX_HISTORY_FOR_STATUSES = 100
 
 
 class QualityMonitor:
@@ -45,8 +45,8 @@ class QualityMonitor:
 
     def _run(self) -> NoReturn:
         """The main execution loop for the monitor thread."""
-        self._build_quality_scores(self.config.get_service_quality_cache())
         self.config.log_message("Quality Monitor thread started.", level="INFO")
+        self._build_quality_scores(self.config.get_service_quality_cache())
 
         while True:
             time.sleep(QUALITY_MONITOR_INTERVAL)
@@ -178,6 +178,7 @@ class QualityMonitor:
 
         for service_id, result in all_results:
             service_entry = quality_cache.setdefault(service_id, {
+            "updated_at": datetime.now().isoformat(),
             "statuses": [],
             "widths": [],
             "heights": [],
@@ -187,36 +188,44 @@ class QualityMonitor:
 
             if result['status'] == 'offline':
                 self.config.log_message(f"Quality Monitor: Service {service_id} is offline: {result['reason']}", level="WARN")
+                service_entry["updated_at"] = datetime.now().isoformat()
                 service_entry["statuses"].append("offline")
-                if len(service_entry["statuses"]) > MAX_HISTORY_FOR_STATUSES:
-                    service_entry["statuses"].pop(0)
+                num_excess_statuses =  max(0, len(service_entry["statuses"]) - MAX_HISTORY_PER_SERVICE)
+                if num_excess_statuses > 0:
+                    service_entry["statuses"] = service_entry["statuses"][-MAX_HISTORY_PER_SERVICE:]
                 continue
             elif result['status'] != 'online':
                 continue
 
+            service_entry["updated_at"] = datetime.now().isoformat()
             service_entry["statuses"].append("online")
-            if len(service_entry["statuses"]) > MAX_HISTORY_FOR_STATUSES:
-                service_entry["statuses"].pop(0)
+            num_excess_statuses =  max(0, len(service_entry["statuses"]) - MAX_HISTORY_PER_SERVICE)
+            if num_excess_statuses > 0:
+                service_entry["statuses"] = service_entry["statuses"][-MAX_HISTORY_PER_SERVICE:]
             width = result.get("width", 0)
             if width:
                 service_entry["widths"].append(width)
-                if len(service_entry["widths"]) > MAX_HISTORY_PER_SERVICE:
-                    service_entry["widths"].pop(0)
+                num_excess_widths =  max(0, len(service_entry["widths"]) - MAX_HISTORY_PER_SERVICE)
+                if num_excess_widths > 0:
+                    service_entry["widths"] = service_entry["widths"][-MAX_HISTORY_PER_SERVICE:]
             height = result.get("height", 0)
             if height:
                 service_entry["heights"].append(height)
-                if len(service_entry["heights"]) > MAX_HISTORY_PER_SERVICE:
-                    service_entry["heights"].pop(0)
+                num_excess_heights =  max(0, len(service_entry["heights"]) - MAX_HISTORY_PER_SERVICE)
+                if num_excess_heights > 0:
+                    service_entry["heights"] = service_entry["heights"][-MAX_HISTORY_PER_SERVICE:]
             bitrate = result.get("bitrate", 0)
             if bitrate:
                 service_entry["bitrates"].append(bitrate)
-                if len(service_entry["bitrates"]) > MAX_HISTORY_PER_SERVICE:
-                    service_entry["bitrates"].pop(0)
+                num_excess_bitrates =  max(0, len(service_entry["bitrates"]) - MAX_HISTORY_PER_SERVICE)
+                if num_excess_bitrates > 0:
+                    service_entry["bitrates"] = service_entry["bitrates"][-MAX_HISTORY_PER_SERVICE:]
             framerate = result.get("framerate", 0)
             if framerate:
                 service_entry["framerates"].append(framerate)
-                if len(service_entry["framerates"]) > MAX_HISTORY_PER_SERVICE:
-                    service_entry["framerates"].pop(0)
+                num_excess_framerates =  max(0, len(service_entry["framerates"]) - MAX_HISTORY_PER_SERVICE)
+                if num_excess_framerates > 0:
+                    service_entry["framerates"] = service_entry["framerates"][-MAX_HISTORY_PER_SERVICE:]
 
         self.config.save_service_quality_cache(quality_cache)
         self._build_quality_scores(quality_cache)
@@ -233,19 +242,25 @@ class QualityMonitor:
         
         Returns:
             Dictionary mapping source_service_id to dict containing:
-            - total_score: float - Combined quality score
+            - width: float - Average width of the stream
+            - height: float - Average height of the stream
+            - bitrate: float - Average bitrate of the stream
+            - framerate: float - Average framerate of the stream
+            - reliability: float - Uptime over last 10 status checks (0.0-1.0)
             - resolution_score: float - Score for resolution (0-RESOLUTION_WEIGHT)
             - bitrate_score: float - Score for bitrate (0-BITRATE_WEIGHT)
             - framerate_score: float - Score for framerate (0-FRAMERATE_WEIGHT)
             - reliability_score: float - Score for reliability (0-RELIABILITY_WEIGHT)
-            - uptime_10: float - Uptime over last 10 status checks (0.0-1.0)
-            - uptime_100: float - Uptime over last 100 status checks (0.0-1.0)
+            - total_score: float - Combined quality score
         """
         self.config.log_message("Quality Monitor: Building quality scores from cache.", level="DEBUG")
         
-        final_scores: dict[str, dict[str, float]] = {}
+        quality_scores: dict[str, dict[str, float]] = {}
         for service_id, cache_entry in quality_cache.items():
             # Calculate average metrics
+            widths: list[float] = cache_entry["widths"]
+            avg_width: float = sum(widths) / len(widths) if widths else 0.0
+            
             heights: list[float] = cache_entry["heights"]
             avg_height: float = sum(heights) / len(heights) if heights else 0.0
             
@@ -258,17 +273,6 @@ class QualityMonitor:
             statuses: list[str] = cache_entry["statuses"]
             reliability: float = sum(1 for s in statuses if s == "online") / len(statuses) if statuses else 0.0
             
-            # Calculate uptime metrics
-            uptime_10: float = 0.0
-            if statuses:
-                recent_10 = statuses[-10:] if len(statuses) >= 10 else statuses
-                uptime_10 = sum(1 for s in recent_10 if s == "online") / len(recent_10)
-            
-            uptime_100: float = 0.0
-            if statuses:
-                recent_100 = statuses[-100:] if len(statuses) >= 100 else statuses
-                uptime_100 = sum(1 for s in recent_100 if s == "online") / len(recent_100)
-            
             # Calculate normalized scores
             height_score: float = RESOLUTION_WEIGHT * min(avg_height / float(RESOLTUION_NORM), 1.0)
             bitrate_score: float = BITRATE_WEIGHT * min(avg_bitrate / float(BITRATE_NORM), 1.0)
@@ -276,16 +280,19 @@ class QualityMonitor:
             reliability_score: float = RELIABILITY_WEIGHT * reliability
             
             # Store final scores
-            final_scores[service_id] = {
-                "total_score": height_score + bitrate_score + framerate_score + reliability_score,
+            quality_scores[service_id] = {
+                "width": avg_width,
+                "height": avg_height,
+                "bitrate": avg_bitrate,
+                "framerate": avg_framerate,
+                "reliability": reliability,
                 "resolution_score": height_score,
                 "bitrate_score": bitrate_score,
                 "framerate_score": framerate_score,
                 "reliability_score": reliability_score,
-                "uptime_10": uptime_10,
-                "uptime_100": uptime_100
+                "total_score": height_score + bitrate_score + framerate_score + reliability_score,
             }
 
         with self._mutex:
-            self._quality_scores = final_scores
+            self._quality_scores = quality_scores
         self.config.log_message("Quality Monitor: Quality scores built successfully.", level="DEBUG")

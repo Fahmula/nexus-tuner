@@ -66,10 +66,11 @@ class Config:
         self.hls_base_segment_dir.mkdir(parents=True, exist_ok=True)
         
         # --- FFmpeg & HLS Configs ---
-        self.hls_segment_duration: int = int(os.getenv("NEXUS_HLS_SEGMENT_DURATION", 3))
-        self.hls_playlist_length: int = int(os.getenv("NEXUS_HLS_PLAYLIST_LENGTH", 10))
-        self.ffmpeg_hls_inactivity_timeout: int = int(os.getenv("NEXUS_FFMPEG_HLS_INACTIVITY_TIMEOUT", 60))
-        self.ffmpeg_start_timeout: int = int(os.getenv("NEXUS_FFMPEG_START_TIMEOUT", 10))
+        self.hls_segment_duration: int = 1  # This allows for a faster time to prune inactive streams
+        self.hls_segment_prune_timeout: int = 3  # This should be greater than hls_segment_duration by at least a few seconds
+        self.hls_playlist_length: int = 30
+        self.ffmpeg_start_timeout: int = 5  # Balance between getting the best source and being able to test more sources
+        self.ffmpeg_hls_inactivity_timeout: int = int(os.getenv("NEXUS_FFMPEG_HLS_INACTIVITY_TIMEOUT", 900))
         self.ffmpeg_path: str = os.getenv("FFMPEG_PATH", "/usr/bin/ffmpeg")
         self.ffmpeg_logs_dir: Path = self.logs_dir / "ffmpeg_logs"
         self.ffmpeg_logs_dir.mkdir(parents=True, exist_ok=True)
