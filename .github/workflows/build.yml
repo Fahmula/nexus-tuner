@@ -46,17 +46,16 @@ jobs:
         id: semantic
         uses: cycjimmy/semantic-release-action@v4
         with:
-          branches: >-
+          branches: |
             ${{ 
-              if(github.event.inputs.is_prerelease == 'true',
-                format('[{{ "name": "{0}", "prerelease": "{1}" }}]', github.ref_name, github.event.inputs.prerelease_channel),
-                ''
-              ) 
+              github.event.inputs.is_prerelease == 'true' && 
+              format('[{{ "name": "{0}", "prerelease": "{1}" }}]', github.ref_name, github.event.inputs.prerelease_channel) ||
+              '' 
             }}
           extra_plugins: |
             @semantic-release/changelog@6
             @semantic-release/git@10
-          extra_args: ${{ if(github.event.inputs.release_type != '', format('--force-release-type {0}', github.event.inputs.release_type), '') }}
+          extra_args: ${{ github.event.inputs.release_type != '' && format('--force-release-type {0}', github.event.inputs.release_type) || '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -92,10 +91,7 @@ jobs:
         with:
           images: ghcr.io/${{ env.IMAGE_NAME }}
           tags: |
-            # This creates the primary tag, e.g., v2.0.0 or v2.0.0-rc.1
             type=semver,pattern={{version}}
-            # This creates the 'latest' tag, but ONLY if it is NOT a pre-release.
-            # The 'enable' flag is the key here.
             type=raw,value=latest,enable=${{ !contains(needs.release.outputs.new_release_version, '-') }}
 
       - name: Build and push Docker image
