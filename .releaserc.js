@@ -3,9 +3,8 @@
 console.log('--- .releaserc.js: STARTING CONFIGURATION ---');
 
 // --- Base Configuration ---
-// This is your standard setup for a release from the 'main' branch.
 const config = {
-  branches: ['main'],
+  branches: ['main'], // CRITICAL: Always start with your main branch.
   plugins: [
     '@semantic-release/commit-analyzer',
     '@semantic-release/release-notes-generator',
@@ -19,7 +18,6 @@ const config = {
 };
 
 // --- Dynamic Overrides from Workflow ---
-// Read environment variables passed from the GitHub Actions workflow.
 const isPrerelease = process.env.IS_PRERELEASE === 'true';
 const branchName = process.env.GITHUB_REF_NAME;
 const prereleaseChannel = process.env.PRERELEASE_CHANNEL;
@@ -30,23 +28,17 @@ console.log(`- Is Prerelease?: [${isPrerelease}]`);
 console.log(`- Prerelease Channel: [${prereleaseChannel}]`);
 
 // ** DYNAMIC BRANCH LOGIC **
-// If the 'is_prerelease' input is true, we completely override the 'branches' config.
 if (isPrerelease) {
-  // We need to ensure both branchName and prereleaseChannel have values.
   if (branchName && prereleaseChannel) {
-    console.log(`>>> Configuring for PRE-RELEASE on branch "${branchName}" with channel "${prereleaseChannel}".`);
-    config.branches = [
-      { name: branchName, prerelease: prereleaseChannel }
-    ];
+    console.log(`>>> Configuring for PRE-RELEASE. Adding branch "${branchName}" to the configuration.`);
+    
+    config.branches.push({ name: branchName, prerelease: prereleaseChannel });
+
   } else {
-    // This is a critical failure case. We log it clearly.
     console.error('!!! ERROR: isPrerelease is true, but branchName or prereleaseChannel is missing!');
-    console.error(`!!! branchName: ${branchName}, prereleaseChannel: ${prereleaseChannel}`);
   }
 } else {
-    console.log('>>> Configuring for a REGULAR release. Default branches will be used unless the current branch is added.');
-    // Optional: If you want to allow regular releases from feature branches, you could add logic here.
-    // For now, it will correctly fail if you try a non-prerelease on a non-main branch.
+    console.log('>>> Configuring for a REGULAR release.');
 }
 
 // ** DYNAMIC FORCE-RELEASE LOGIC **
