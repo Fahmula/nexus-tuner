@@ -46,16 +46,17 @@ jobs:
         id: semantic
         uses: cycjimmy/semantic-release-action@v4
         with:
-          branches: |
+          branches: >-
             ${{ 
-              github.event.inputs.is_prerelease == 'true' && 
-              format('[{ "name": "{0}", "prerelease": "{1}" }]', github.ref_name, github.event.inputs.prerelease_channel) ||
-              '' 
+              if(github.event.inputs.is_prerelease == 'true',
+                format('[{{ "name": "{0}", "prerelease": "{1}" }}]', github.ref_name, github.event.inputs.prerelease_channel),
+                ''
+              ) 
             }}
           extra_plugins: |
             @semantic-release/changelog@6
             @semantic-release/git@10
-          extra_args: ${{ github.event.inputs.release_type != '' && format('--force-release-type {0}', github.event.inputs.release_type) || '' }}
+          extra_args: ${{ if(github.event.inputs.release_type != '', format('--force-release-type {0}', github.event.inputs.release_type), '') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
