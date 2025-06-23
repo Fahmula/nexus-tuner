@@ -22,7 +22,7 @@ from flask import (Flask, Response, abort, flash, redirect, render_template,
                    request, send_from_directory, url_for)
 
 from nexus_stream.config import Config
-from nexus_stream.create_stream import CREATE_STREAM_POLL_INTERVAL, CreateHLSStream
+from nexus_stream.create_stream import CREATE_STREAM_POLL_INTERVAL, CreateHLSStream, sort_sources
 from nexus_stream.handler import ChannelHandler, DEFAULT_PRIORITY
 from nexus_stream.quality_monitor import QualityMonitor
 from nexus_stream.session_monitor import GhostSessionMonitor
@@ -50,6 +50,37 @@ except ValueError as e:
 except Exception as e:
     config.log_message(f"FATAL: An unexpected error occurred during application startup: {e}", level="FATAL")
     exit(1)
+
+
+def calculate_channel_uptime(channel: dict[str, Any], mapped_services: list[dict[str, Any]], all_quality_scores: dict[str, dict[str, float]]) -> None:
+    """Calculates uptime metrics for a channel based on its mapped services."""
+    uptime_scores: list[float] = []
+    if mapped_services:
+        for service_object in mapped_services[:8]:  # Assuming 2s to test a stream, 16s is the max time clients will wait
+            service_id = service_object.get('source_service_id')
+            if not service_id:
+                continue
+            
+            raw_uptime = all_quality_scores.get(service_id, {}).get('uptime')
+            if raw_uptime is not None:
+                uptime_scores.append(raw_uptime)
+
+    if uptime_scores:
+        # METRIC 1: Lowest Uptime (Weakest Link)
+        lowest_raw = min(uptime_scores)
+        channel['lowest_uptime'] = int(lowest_raw * 100)
+
+        # METRIC 2: Health (Overall Uptime with Failover)
+        # This calculates 1 - (Prob of A failing * Prob of B failing * ...)
+        # We use math.prod for a clean way to multiply all items in a list.
+        prob_all_services_fail = math.prod([(1 - score) for score in uptime_scores])
+        overall_health_raw = 1 - prob_all_services_fail
+        channel['health_score'] = int(overall_health_raw * 100)
+
+    else:
+        # If no scores exist, set both metrics to None
+        channel['lowest_uptime'] = None
+        channel['health_score'] = None
 
 
 @app.context_processor
@@ -233,11 +264,17 @@ def ui_main_dashboard() -> str:
                            discovered_services_count=len(handler.discovered_source_services),
                            logical_channels_count=len(handler.logical_channels_data_from_json))
 
-
 @app.route("/ui/logical-channels")
 def ui_logical_channels_list() -> str:
     """Renders the list of all configured logical channels."""
     channels = handler.get_all_logical_channels_for_ui()
+    all_quality_scores = quality_monitor.get_quality_scores()
+
+    for channel in channels:
+        mapped_services = handler.get_mappings_for_logical_channel(channel['logical_channel_id'])
+        sort_sources(mapped_services, all_quality_scores, reverse=False)
+        calculate_channel_uptime(channel, mapped_services, all_quality_scores)
+
     return render_template("ui_logical_channels.html", channels=channels, handler=handler)
 
 @app.route("/ui/logical-channels/form/", methods=["GET", "POST"])
@@ -322,32 +359,41 @@ def ui_logical_channel_form(logical_channel_id: str | None = None):
 
     # 3. Prepare data for the service list
     unmapped_suggestions = []
-    mapped_services = []
+    mapped_services: list[dict[str, Any]] = []
     page = request.args.get('page', 1, type=int)
-    per_page = 20
-    
+    per_page = 100
+
     # Load all services and mappings
     all_services = handler.get_all_discovered_source_services_for_ui()
+    all_quality_scores = quality_monitor.get_quality_scores()
     other_mappings:dict[str, list[dict[str, Any]]] = handler.channel_mappings_data_from_json.copy()
     current_mappings = other_mappings.pop(logical_channel_id, []) if logical_channel_id else []
-    current_mapping_info = {m['source_service_id']: m['priority'] for m in current_mappings}
+    sort_sources(current_mappings, all_quality_scores, reverse=False)
     services_mapped_elsewhere: set[str] = {mapping['source_service_id'] for mappings in other_mappings.values() for mapping in mappings}
     all_services_map = {s['id']: s for s in all_services}
 
-    # Populate the list of currently mapped services
-    for service_id, priority in current_mapping_info.items():
+    all_mapped_service_ids: set[str] = set()
+    for mapping in current_mappings:
+        service_id = mapping['source_service_id']
+        all_mapped_service_ids.add(service_id)
         if service_id in all_services_map:
             service_details = all_services_map[service_id].copy()
-            service_details['priority'] = priority
+            service_details['priority'] = mapping['priority']
+            raw_score = all_quality_scores.get(service_id, {}).get('uptime', None)
+            service_details['uptime'] = int(raw_score * 100) if raw_score is not None else None
             mapped_services.append(service_details)
-    mapped_services.sort(key=lambda s: s['priority'])
-    
+    calculate_channel_uptime(channel, current_mappings, all_quality_scores)
+
     # Populate unmapped suggestions ONLY if there is a filter query.
     if filter_query:
-        all_mapped_service_ids = set(current_mapping_info.keys())
         for service in all_services:
+            # Check if the service is NOT already mapped
             if service['id'] not in all_mapped_service_ids:
+                # Check if it matches the user's filter/search criteria
                 if handler.filter_sources(search_query, service):
+                    service_id = service['id']
+                    raw_score = all_quality_scores.get(service_id, {}).get('uptime', None)
+                    service['uptime'] = int(raw_score * 100) if raw_score is not None else None
                     unmapped_suggestions.append(service)
 
     # Paginate the results
@@ -360,7 +406,7 @@ def ui_logical_channel_form(logical_channel_id: str | None = None):
 
     # 4. Determine which template to render
     template_to_render = "_service_list_content.html" if is_htmx_service_list_request else "ui_logical_channel_form.html"
-    
+
     return render_template(
         template_to_render,
         channel=channel,
@@ -563,7 +609,8 @@ def ui_channel_populate_from_suggestion():
     # 2. Pre-filter services based on the suggested name
     filter_query = prefilled_data['display_name'].strip().lower()
     all_services = handler.get_all_discovered_source_services_for_ui()
-    unmapped_suggestions = []
+    services_mapped_elsewhere: set[str] = {mapping['source_service_id'] for mappings in handler.channel_mappings_data_from_json.values() for mapping in mappings}
+    unmapped_suggestions: list[dict[str, Any]] = []
 
     search_query = prefilled_data['display_name']
     for channel_list in handler.predefined_channel_list.values():
@@ -579,7 +626,7 @@ def ui_channel_populate_from_suggestion():
 
     # 3. Paginate the pre-filtered results
     page = 1
-    per_page = 20
+    per_page = 100
     total_unmapped_items = len(unmapped_suggestions)
     total_pages = math.ceil(total_unmapped_items / per_page) if per_page > 0 else 1
     unmapped_suggestions_for_page = unmapped_suggestions[:per_page]
@@ -591,6 +638,7 @@ def ui_channel_populate_from_suggestion():
         channel={},
         unmapped_suggestions_for_page=unmapped_suggestions_for_page,
         mapped_services=[], # New channel has no mapped services
+        services_mapped_elsewhere=services_mapped_elsewhere,
         current_page=page,
         total_pages=total_pages,
         total_unmapped_items=total_unmapped_items,

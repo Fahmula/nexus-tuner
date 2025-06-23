@@ -698,7 +698,7 @@
         {
             "num": "289",
             "title": "Disney Jr.",
-            "names": ["Disney Jr", "Disney Junior"]
+            "names": ["Disney Jr", "Disney Junior", "DisneyJr", "Disney JNR"]
         },
         {
             "num": "290",
@@ -718,7 +718,7 @@
         {
             "num": "293",
             "title": "BabyFirst",
-            "names": ["BabyFirst"]
+            "names": ["BabyFirst", "Baby First"]
         },
         {
             "num": "294",
@@ -743,27 +743,27 @@
         {
             "num": "299",
             "title": "Nickelodeon/Nick at Nite (East)",
-            "names": ["Nickelodeon", "Nick Nite"]
+            "names": ["Nickelodeon", "Nick"]
         },
         {
             "num": "300",
             "title": "Nickelodeon/Nick at Nite (West)",
-            "names": ["Nickelodeon", "Nick Nite"]
+            "names": ["Nickelodeon", "Nick"]
         },
         {
             "num": "301",
             "title": "Nick Jr.",
-            "names": ["Nick Jr", "Nick Junior"]
+            "names": ["Nick Jr", "Nick Junior", "NickJr", "Nick JNR"]
         },
         {
             "num": "302",
             "title": "NickToons",
-            "names": ["NickToons", "NickSpongebob"]
+            "names": ["NickToons", "Nick Toons", "NickSpongebob", "SpongeBob"]
         },
         {
             "num": "303",
             "title": "TeenNick",
-            "names": ["TeenNick"]
+            "names": ["TeenNick", "Teen Nick"]
         },
         {
             "num": "304",

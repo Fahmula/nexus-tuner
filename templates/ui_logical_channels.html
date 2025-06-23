@@ -12,30 +12,90 @@
     </div>
 </div>
 
+<div class="p-3 mb-4 bg-body-tertiary rounded-3 small text-muted">
+    <h6 class="border-bottom pb-2 mb-2 text-body-emphasis">Metric Definitions</h6>
+    <p class="mb-2">
+        <i class="fas fa-layer-group text-primary me-2" style="width: 1.25em;"></i>
+        <strong>Highest Priority Sources:</strong> There is no limit on the number of sources that can be mapped, however,
+        clients will likely timeout before more than 8 sources can be checked. These calculations consider only the 8 highest
+        priority sources for each channel as determined for playback, representing the real-world metrics. Manual priority takes
+        precedence, with quality score as a secondary factor.
+    </p>
+    <p class="mb-1">
+        <i class="fas fa-heart-pulse text-success me-2" style="width: 1.25em;"></i>
+        <strong>Health (Overall Uptime):</strong> Calculates the total probability that the channel will be online using
+        the <span class="fst-italic text-primary-emphasis">Highest Priority Sources</span>.
+    </p>
+    <p class="mb-0">
+        <i class="fas fa-triangle-exclamation text-warning me-2" style="width: 1.25em;"></i>
+        <strong>Lowest Uptime:</strong> Shows the uptime of the single least reliable source from the <span
+            class="fst-italic text-primary-emphasis">Highest Priority Sources</span>. This helps identify the "weakest
+        link" in your channel's mappings.
+    </p>
+</div>
+
+
 {% if channels %}
 <div class="table-responsive">
     <table class="table table-striped table-hover table-sm">
         <thead class="table-light">
             <tr>
-                <th>Display Name</th>
-                <th>Chanel Number</th>
-                <th>Internal ID (Slug)</th>
-                <th>Group Title</th>
-                <th>EPG ID (tvg-id)</th>
-                <th>Logo</th>
-                <th>Mapped Sources</th>
+                <th class="sortable" data-sort="display-name">Display Name <i class="fas fa-sort"></i></th>
+                <th class="sortable" data-sort="channel-num">Channel Number <i class="fas fa-sort"></i></th>
+                <th class="sortable" data-sort="group-title">Group Title <i class="fas fa-sort"></i></th>
+                <th class="sortable" data-sort="tvg-id">EPG ID (tvg-id) <i class="fas fa-sort"></i></th>
+                <th class="sortable" data-sort="logical-id">Internal ID (Slug) <i class="fas fa-sort"></i></th>
+                <th class="text-center sortable" data-sort="sources">Sources <i class="fas fa-sort"></i></th>
+                <th class="text-center sortable" data-sort="health">Health <i class="fas fa-sort"></i></th>
+                <th class="text-center sortable" data-sort="lowest-uptime">Lowest Uptime <i class="fas fa-sort"></i></th>
+                <th class="text-center">Logo</th>
                 <th style="width: 15%;">Actions</th>
             </tr>
         </thead>
         <tbody>
             {% for channel in channels %}
             <tr>
-                <td><strong>{{ channel.display_name }}</strong></td>
-                <td>{{ channel.channel_num if channel.channel_num else '-' }}</td>
-                <td><small class="text-muted">{{ channel.logical_channel_id }}</small></td>
-                <td>{{ channel.group_title if channel.group_title else '-' }}</td>
-                <td>{{ channel.tvg_id if channel.tvg_id else '-' }}</td>
-                <td>
+                <td class="align-middle" data-sort-value="{{ channel.display_name }}"><strong>{{ channel.display_name }}</strong></td>
+                <td class="align-middle" data-sort-value="{{ channel.channel_num|default(9999) }}">{{ channel.channel_num if
+                    channel.channel_num else '-' }}</td>
+                <td class="align-middle" data-sort-value="{{ channel.group_title|default('') }}">{{ channel.group_title if
+                    channel.group_title else '-' }}</td>
+                <td class="align-middle" data-sort-value="{{ channel.tvg_id|default('') }}">{{ channel.tvg_id if channel.tvg_id else '-'
+                    }}</td>
+                <td class="align-middle" data-sort-value="{{ channel.logical_channel_id }}"><small class="text-muted">{{
+                        channel.logical_channel_id }}</small></td>
+                {% set mapping_count = handler.get_mappings_for_logical_channel(channel.logical_channel_id)|length %}
+                <td class="text-center align-middle" data-sort-value="{{ mapping_count }}">
+                    <span class="badge bg-info">{{ mapping_count }}</span>
+                </td>
+
+                <td class="text-center align-middle" data-sort-value="{{ channel.health_score|default(0) }}">
+                    {% if channel.health_score is not none %}
+                        {% set score = channel.health_score %}
+                        {% if score >= 75 %}<span class="badge bg-success" data-bs-toggle="tooltip" title="Overall Channel Uptime (with failover)">{{ score }}%</span>
+                        {% elif score >= 50 %}<span class="badge bg-warning" data-bs-toggle="tooltip" title="Overall Channel Uptime (with failover)">{{ score }}%</span>
+                        {% elif score >= 25 %}<span class="badge bg-orange" data-bs-toggle="tooltip" title="Overall Channel Uptime (with failover)">{{ score }}%</span>
+                        {% else %}<span class="badge bg-danger" data-bs-toggle="tooltip" title="Overall Channel Uptime (with failover)">{{ score }}%</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="badge bg-secondary">N/A</span>
+                    {% endif %}
+                </td>
+
+                <td class="text-center align-middle" data-sort-value="{{ channel.lowest_uptime|default(0) }}">
+                    {% if channel.lowest_uptime is not none %}
+                        {% set score = channel.lowest_uptime %}
+                        {% if score >= 75 %}<span class="badge bg-success" data-bs-toggle="tooltip" title="Uptime of the least reliable mapped service">{{ score }}%</span>
+                        {% elif score >= 50 %}<span class="badge bg-warning" data-bs-toggle="tooltip" title="Uptime of the least reliable mapped service">{{ score }}%</span>
+                        {% elif score >= 25 %}<span class="badge bg-orange" data-bs-toggle="tooltip" title="Uptime of the least reliable mapped service">{{ score }}%</span>
+                        {% else %}<span class="badge bg-danger" data-bs-toggle="tooltip" title="Uptime of the least reliable mapped service">{{ score }}%</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="badge bg-secondary">N/A</span>
+                    {% endif %}
+                </td>
+
+                <td class="text-center align-middle">
                     {% if channel.tvg_logo %}
                     <img src="{{ channel.tvg_logo }}" alt="logo" style="max-height: 20px; max-width: 40px;"
                          onerror="this.style.display='none'" loading="lazy">
@@ -43,11 +103,8 @@
                     -
                     {% endif %}
                 </td>
-                <td>
-                    {% set mapping_count = handler.get_mappings_for_logical_channel(channel.logical_channel_id)|length %}
-                    <span class="badge bg-info">{{ mapping_count }}</span>
-                </td>
-                <td>
+                
+                <td class="align-middle">
                     <a href="{{ url_for('ui_logical_channel_form', logical_channel_id=channel.logical_channel_id) }}" class="btn btn-sm btn-outline-primary me-1" title="Edit & Map Sources">
                         <i class="fas fa-edit"></i> Edit
                     </a>
@@ -69,5 +126,99 @@
     <a href="{{ url_for('ui_logical_channel_form') }}" class="alert-link">Click here to add your first logical channel.</a>
 </div>
 {% endif %}
+
+<style>
+    .sortable:hover {
+        background-color: #e9ecef;
+    }
+
+    .sortable i {
+        opacity: 0.5;
+    }
+
+    .sortable[data-sort-direction="asc"] i,
+    .sortable[data-sort-direction="desc"] i {
+        opacity: 1;
+    }
+</style>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        // Get all sortable column headers
+        const sortableHeaders = document.querySelectorAll('th.sortable');
+
+        // Add click event listeners to each sortable header
+        sortableHeaders.forEach(header => {
+            header.style.cursor = 'pointer';
+            header.addEventListener('click', function () {
+                const sortKey = this.getAttribute('data-sort');
+                const currentDirection = this.getAttribute('data-sort-direction') || 'none';
+
+                // Reset all headers
+                sortableHeaders.forEach(h => {
+                    h.setAttribute('data-sort-direction', 'none');
+                    const icon = h.querySelector('i');
+                    icon.className = 'fas fa-sort';
+                });
+
+                // Set new direction
+                let newDirection;
+                if (currentDirection === 'asc') {
+                    newDirection = 'desc';
+                    this.querySelector('i').className = 'fas fa-sort-down';
+                } else {
+                    newDirection = 'asc';
+                    this.querySelector('i').className = 'fas fa-sort-up';
+                }
+                this.setAttribute('data-sort-direction', newDirection);
+
+                // Sort the table
+                sortTable(sortKey, newDirection);
+            });
+        });
+
+        // Function to sort table
+        function sortTable(sortKey, direction) {
+            const table = document.querySelector('table');
+            const tbody = table.querySelector('tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+
+            // Find index of the column we want to sort
+            const headers = Array.from(table.querySelectorAll('thead th'));
+            const columnIndex = headers.findIndex(header => header.getAttribute('data-sort') === sortKey);
+
+            if (columnIndex === -1) return;
+
+            // Sort rows
+            rows.sort((a, b) => {
+                const cellA = a.querySelectorAll('td')[columnIndex];
+                const cellB = b.querySelectorAll('td')[columnIndex];
+
+                if (!cellA || !cellB) return 0;
+
+                let valueA = cellA.getAttribute('data-sort-value');
+                let valueB = cellB.getAttribute('data-sort-value');
+
+                // Check if values are numbers
+                if (!isNaN(valueA) && !isNaN(valueB)) {
+                    valueA = parseFloat(valueA);
+                    valueB = parseFloat(valueB);
+                }
+
+                // Compare based on direction
+                if (direction === 'asc') {
+                    return valueA > valueB ? 1 : valueA < valueB ? -1 : 0;
+                } else {
+                    return valueA < valueB ? 1 : valueA > valueB ? -1 : 0;
+                }
+            });
+
+            // Reattach sorted rows to the table
+            rows.forEach(row => {
+                tbody.appendChild(row);
+            });
+        }
+    });
+</script>
 
 {% endblock %}

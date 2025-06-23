@@ -1,6 +1,16 @@
 <div class="d-flex justify-content-center align-items-center gap-3 flex-wrap">
     {% if max_total_streams > 0 %}
-        <span class="badge text-bg-secondary" title="Total active streams across all providers">
+        {% set percentage = (active_streams / max_total_streams * 100)|float %}
+        {% if percentage == 0 %}
+            {% set badge_class="bg-success" %}
+        {% elif percentage <= 50 %}
+            {% set badge_class="bg-warning" %}
+        {% elif percentage < 100 %}
+            {% set badge_class="bg-orange" %}
+        {% else %}
+            {% set badge_class="bg-danger" %}
+        {% endif %}
+        <span class="badge {{ badge_class }}" title="Total active streams across all providers">
             Active Streams: {{ active_streams }} / {{ max_total_streams }}
         </span>
     {% else %}
