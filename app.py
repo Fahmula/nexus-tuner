@@ -609,7 +609,8 @@ def ui_channel_populate_from_suggestion():
     # 2. Pre-filter services based on the suggested name
     filter_query = prefilled_data['display_name'].strip().lower()
     all_services = handler.get_all_discovered_source_services_for_ui()
-    unmapped_suggestions = []
+    services_mapped_elsewhere: set[str] = {mapping['source_service_id'] for mappings in handler.channel_mappings_data_from_json.values() for mapping in mappings}
+    unmapped_suggestions: list[dict[str, Any]] = []
 
     search_query = prefilled_data['display_name']
     for channel_list in handler.predefined_channel_list.values():
@@ -637,6 +638,7 @@ def ui_channel_populate_from_suggestion():
         channel={},
         unmapped_suggestions_for_page=unmapped_suggestions_for_page,
         mapped_services=[], # New channel has no mapped services
+        services_mapped_elsewhere=services_mapped_elsewhere,
         current_page=page,
         total_pages=total_pages,
         total_unmapped_items=total_unmapped_items,
