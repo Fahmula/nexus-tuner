@@ -11,6 +11,10 @@ from dotenv import load_dotenv
 from typing import Any, Callable
 
 
+# --- Constants ---
+NOT_ALPHANUM_REGEX = re.compile(r'[^a-zA-Z0-9_-]')
+
+
 class Config:
     """
     Manages all application configuration, file paths, and logging.
@@ -49,6 +53,7 @@ class Config:
         self.providers_path: Path = config_dir / "providers.json"
         self.logical_channels_path: Path = config_dir / "logical_channels.json"
         self.channel_mappings_path: Path = config_dir / "channel_mappings.json"
+        self.service_quality_cache_path: Path = config_dir / "service_quality_cache.json"
         self.channel_list_path: Path = config_dir / "channel_list.json"
         if not self.channel_list_path.exists():
             self.log_message(f"Creating default channel list at {self.channel_list_path}", level="DEBUG")
@@ -83,7 +88,21 @@ class Config:
         self.log_message(f"Cleaning up HLS segments in {self.hls_base_segment_dir}", level="INFO")
         shutil.rmtree(self.hls_base_segment_dir, ignore_errors=True)
 
-    def get_ffmpeg_log_path(self, logical_channel_id: str = "unknown_channel", provider_alias: str = "unknown_provider") -> Path:
+    def get_fs_safe_alphanum(self, name: str) -> str:
+        """
+        Converts a string to a filesystem-safe alphanumeric format.
+
+        Replaces non-alphanumeric characters with underscores.
+
+        Args:
+            name: The input string to sanitize.
+
+        Returns:
+            A sanitized string suitable for filesystem use.
+        """
+        return re.sub(NOT_ALPHANUM_REGEX, '_', name)
+
+    def get_ffmpeg_log_path(self, logical_channel_id: str) -> Path:
         """
         Generates a safe file path for an FFmpeg log file.
 
@@ -94,9 +113,7 @@ class Config:
         Returns:
             A Path object for the log file.
         """
-        safe_lc_id = re.sub(r'[^a-zA-Z0-9_-]', '_', logical_channel_id)
-        safe_prov_id = re.sub(r'[^a-zA-Z0-9_-]', '_', provider_alias)
-        log_filename = f"ffmpeg_{safe_lc_id}_{safe_prov_id}.log" 
+        log_filename = f"ffmpeg_{self.get_fs_safe_alphanum(logical_channel_id)}.log" 
         return self.ffmpeg_logs_dir / log_filename
     
     def cleanup_ffmpeg_logs_by_age(self) -> None:
@@ -215,11 +232,11 @@ class Config:
 
         self._loggers[log_filename].log(log_level_const, message)
 
-    def get_providers_config(self) -> dict[str, Any]:
+    def get_providers_config(self) -> dict[str, dict[str, dict[str, Any]]]:
         """Loads the providers configuration from providers.json."""
         return self._load_json_file(self.providers_path, lambda: {"source_m3u_providers": {}})
 
-    def save_providers_config(self, data: dict[str, Any]) -> bool:
+    def save_providers_config(self, data: dict[str, dict[str, dict[str, Any]]]) -> bool:
         """Saves the providers configuration to providers.json."""
         return self._save_json_file(self.providers_path, data)
 
@@ -242,6 +259,14 @@ class Config:
     def save_channel_mappings_config(self, data: dict[str, Any]) -> bool:
         """Saves the channel mappings to channel_mappings.json."""
         return self._save_json_file(self.channel_mappings_path, data)
+
+    def get_service_quality_cache(self) -> dict[str, Any]:
+        """Loads the service quality cache from service_quality_cache.json."""
+        return self._load_json_file(self.service_quality_cache_path, dict)
+
+    def save_service_quality_cache(self, data: dict[str, Any]) -> bool:
+        """Saves the service quality cache to service_quality_cache.json."""
+        return self._save_json_file(self.service_quality_cache_path, data)
 
     def reload_all_configs(self) -> None:
         """Logs a message indicating that configs should be reloaded by handlers."""

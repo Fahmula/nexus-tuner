@@ -5,16 +5,18 @@ import threading
 import hashlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
-
-# Forward-declare Config to avoid circular import issues with type hints
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from nexus_stream.config import Config
+from nexus_stream.config import Config
+from nexus_stream.slots import ProviderName, ProviderSlots
 
 # --- Constants ---
 PROVIDER_FETCH_TIMEOUT = 20
 PROVIDER_PARSE_MAX_WORKERS = 10
 NEXUS_USER_AGENT = 'NexusStream/1.0'
+TVG_NAME_REGEX = re.compile(r'tvg-name="([^"]*)"', re.IGNORECASE)
+TVG_ID_REGEX = re.compile(r'tvg-id="([^"]*)"', re.IGNORECASE)
+TVG_LOGO_REGEX = re.compile(r'tvg-logo="([^"]*)"', re.IGNORECASE)
+GROUP_TITLE_REGEX = re.compile(r'group-title="([^"]*)"', re.IGNORECASE)
+
 
 class ChannelHandler:
     """
@@ -33,7 +35,7 @@ class ChannelHandler:
     - `client_facing_channels`: A dictionary mapping a logical_channel_id to a
       fully-processed logical channel, including its list of prioritized source URLs.
     """
-    def __init__(self, config: 'Config'):
+    def __init__(self, config: Config) -> None:
         """
         Initializes the ChannelHandler.
 
@@ -41,8 +43,7 @@ class ChannelHandler:
             config: The main application Config object.
         """
         self.config = config
-        self.nexus_url = self.config.nexus_url
-        self.stream_lock = threading.RLock()
+        self._mutex = threading.RLock()
 
         # Data loaded from configuration files
         self.providers_data_from_json: dict[str, Any] = {}
@@ -55,8 +56,9 @@ class ChannelHandler:
         self.client_facing_channels: dict[str, dict[str, Any]] = {}
         self.master_m3u_content: str = "#EXTM3U\n"
 
-        self.provider_semaphores: dict[str, threading.Semaphore] = {}
-        
+        self.slots: dict[ProviderName, ProviderSlots] = {}
+        self.pending_streams: set[str] = set()
+
         self._load_and_process_configurations()
 
     def _generate_source_service_id(self, provider_alias: str, actual_stream_url: str) -> str:
@@ -73,7 +75,7 @@ class ChannelHandler:
         
         self.providers_data_from_json = self.config.get_providers_config().get("source_m3u_providers", {})
 
-        self._update_providers_semaphore()
+        self._update_providers_slots()
 
         self.logical_channels_data_from_json = self.config.get_logical_channels_config()
         self.channel_mappings_data_from_json = self.config.get_channel_mappings_config()
@@ -104,10 +106,10 @@ class ChannelHandler:
             if line.startswith("#EXTINF:"):
                 current_extinf = line
             elif current_extinf and (line.startswith("http://") or line.startswith("https://")):
-                tvg_name = (re.search(r'tvg-name="([^"]*)"', current_extinf, re.IGNORECASE) or [None, ""])[1]
-                group_title = (re.search(r'group-title="([^"]*)"', current_extinf, re.IGNORECASE) or [None, ""])[1]
-                tvg_id = (re.search(r'tvg-id="([^"]*)"', current_extinf, re.IGNORECASE) or [None, ""])[1]
-                tvg_logo = (re.search(r'tvg-logo="([^"]*)"', current_extinf, re.IGNORECASE) or [None, ""])[1]
+                tvg_name = (re.search(TVG_NAME_REGEX, current_extinf) or [None, ""])[1]
+                tvg_id = (re.search(TVG_ID_REGEX, current_extinf) or [None, ""])[1]
+                tvg_logo = (re.search(TVG_LOGO_REGEX, current_extinf) or [None, ""])[1]
+                group_title = (re.search(GROUP_TITLE_REGEX, current_extinf) or [None, ""])[1]
                 display_name_from_extinf = current_extinf.split(',')[-1]
 
                 parsed_channels.append({
@@ -132,7 +134,7 @@ class ChannelHandler:
             
             parsed_channels = self._parse_source_m3u_lines(response.text.splitlines())
 
-            with self.stream_lock:
+            with self._mutex:
                 for p_channel in parsed_channels:
                     service_id = self._generate_source_service_id(provider_alias, p_channel["actual_stream_url"])
                     self.discovered_source_services[service_id] = {
@@ -177,12 +179,15 @@ class ChannelHandler:
                 continue
 
             mapped_sources_for_lc = self.channel_mappings_data_from_json.get(logical_channel_id, [])
-            processed_sources = []
+            processed_sources: list[dict[str, Any]] = []
             for mapping in sorted(mapped_sources_for_lc, key=lambda x: x.get("priority", 0)):
                 source_id = mapping.get("source_service_id")
+                priority = mapping.get("priority", 0)
                 discovered_service = self.discovered_source_services.get(source_id)
                 if discovered_service:
                     processed_sources.append({
+                        "source_service_id": source_id,
+                        "priority": priority,
                         "provider_alias": discovered_service["provider_alias"],
                         "actual_stream_url": discovered_service["actual_stream_url"],
                     })
@@ -203,10 +208,25 @@ class ChannelHandler:
                  self.config.log_message(f"No valid mapped sources for LC '{logical_channel_id}'. It will not be included in the client M3U.", level="WARN")
         self.config.log_message(f"Built {len(self.client_facing_channels)} client-facing channels.", level="INFO")
 
+    def get_pending_stream_count(self) -> int:
+        with self._mutex:
+            return len(self.pending_streams)
+
+    def add_pending_stream(self, logical_channel_id: str) -> bool:
+        with self._mutex:
+            if logical_channel_id in self.pending_streams:
+                return False
+            self.pending_streams.add(logical_channel_id)
+            return True
+
+    def remove_pending_stream(self, logical_channel_id: str) -> None:
+        with self._mutex:
+            self.pending_streams.remove(logical_channel_id)
+
     def generate_master_client_m3u(self) -> None:
         """Generates the master M3U content to be served to clients."""
         m3u_lines = ["#EXTM3U x-tvg-url=\"\""]
-        if not self.nexus_url:
+        if not self.config.nexus_url:
             self.config.log_message("NEXUS_URL not set. Client M3U URLs will be incorrect.", level="ERROR")
             m3u_lines.extend(["#EXTINF:-1,Error: NEXUS_URL not configured", "http://error.invalid/stream"])
             self.master_m3u_content = "\n".join(m3u_lines) + "\n"
@@ -223,29 +243,30 @@ class ChannelHandler:
             if group := lc_data.get("group_title"): extinf_parts.append(f'group-title="{group}"')
             
             m3u_lines.append(f"#EXTINF:-1 {' '.join(extinf_parts)},{name}")
-            m3u_lines.append(f"{self.nexus_url}/hls/{lc_data['logical_channel_id']}/playlist.m3u8")
+            m3u_lines.append(f"{self.config.nexus_url}/hls/{lc_data['logical_channel_id']}/playlist.m3u8")
         
         self.master_m3u_content = "\n".join(m3u_lines) + "\n"
         self.config.log_message(f"Generated master client M3U with {len(self.client_facing_channels)} channels.", level="INFO")
 
-    def get_sources_for_client_facing_channel(self, logical_channel_id: str) -> list[dict[str, str]]:
+    def get_sources_for_client_facing_channel(self, logical_channel_id: str) -> list[dict[str, Any]]:
         """Retrieves the list of source stream URLs for a given client-facing channel ID."""
         channel_data = self.client_facing_channels.get(logical_channel_id)
         return channel_data.get("sources", []) if channel_data else []
     
-    def _update_providers_semaphore(self,) -> bool:
-        """Initializes or updates the semaphores for each provider based on their max concurrent streams."""
-        with self.stream_lock:
-            self.provider_semaphores.clear()
+    def _update_providers_slots(self,) -> bool:
+        """Initializes or updates the slots for each provider based on their max concurrent streams."""
+        with self._mutex:
+            self.slots.clear()
             for alias, details in self.providers_data_from_json.items():
+                name = ProviderName(alias)
                 max_streams = details.get("max_concurrent_streams", 1)
-                self.provider_semaphores[alias] = threading.Semaphore(max_streams)
-                self.config.log_message(f"Initialized semaphore for provider '{alias}' with capacity {max_streams}", level="DEBUG")
+                self.slots[name] = ProviderSlots(
+                    name=name,
+                    m3u_url=details.get("url", ""),
+                    total_slots=max_streams
+                )
+                self.config.log_message(f"Initialized slots for provider '{alias}' with capacity {max_streams}", level="DEBUG")
         return True
-
-    def _get_max_streams_for_provider(self, provider_alias: str) -> int:
-        """Gets the configured maximum concurrent streams for a provider."""
-        return self.providers_data_from_json.get(provider_alias, {}).get("max_concurrent_streams", 1)
         
     def reload_handler_config(self) -> None:
         """Public method to trigger a full reload of the handler's configuration."""
@@ -253,7 +274,7 @@ class ChannelHandler:
 
     def get_provider_stream_status(self) -> dict[str, dict[str, int]]:
         """
-        Calculates the current stream usage for each provider by inspecting the semaphores.
+        Calculates the current stream usage for each provider by inspecting the slots.
         This is the single source of truth for UI and logs.
 
         Returns:
@@ -261,34 +282,26 @@ class ChannelHandler:
             containing 'active' and 'max' stream counts.
             e.g., {'provider_a': {'active': 1, 'max': 2}, ...}
         """
-        status_report = {}
-        with self.stream_lock: # Lock to safely iterate over provider_semaphores
-            for alias, semaphore in self.provider_semaphores.items():
-                # Get the max streams from the original config
-                max_streams = self._get_max_streams_for_provider(alias)
-                
-                # The semaphore's internal _value is the number of AVAILABLE slots.
-                # Active streams = Max Streams - Available Slots.
-                available_slots = semaphore._value
-                active_streams = max_streams - available_slots
-                
+        status_report: dict[str, dict[str, int]] = {}
+        with self._mutex: # Lock to safely iterate over slots
+            for alias, provider_slots in self.slots.items():                
                 status_report[alias] = {
-                    "active": active_streams,
-                    "max": max_streams
+                    "active": provider_slots.get_active_slots(),
+                    "max": provider_slots.get_total_slots()
                 }
         return status_report
 
     def get_total_stream_status_for_ui(self) -> tuple[int, int]:
         """
         Returns a tuple of (total_active_streams, total_max_streams) for UI display,
-        derived directly from the semaphore states.
+        derived directly from the slot states.
         """
         detailed_status = self.get_provider_stream_status()
         total_active = sum(status['active'] for status in detailed_status.values())
         total_max = sum(status['max'] for status in detailed_status.values())
         return int(total_active), int(total_max)
     
-    def get_active_stream_status_for_logging(self, provider_alias: str) -> dict[str, int]:
+    def get_active_stream_status_for_logging(self, provider_alias: str) -> str:
         detailed_status = self.get_provider_stream_status()[provider_alias]
         active = detailed_status['active']
         max_streams = detailed_status['max']
@@ -301,7 +314,7 @@ class ChannelHandler:
             return []
         
         query = query.lower()
-        matches = []
+        matches: list[dict[str, Any]] = []
         for group, channels in self.predefined_channel_list.items():
             for channel in channels:
                 if query in channel.get('name', '').lower():
@@ -347,7 +360,7 @@ class ChannelHandler:
             return False 
         save_successful = self.config.save_providers_config(new_providers_data)
         if save_successful:
-            self._update_providers_semaphore()
+            self._update_providers_slots()
         return save_successful
     
     def add_provider(self, alias: str, url: str, max_streams: int) -> dict[str, Any]:

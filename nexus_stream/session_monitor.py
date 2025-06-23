@@ -1,14 +1,12 @@
 import threading
 import time
 import requests
-from typing import Set
+from typing import NoReturn, Set
+from nexus_stream.config import Config
+from nexus_stream.create_stream import HLSKey
+from nexus_stream.handler import ChannelHandler
+from nexus_stream.stream import HLSStreamManager
 
-# Forward-declare classes to avoid circular import issues with type hints
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from nexus_stream.config import Config
-    from nexus_stream.handler import ChannelHandler
-    from nexus_stream.stream import HLSStreamManager
 
 # --- Constants ---
 MEDIA_SERVER_API_TIMEOUT = 10
@@ -23,7 +21,7 @@ class GhostSessionMonitor:
     corresponding active viewing session on any configured media server. This can
     happen if a client disconnects improperly.
     """
-    def __init__(self, config: 'Config', handler: 'ChannelHandler', hls_manager: 'HLSStreamManager'):
+    def __init__(self, config: Config, handler: ChannelHandler, hls_manager: HLSStreamManager) -> None:
         """
         Initializes the monitor.
         
@@ -39,7 +37,6 @@ class GhostSessionMonitor:
         self.handler = handler
         self.hls_manager = hls_manager
         
-        self.interval: int = self.config.ghost_check_interval
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.display_name_to_lc_id_map: dict[str, str] = {}
 
@@ -80,7 +77,7 @@ class GhostSessionMonitor:
         
         url = f"{base_url.rstrip('/')}/emby/Sessions"
         headers = {'Content-Type': 'application/json'}
-        params = {"api_key": api_key, "ActiveWithinSeconds": self.interval + SESSION_ACTIVE_BUFFER_SECONDS}
+        params = {"api_key": api_key, "ActiveWithinSeconds": self.config.ghost_check_interval + SESSION_ACTIVE_BUFFER_SECONDS}
         
         try:
             response = requests.get(url, params=params, headers=headers, timeout=MEDIA_SERVER_API_TIMEOUT)
@@ -102,12 +99,12 @@ class GhostSessionMonitor:
         jellyfin_sessions = self._fetch_sessions_from_server(self.config.jellyfin_url, self.config.jellyfin_api_key, "Jellyfin")
         
         all_sessions = emby_sessions + jellyfin_sessions
-        active_lc_ids: Set[str] = set()
 
         if not self.display_name_to_lc_id_map:
             # This can happen at startup before the handler is fully ready.
-            return active_lc_ids
+            return set()
 
+        active_lc_ids: Set[str] = set()
         for session in all_sessions:
             if (now_playing := session.get("NowPlayingItem")) and now_playing.get("Type") == "TvChannel":
                 if (channel_name := now_playing.get("Name")) in self.display_name_to_lc_id_map:
@@ -124,32 +121,30 @@ class GhostSessionMonitor:
         self._build_name_to_id_map()
 
         try:
-            legitimately_active_ids = self._get_legitimate_stream_ids()
-            self.config.log_message(f"Monitor: Found {len(legitimately_active_ids)} legitimate sessions: {legitimately_active_ids or 'None'}", level="DEBUG")
+            legitimately_active_lc_ids = self._get_legitimate_stream_ids()
+            self.config.log_message(f"Monitor: Found {len(legitimately_active_lc_ids)} legitimate sessions: {legitimately_active_lc_ids or 'None'}", level="DEBUG")
         except Exception as e:
             # This is a critical failure, as we can't determine what's legitimate.
             # Abort this check cycle to avoid terminating valid streams.
             self.config.log_message(f"Monitor: Could not get active sessions from media servers: {e}", level="ERROR")
             return
 
+        ghost_hls_keys: Set[tuple[HLSKey, str]] = set()  # A ghost is a stream that is running but NOT in the legitimate list.
         with self.hls_manager.hls_process_lock:
-            currently_running_ids = set(self.hls_manager.hls_ffmpeg_processes.keys())
-        
-        if not currently_running_ids:
-            return # No streams running, nothing to do.
+            for hls_key, data in self.hls_manager.hls_ffmpeg_processes.items():
+                if data['is_long_term'] and data['logical_channel_id'] not in legitimately_active_lc_ids:
+                    ghost_hls_keys.add((hls_key, data['logical_channel_name']))
 
-        # A ghost is a stream that is running but NOT in the legitimate list.
-        ghost_stream_ids = currently_running_ids - legitimately_active_ids
-
-        if ghost_stream_ids:
-            self.config.log_message(f"Monitor: Found {len(ghost_stream_ids)} ghost session(s) to terminate: {', '.join(ghost_stream_ids)}", level="WARN")
-            for lc_id in ghost_stream_ids:
-                self.config.log_message(f"Monitor: Terminating ghost stream for '{lc_id}'...", level="INFO")
-                self.hls_manager.stop_hls_ffmpeg_process(lc_id)
-        else:
+        if not ghost_hls_keys:
             self.config.log_message("Monitor: No ghost sessions found.", level="DEBUG")
+            return
 
-    def _run(self) -> None:
+        self.config.log_message(f"Monitor: Found {len(ghost_hls_keys)} ghost session(s) to terminate: {', '.join(g[0] for g in ghost_hls_keys)}", level="WARN")
+        for hls_key, logical_channel_name in ghost_hls_keys:
+            self.config.log_message(f"Monitor: Terminating ghost stream for '{logical_channel_name}' [{hls_key}]...", level="INFO")
+            self.hls_manager.stop_hls_ffmpeg_process(hls_key, logical_channel_name)
+
+    def _run(self) -> NoReturn:
         """The main execution loop for the monitor thread."""
         self.config.log_message("Ghost Session Monitor thread started.", level="INFO")
         time.sleep(15) # Initial delay to allow the rest of the app to start up.
@@ -160,4 +155,4 @@ class GhostSessionMonitor:
             except Exception as e:
                 # Top-level catch to ensure the monitoring thread never dies.
                 self.config.log_message(f"Monitor: Unhandled exception in main check loop: {e}", level="CRITICAL")
-            time.sleep(self.interval)
+            time.sleep(self.config.ghost_check_interval)
