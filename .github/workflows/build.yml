@@ -55,17 +55,6 @@ jobs:
       - name: Install Semantic Release plugins
         run: npm install semantic-release @semantic-release/commit-analyzer @semantic-release/release-notes-generator @semantic-release/changelog @semantic-release/github @semantic-release/git
 
-      # THIS IS THE NEW DEBUGGING STEP
-      - name: DEBUG - Print Environment Variables
-        run: |
-          echo "--- DEBUGGING WORKFLOW INPUTS ---"
-          echo "GITHUB_REF_NAME: [${{ github.ref_name }}]"
-          echo "IS_PRERELEASE: [${{ github.event.inputs.is_prerelease }}]"
-          echo "PRERELEASE_CHANNEL: [${{ github.event.inputs.prerelease_channel }}]"
-          echo "FORCE_RELEASE_TYPE: [${{ github.event.inputs.release_type }}]"
-          echo "DRY_RUN: [${{ github.event.inputs.dry_run }}]"
-          echo "---------------------------------"
-
       - name: Semantic Release
         id: semantic
         uses: cycjimmy/semantic-release-action@v4
@@ -73,7 +62,6 @@ jobs:
           dry_run: ${{ github.event.inputs.dry_run }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # These are the variables read by the .releaserc.js file
           GITHUB_REF_NAME: ${{ github.ref_name }}
           IS_PRERELEASE: ${{ github.event.inputs.is_prerelease }}
           PRERELEASE_CHANNEL: ${{ github.event.inputs.prerelease_channel }}
@@ -90,7 +78,8 @@ jobs:
       - name: Set up repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.release.outputs.new_release_version }}
+          # THE FINAL FIX: Add 'v' to the tag name
+          ref: v${{ needs.release.outputs.new_release_version }}
 
       - name: Convert GITHUB_REPOSITORY to lowercase
         run: echo "IMAGE_NAME=$(echo $GITHUB_REPOSITORY | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
