@@ -21,6 +21,11 @@ on:
         description: 'If pre-release, specify the channel (e.g., "rc", "beta", "alpha"). Default is "rc".'
         required: false
         default: 'rc'
+      dry_run:
+        description: 'Log what would happen without creating a real release. Uncheck to perform a live release.'
+        required: true
+        type: boolean
+        default: true
 
 jobs:
   release:
@@ -31,6 +36,7 @@ jobs:
       pull-requests: write
     outputs:
       new_release_version: ${{ steps.semantic.outputs.new_release_version }}
+      new_release_published: ${{ steps.semantic.outputs.new_release_published }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -42,26 +48,30 @@ jobs:
           git config user.name "semantic-release-bot"
           git config user.email "semantic-release-bot@users.noreply.github.com"
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+
+      - name: Install Semantic Release plugins
+        run: npm install semantic-release @semantic-release/commit-analyzer @semantic-release/release-notes-generator @semantic-release/changelog @semantic-release/github @semantic-release/git
+
       - name: Semantic Release
         id: semantic
         uses: cycjimmy/semantic-release-action@v4
         with:
-          branches: |
-            ${{ 
-              github.event.inputs.is_prerelease == 'true' && 
-              format('[{ "name": "{0}", "prerelease": "{1}" }]', github.ref_name, github.event.inputs.prerelease_channel) ||
-              '' 
-            }}
-          extra_plugins: |
-            @semantic-release/changelog@6
-            @semantic-release/git@10
-          extra_args: ${{ github.event.inputs.release_type != '' && format('--force-release-type {0}', github.event.inputs.release_type) || '' }}
+          dry_run: ${{ github.event.inputs.dry_run }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          IS_PRERELEASE: ${{ github.event.inputs.is_prerelease }}
+          PRERELEASE_CHANNEL: ${{ github.event.inputs.prerelease_channel }}
+          FORCE_RELEASE_TYPE: ${{ github.event.inputs.release_type }}
 
   build-and-push:
     needs: release
-    if: needs.release.outputs.new_release_version
+    if: needs.release.outputs.new_release_published == 'true' && github.event.inputs.dry_run == 'false'
+
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -70,7 +80,7 @@ jobs:
       - name: Set up repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.release.outputs.new_release_version }}
+          ref: v${{ needs.release.outputs.new_release_version }}
 
       - name: Convert GITHUB_REPOSITORY to lowercase
         run: echo "IMAGE_NAME=$(echo $GITHUB_REPOSITORY | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
@@ -91,10 +101,7 @@ jobs:
         with:
           images: ghcr.io/${{ env.IMAGE_NAME }}
           tags: |
-            # This creates the primary tag, e.g., v2.0.0 or v2.0.0-rc.1
             type=semver,pattern={{version}}
-            # This creates the 'latest' tag, but ONLY if it is NOT a pre-release.
-            # The 'enable' flag is the key here.
             type=raw,value=latest,enable=${{ !contains(needs.release.outputs.new_release_version, '-') }}
 
       - name: Build and push Docker image
