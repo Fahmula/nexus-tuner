@@ -21,6 +21,12 @@ on:
         description: 'If pre-release, specify the channel (e.g., "rc", "beta", "alpha"). Default is "rc".'
         required: false
         default: 'rc'
+      # NEW: The safe "Dry Run" toggle. Defaults to true.
+      dry_run:
+        description: 'Log what would happen without creating a real release. Uncheck to perform a live release.'
+        required: true
+        type: boolean
+        default: true
 
 jobs:
   release:
@@ -30,11 +36,13 @@ jobs:
       issues: write 
       pull-requests: write
     outputs:
+      # This output is only set on a LIVE run, which is key for the next job.
       new_release_version: ${{ steps.semantic.outputs.new_release_version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          # Fetch all history for semantic-release to analyze
           fetch-depth: 0
 
       - name: Configure Git User
@@ -47,17 +55,18 @@ jobs:
         with:
           node-version: 'lts/*'
 
-      # Install ALL plugins listed in your .releaserc.js file
+      # This step installs all the plugins defined in your .releaserc.js file
       - name: Install Semantic Release plugins
         run: npm install semantic-release @semantic-release/commit-analyzer @semantic-release/release-notes-generator @semantic-release/changelog @semantic-release/github @semantic-release/git
 
       - name: Semantic Release
         id: semantic
         uses: cycjimmy/semantic-release-action@v4
-        # We no longer pass any config in the 'with' block.
-        # The .releaserc.js file and ENV variables handle everything.
+        with:
+          # Pass the dry_run input to the action
+          dry_run: ${{ github.event.inputs.dry_run }}
         env:
-          # Pass workflow inputs to the .releaserc.js file
+          # These environment variables are read by your .releaserc.js file
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IS_PRERELEASE: ${{ github.event.inputs.is_prerelease }}
           PRERELEASE_CHANNEL: ${{ github.event.inputs.prerelease_channel }}
@@ -65,6 +74,8 @@ jobs:
 
   build-and-push:
     needs: release
+    # CRITICAL: This 'if' condition ensures this job ONLY runs when a real release was made.
+    # The 'new_release_version' output is empty during a dry run.
     if: needs.release.outputs.new_release_version
     runs-on: ubuntu-latest
     permissions:
