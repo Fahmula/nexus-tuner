@@ -361,7 +361,7 @@ def ui_logical_channel_form(logical_channel_id: str | None = None):
     unmapped_suggestions = []
     mapped_services: list[dict[str, Any]] = []
     page = request.args.get('page', 1, type=int)
-    per_page = 20
+    per_page = 100
 
     # Load all services and mappings
     all_services = handler.get_all_discovered_source_services_for_ui()
@@ -626,7 +626,7 @@ def ui_channel_populate_from_suggestion():
 
     # 3. Paginate the pre-filtered results
     page = 1
-    per_page = 20
+    per_page = 100
     total_unmapped_items = len(unmapped_suggestions)
     total_pages = math.ceil(total_unmapped_items / per_page) if per_page > 0 else 1
     unmapped_suggestions_for_page = unmapped_suggestions[:per_page]

@@ -119,10 +119,10 @@
         </tbody>
     </table>
     
+    <p class="text-muted small mt-2">
+        Showing {{ unmapped_suggestions_for_page|length }} of {{ total_unmapped_items }} total unmapped matching services.
+    </p>
     {% if total_pages > 1 %}
-        <p class="text-muted small mt-2">
-            Showing {{ unmapped_suggestions_for_page|length }} of {{ total_unmapped_items }} total matching services.
-        </p>
         <nav aria-label="Suggestions navigation" class="mt-2">
             <ul class="pagination justify-content-center">
                 <li class="page-item {% if current_page <= 1 %}disabled{% endif %}">
