@@ -55,15 +55,26 @@ jobs:
       - name: Install Semantic Release plugins
         run: npm install semantic-release @semantic-release/commit-analyzer @semantic-release/release-notes-generator @semantic-release/changelog @semantic-release/github @semantic-release/git
 
+      # THIS IS THE NEW DEBUGGING STEP
+      - name: DEBUG - Print Environment Variables
+        run: |
+          echo "--- DEBUGGING WORKFLOW INPUTS ---"
+          echo "GITHUB_REF_NAME: [${{ github.ref_name }}]"
+          echo "IS_PRERELEASE: [${{ github.event.inputs.is_prerelease }}]"
+          echo "PRERELEASE_CHANNEL: [${{ github.event.inputs.prerelease_channel }}]"
+          echo "FORCE_RELEASE_TYPE: [${{ github.event.inputs.release_type }}]"
+          echo "DRY_RUN: [${{ github.event.inputs.dry_run }}]"
+          echo "---------------------------------"
+
       - name: Semantic Release
         id: semantic
         uses: cycjimmy/semantic-release-action@v4
         with:
           dry_run: ${{ github.event.inputs.dry_run }}
         env:
-          GITHUB_REF_NAME: ${{ github.ref_name }}
-
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # These are the variables read by the .releaserc.js file
+          GITHUB_REF_NAME: ${{ github.ref_name }}
           IS_PRERELEASE: ${{ github.event.inputs.is_prerelease }}
           PRERELEASE_CHANNEL: ${{ github.event.inputs.prerelease_channel }}
           FORCE_RELEASE_TYPE: ${{ github.event.inputs.release_type }}
