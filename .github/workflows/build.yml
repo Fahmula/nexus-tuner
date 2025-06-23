@@ -1,31 +1,39 @@
 name: Manual Release and Push Docker Image
 
-# This workflow is now triggered manually from the GitHub Actions UI
 on:
   workflow_dispatch:
     inputs:
       release_type:
-        description: 'Optional: Force a release type (major, minor, or patch)'
+        description: 'Optional: Force a release bump (major, minor, patch). Let semantic-release decide if blank.'
         required: false
         type: choice
         options:
-          - '' # This empty option allows semantic-release to decide automatically
+          - ''
           - 'patch'
           - 'minor'
           - 'major'
+      is_prerelease:
+        description: 'Create a pre-release? (e.g., 2.0.0-rc.1)'
+        required: true
+        type: boolean
+        default: false
+      prerelease_channel:
+        description: 'If pre-release, specify the channel (e.g., "rc", "beta", "alpha"). Default is "rc".'
+        required: false
+        default: 'rc'
 
 jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      issues: write
+      contents: write 
+      issues: write 
       pull-requests: write
     outputs:
       new_release_version: ${{ steps.semantic.outputs.new_release_version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -37,35 +45,36 @@ jobs:
       - name: Semantic Release
         id: semantic
         uses: cycjimmy/semantic-release-action@v4
-        # This 'with' block is new. It uses the manual input if provided.
         with:
-          semantic_version: 19 # Use a recent version of semantic-release
+          branches: |
+            ${{ 
+              github.event.inputs.is_prerelease == 'true' && 
+              format('[{ "name": "{0}", "prerelease": "{1}" }]', github.ref_name, github.event.inputs.prerelease_channel) ||
+              '' 
+            }}
           extra_plugins: |
             @semantic-release/changelog@6
             @semantic-release/git@10
+          extra_args: ${{ github.event.inputs.release_type != '' && format('--force-release-type {0}', github.event.inputs.release_type) || '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # This line forces a release type if you selected one in the UI
-          SEMANTIC_RELEASE_RELEASE_TYPE: ${{ github.event.inputs.release_type }}
 
   build-and-push:
-    needs: release 
-    # This condition is still important. It only runs if the 'release' job actually created a version.
-    if: ${{ needs.release.outputs.new_release_version != '' }} 
+    needs: release
+    if: needs.release.outputs.new_release_version
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     steps:
       - name: Set up repository
-        # We check out the specific tag created by the release job to ensure we build the correct code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: ${{ needs.release.outputs.new_release_version }}
 
       - name: Convert GITHUB_REPOSITORY to lowercase
         run: echo "IMAGE_NAME=$(echo $GITHUB_REPOSITORY | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
-        
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -75,11 +84,23 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ env.IMAGE_NAME }}
+          tags: |
+            # This creates the primary tag, e.g., v2.0.0 or v2.0.0-rc.1
+            type=semver,pattern={{version}}
+            # This creates the 'latest' tag, but ONLY if it is NOT a pre-release.
+            # The 'enable' flag is the key here.
+            type=raw,value=latest,enable=${{ !contains(needs.release.outputs.new_release_version, '-') }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
+          context: .
           push: true
-          tags: |
-            ghcr.io/${{ env.IMAGE_NAME }}:${{ needs.release.outputs.new_release_version }}
-            ghcr.io/${{ env.IMAGE_NAME }}:latest
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
