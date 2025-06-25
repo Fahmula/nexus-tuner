@@ -31,9 +31,11 @@ from nexus_stream.session_monitor import GhostSessionMonitor
 from nexus_stream.stream import StreamManager
 
 # --- Constants ---
-PLAYLIST_POLL_INTERVAL = 0.2  # Seconds to wait between checking for a new playlist
-UI_SEARCH_MIN_CHARS = 3       # Minimum characters for a UI search
-UI_SEARCH_MAX_RESULTS = 50    # Max results to return in a UI search
+PLAYLIST_POLL_INTERVAL = 0.2   # Seconds to wait between checking for a new playlist
+UI_SEARCH_MIN_CHARS = 3        # Minimum characters for a UI search
+UI_SEARCH_MAX_RESULTS = 50     # Max results to return in a UI search
+MPEGTS_PACKET_SIZE = 188       # Size of a single MPEG-TS packet in bytes
+MPEGTS_PACKETS_PER_CHUNK = 20  # Number of packets to read at once in the MPEG-TS stream
 
 # --- App Initialization ---
 app = Flask(__name__)
@@ -140,9 +142,10 @@ def serve_mpegts_stream(logical_channel_id: str) -> Response:
         def stream_generator() -> Generator[bytes, None, None]:
             process_info["is_mpegts_active"] = True
             stdout = process_info["process"].stdout
+            chunk_size = MPEGTS_PACKET_SIZE * MPEGTS_PACKETS_PER_CHUNK
             try:
                 while True:
-                    chunk = stdout.read(4096)
+                    chunk = stdout.read(chunk_size)
                     if not chunk:
                         break
                     yield chunk

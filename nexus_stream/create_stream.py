@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import threading
 import time
-from typing import Any
+from typing import IO, Any
 
 from nexus_stream.config import Config, VideoKey, VideoName, VideoType
 from nexus_stream.quality_monitor import QualityMonitor
@@ -14,9 +14,9 @@ from nexus_stream.slots import ProviderName, ProviderSlots
 from nexus_stream.stream import ChannelHandler, StreamManager
 
 
-CREATE_STREAM_DEADLINE = 15
+CREATE_STREAM_DEADLINE = 25  # The maximum time that clients will wait for a stream to be created
+NEW_DEADLINE_NON_BEST = 1  # The number of seconds after a stream is healthy before giving up waiting on others, the best remaining source deadline is immediate
 CREATE_STREAM_POLL_INTERVAL = 0.01
-MPEGTS_HEALTHY_DELAY = 0.5
 
 
 def create_video_key(logical_channel_id: str, source_service_id: str, video_type: VideoType) -> VideoKey:
@@ -158,7 +158,7 @@ class CreateStream:
             if self._remaining_priorities[source["source_service_id"]] <= min(self._remaining_priorities.values()):
                 new_deadline = time.monotonic()  # Found best remaining source, no need to wait
             else:
-                new_deadline = time.monotonic() + 1
+                new_deadline = time.monotonic() + NEW_DEADLINE_NON_BEST
             self._deadline = min(self._deadline, new_deadline)
 
     def _set_result(self, video_key: VideoKey, source: dict[str, Any]) -> bool:
@@ -236,6 +236,20 @@ class CreateStream:
                 return
             video_key = create_video_key(self.logical_channel_id, source["source_service_id"], self.video_type)
 
+    def _check_mpegts_ffmpeg_health(self, video_name: VideoName, stream_info: str, stdout: IO[bytes], is_healthy: list[bool | None], mpegts_mtx: threading.Lock) -> None:
+        """Tries to read from stdout, blocks until data is available or the stream ends."""
+        error: Exception | str = "no data received or timed out"
+        try:
+            if stdout.read(1):
+                with mpegts_mtx:
+                    is_healthy[0] = True
+                    return
+        except Exception as e:
+            error = e
+        self.config.log_message(f"{video_name} {stream_info}: Error reading from FFmpeg MPEG-TS stream: {error}", level="error")
+        with mpegts_mtx:
+            is_healthy[0] = False
+
     def _create_stream(self, video_key: VideoKey, provider_alias: ProviderName, provider_slots: ProviderSlots, source: dict[str, Any]) -> VideoKey | None:
         """Creates a stream using the provided source and provider slots."""
         try:
@@ -243,8 +257,8 @@ class CreateStream:
             self._video_names[video_key] = video_name
             quality_score = self._quality_scores.get(source["source_service_id"])
             score_msg = f"Score={quality_score['total_score']:.2f} | Uptime={quality_score['uptime']*100:.0f}%" if quality_score else "Score=Unknown | Uptime=Unknown"
-            full_msg = f"[Priority={source['priority']} | {score_msg}]"
-            self._source_quality_messages[video_key] = full_msg
+            stream_info = f"[Priority={source['priority']} | {score_msg}]"
+            self._source_quality_messages[video_key] = stream_info
 
             channel_hls_dir = None
             stderr_log_file = None
@@ -258,13 +272,13 @@ class CreateStream:
                 log_path = self.config.get_ffmpeg_log_path(video_name, self.video_type)
                 stderr_log_file = open(log_path, 'a', encoding='utf-8')
             except Exception as e:
-                self.config.log_message(f"{video_name} {full_msg}: Failed to create FFmpeg command: {e}", level="CRITICAL")
+                self.config.log_message(f"{video_name} {stream_info}: Failed to create FFmpeg command: {e}", level="CRITICAL")
                 provider_slots.release()
                 if stderr_log_file:
                     try:
                         stderr_log_file.close()
                     except Exception as e:
-                        self.config.log_message(f"{video_name} {full_msg}: Failed to close log file: {e}", level="CRITICAL")
+                        self.config.log_message(f"{video_name} {stream_info}: Failed to close log file: {e}", level="CRITICAL")
                 if channel_hls_dir:
                     shutil.rmtree(channel_hls_dir, ignore_errors=True)
                 return
@@ -276,7 +290,7 @@ class CreateStream:
                         try:
                             stderr_log_file.close()
                         except Exception as e:
-                            self.config.log_message(f"{video_name} {full_msg}: Failed to close log file: {e}", level="CRITICAL")
+                            self.config.log_message(f"{video_name} {stream_info}: Failed to close log file: {e}", level="CRITICAL")
                         if channel_hls_dir:
                             shutil.rmtree(channel_hls_dir, ignore_errors=True)
                         return
@@ -297,13 +311,17 @@ class CreateStream:
                         'stderr_log_file_obj': stderr_log_file
                     }
             except Exception as e:
-                self.config.log_message(f"{video_name} {full_msg}: Immediate Popen failure: {e}", level="CRITICAL")
+                self.config.log_message(f"{video_name} {stream_info}: Immediate Popen failure: {e}", level="CRITICAL")
                 provider_slots.release()
                 return
         finally:
             self.stream_manager.stream_process_lock.release()
         provider_streams = self.handler.get_active_stream_status_for_logging(provider_alias)
-        self.config.log_message(f"{video_name} {full_msg}: Claimed a '{provider_alias}' slot and started FFmpeg (PID: {process.pid}) {{{provider_alias}:{provider_streams}}}.", level="INFO")
+        self.config.log_message(f"{video_name} {stream_info}: Claimed a '{provider_alias}' slot and started FFmpeg (PID: {process.pid}) {{{provider_alias}:{provider_streams}}}.", level="INFO")
+        is_healthy: list[bool | None] = [None]
+        mpegts_mtx = threading.Lock()
+        if self.video_type == VideoType.MPEGTS:
+            threading.Thread(target=self._check_mpegts_ffmpeg_health, args=(video_name, stream_info, process.stdout, is_healthy, mpegts_mtx), daemon=True).start()
 
         try:
             end_time = time.monotonic() + self.config.ffmpeg_start_timeout
@@ -321,20 +339,21 @@ class CreateStream:
                 if self.video_type == VideoType.HLS:
                     if any(channel_hls_dir.glob('*.ts')):  # type: ignore
                         provider_streams = self.handler.get_active_stream_status_for_logging(provider_alias)
-                        self.config.log_message(f"{video_name} {full_msg}: FFmpeg stream is now healthy (PID: {process.pid})", level="INFO")
+                        self.config.log_message(f"{video_name} {stream_info}: FFmpeg stream is now healthy (PID: {process.pid})", level="INFO")
                         return video_key
                 elif self.video_type == VideoType.MPEGTS:
-                    time.sleep(MPEGTS_HEALTHY_DELAY)
-                    if self._get_selected():
-                        self._remove_active_video_key(video_key)
-                        self.stream_manager.stop_ffmpeg_process(video_key, video_name)
-                        return
-                    if process.poll() is None:
+                    with mpegts_mtx:
+                        res = is_healthy[0]
+                    if res is True:
                         provider_streams = self.handler.get_active_stream_status_for_logging(provider_alias)
-                        self.config.log_message(f"{video_name} {full_msg}: FFmpeg stream is now healthy (PID: {process.pid})", level="INFO")
+                        self.config.log_message(f"{video_name} {stream_info}: FFmpeg stream is now healthy (PID: {process.pid})", level="INFO")
                         return video_key
-                    else:
-                        raise ChildProcessError(f"exited prematurely after {MPEGTS_HEALTHY_DELAY}s")
+                    elif res is False:
+                        if self._get_selected():
+                            self._remove_active_video_key(video_key)
+                            self.stream_manager.stop_ffmpeg_process(video_key, video_name)
+                            return
+                        raise ChildProcessError("exited prematurely")
                 else:
                     raise ValueError(f"Unsupported video type: {self.video_type}")
                 time.sleep(CREATE_STREAM_POLL_INTERVAL)
@@ -342,7 +361,7 @@ class CreateStream:
             raise TimeoutError("timed out waiting for segments or process stability")
 
         except (ChildProcessError, TimeoutError) as e:
-            self.config.log_message(f"{video_name} {full_msg}: FFmpeg validation failed (PID: {process.pid}): {e}. Cleaning up.", level="ERROR")
+            self.config.log_message(f"{video_name} {stream_info}: FFmpeg validation failed (PID: {process.pid}): {e}. Cleaning up.", level="ERROR")
             self._remove_active_video_key(video_key)
             self.stream_manager.stop_ffmpeg_process(video_key, video_name)
             return

@@ -148,7 +148,7 @@ class StreamManager:
                         inactive_ids.add((video_key, logical_channel_name))
                     elif not data['is_mpegts_active'] and now - data['last_access'] > timedelta(seconds=timeout):
                         logical_channel_name = data['logical_channel_name']
-                        self.config.log_message(f"Cleanup: Stream '{logical_channel_name}' timed out due to inactivity (PID: {data['process'].pid}).", level="INFO")
+                        self.config.log_message(f"Cleanup: Stream '{logical_channel_name}' timed out due to inactivity after {timeout}s (PID: {data['process'].pid}).", level="INFO")
                         inactive_ids.add((video_key, logical_channel_name))
             
             for video_key_to_stop, logical_channel_name in inactive_ids:
