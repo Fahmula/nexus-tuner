@@ -232,16 +232,17 @@ class ChannelHandler:
         with self._mutex:
             return len(self.pending_streams)
 
-    def add_pending_stream(self, logical_channel_id: str) -> bool:
+    def add_pending_stream(self, logical_channel_id: str, video_type: VideoType) -> bool:
+        key = f"{video_type}_{logical_channel_id}"
         with self._mutex:
-            if logical_channel_id in self.pending_streams:
+            if key in self.pending_streams:
                 return False
-            self.pending_streams.add(logical_channel_id)
+            self.pending_streams.add(key)
             return True
 
-    def remove_pending_stream(self, logical_channel_id: str) -> None:
+    def remove_pending_stream(self, logical_channel_id: str, video_type: VideoType) -> None:
         with self._mutex:
-            self.pending_streams.remove(logical_channel_id)
+            self.pending_streams.remove(f"{video_type}_{logical_channel_id}")
 
     def generate_master_client_m3u(self) -> None:
         """Generates the master M3U content to be served to clients."""
@@ -263,7 +264,7 @@ class ChannelHandler:
             if group := lc_data.get("group_title"): extinf_parts.append(f'group-title="{group}"')
             
             m3u_lines.append(f"#EXTINF:-1 {' '.join(extinf_parts)},{name}")
-            m3u_lines.append(f"{self.config.nexus_url}/{VideoType.HLS.value}/{lc_data['logical_channel_id']}/playlist.m3u8")
+            m3u_lines.append(f"{self.config.nexus_url}/{VideoType.HLS}/{lc_data['logical_channel_id']}/playlist.m3u8")
         
         self.master_m3u_content = "\n".join(m3u_lines) + "\n"
         self.config.log_message(f"Generated master client M3U with {len(self.client_facing_channels)} channels.", level="INFO")

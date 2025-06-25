@@ -5,7 +5,7 @@ import threading
 import logging
 import time
 import shutil
-from enum import Enum
+from enum import StrEnum
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from dotenv import load_dotenv
@@ -15,7 +15,7 @@ VideoKey = NewType("VideoKey", str)
 VideoName = NewType("VideoName", str)
 
 
-class VideoType(Enum):
+class VideoType(StrEnum):
     HLS = "hls"
     MPEGTS = "mpegts"
 
@@ -112,7 +112,7 @@ class Config:
         """
         return re.sub(NOT_ALPHANUM_REGEX, '_', name)
 
-    def get_ffmpeg_log_path(self, logical_channel_id: str) -> Path:
+    def get_ffmpeg_log_path(self, logical_channel_id: str, video_type: VideoType) -> Path:
         """
         Generates a safe file path for an FFmpeg log file.
 
@@ -123,7 +123,7 @@ class Config:
         Returns:
             A Path object for the log file.
         """
-        log_filename = f"ffmpeg_{self.get_fs_safe_alphanum(logical_channel_id)}.log" 
+        log_filename = f"ffmpeg_{self.get_fs_safe_alphanum(f'{video_type}_{logical_channel_id}')}.log" 
         return self.ffmpeg_logs_dir / log_filename
     
     def cleanup_ffmpeg_logs_by_age(self) -> None:
