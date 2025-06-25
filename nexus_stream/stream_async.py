@@ -1,5 +1,6 @@
 import asyncio
 # Refactor Note: Replaced shutil with aioshutil for non-blocking file system operations.
+import aiofiles
 import aioshutil
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -232,20 +233,19 @@ class HLSStreamManager:
             try:
                 # File I/O is blocking, but closing is generally fast. For extreme performance,
                 # this could be wrapped in asyncio.to_thread.
-                log_file.close()
+                await log_file.close()
             except Exception as e:
                 self.config.log_message(f"{name}: Error closing FFmpeg log file: {e}", level="ERROR")
 
         if should_release_slot:
-            # The release method itself is synchronous (just decrements a counter).
-            self.handler.slots.get(provider).release()
+            await self.handler.slots.get(provider).release()
         
         # Refactor Note: Awaiting the async method from the refactored ChannelHandler.
         provider_streams = await self.handler.get_active_stream_status_for_logging(provider)
 
         try:
             # Refactor Note: Replaced shutil.rmtree with aioshutil.rmtree for non-blocking I/O.
-            if hls_dir.exists(): # os.path.exists is sync but fast, aiofiles.os.path.exists is an alternative.
+            if await aiofiles.os.path.exists(hls_dir):
                 await aioshutil.rmtree(hls_dir)
         except OSError as e:
             self.config.log_message(f"{name}: Failed to clean HLS directory {hls_dir}: {e}", level="ERROR")
