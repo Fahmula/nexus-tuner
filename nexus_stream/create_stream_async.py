@@ -23,15 +23,17 @@ HLSName = NewType("HLSName", str)
 
 CREATE_STREAM_POLL_INTERVAL = 0.01
 
-# --- Helper functions (remain synchronous as they are pure) ---
+# --- Helper functions (remain synchronous as they are pure CPU-BOUND) ---
 
 def create_hls_key(logical_channel_id: str, source_service_id: str) -> HLSKey:
     """Generates a unique key for the HLS stream."""
     return HLSKey(f"{logical_channel_id}_{source_service_id}")
 
+
 def create_hls_name(logical_channel_name: str, source_service_id: str) -> HLSName:
     """Generates a unique name for the HLS stream."""
     return HLSName(f"{logical_channel_name} - {source_service_id}")
+
 
 # Refactor Note: This function is now async to perform non-blocking directory creation.
 async def create_hls_ffmpeg_command(hls_manager: HLSStreamManager, config: Config, input_url: str, hls_key: HLSKey) -> tuple[list[str], Path]:
@@ -60,6 +62,7 @@ async def create_hls_ffmpeg_command(hls_manager: HLSStreamManager, config: Confi
         str(playlist_path)
     ]
     return command, channel_hls_dir
+
 
 def sort_sources(sources: list[dict[str, Any]], quality_scores: dict[str, dict[str, float]], *, reverse: bool) -> dict[str, int]:
     """Sorts sources based on priority and quality. (Sync - CPU-bound pure function)"""
@@ -262,7 +265,7 @@ class CreateHLSStream:
                 return
             hls_key = create_hls_key(self.logical_channel_id, source["source_service_id"])
 
-    async def _create_stream(self, hls_key: HLSKey, provider_alias: ProviderName, source: dict[str, Any]) -> HLSKey | None:
+    async def _create_stream(self, hls_key: HLSKey, provider_alias: ProviderName, source: dict[str, Any], log_status_string: str) -> HLSKey | None:
         """Creates an HLS stream using FFmpeg via an asynchronous subprocess."""
         hls_name = create_hls_name(self.logical_channel_name, source["source_service_id"])
         self._hls_names[hls_key] = hls_name
@@ -273,14 +276,17 @@ class CreateHLSStream:
 
         channel_hls_dir = None
         stderr_log_file = None
+        process = None
         try:
             command, channel_hls_dir = await create_hls_ffmpeg_command(self.hls_manager, self.config, source["actual_stream_url"], hls_key)
             log_path = self.config.get_ffmpeg_log_path(hls_name)
+            # Refactor Note: Replaced blocking open() with aiofiles.open() for async file I/O.
             stderr_log_file = await aiofiles.open(log_path, 'a', encoding='utf-8')
 
             async with self._mutex:
                 if self._selected:
                     raise asyncio.CancelledError("Stream selection already occurred.")
+                # Refactor Note: Replaced subprocess.Popen with asyncio.create_subprocess_exec for non-blocking process creation.
                 process = await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.DEVNULL, stderr=stderr_log_file)
                 self._active_hls_keys.append(hls_key)
 
@@ -292,8 +298,7 @@ class CreateHLSStream:
                     'channel_hls_dir': channel_hls_dir, 'last_access': datetime.now(), 'stderr_log_file_obj': stderr_log_file
                 }
             
-            provider_streams = await self.handler.get_active_stream_status_for_logging(provider_alias)
-            self.config.log_message(f"{hls_name} {full_msg}: Claimed a '{provider_alias}' slot and started FFmpeg (PID: {process.pid}) {{{provider_alias}:{provider_streams}}}.", level="INFO")
+            self.config.log_message(f"{hls_name} {full_msg}: Claimed a '{provider_alias}' slot and started FFmpeg (PID: {process.pid}) {{{provider_alias}:{log_status_string}}}.", level="INFO")
 
             end_time = time.monotonic() + self.config.ffmpeg_start_timeout
             while time.monotonic() < end_time:
@@ -302,19 +307,23 @@ class CreateHLSStream:
                 if process.returncode is not None:
                     raise ChildProcessError(f"exited prematurely with code {process.returncode}")
                 
+                # Refactor Note: Used aiofiles.os.listdir for an async directory listing to check for .ts files.
                 if any(f.endswith('.ts') for f in await aiofiles.os.listdir(channel_hls_dir)):
                     self.config.log_message(f"{hls_name} {full_msg}: FFmpeg stream is now healthy (PID: {process.pid})", level="INFO")
                     return hls_key
+                # Refactor Note: Replaced time.sleep with await asyncio.sleep to yield control to the event loop.
                 await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
             
             raise TimeoutError("timed out waiting for segments")
 
         except (ChildProcessError, TimeoutError, asyncio.CancelledError) as e:
-            self.config.log_message(f"{hls_name} {full_msg}: FFmpeg validation failed (PID: {process.pid if 'process' in locals() else 'N/A'}): {e}. Cleaning up.", level="ERROR")
+            self.config.log_message(f"{hls_name} {full_msg}: FFmpeg validation failed (PID: {process.pid if process else 'N/A'}): {e}. Cleaning up.", level="ERROR")
             await self._remove_active_hls_key(hls_key)
             await self.hls_manager.stop_hls_ffmpeg_process(hls_key, hls_name)
             if stderr_log_file: await stderr_log_file.close()
-            if channel_hls_dir: await aioshutil.rmtree(channel_hls_dir, ignore_errors=True)
+            # Refactor Note: Replaced shutil.rmtree with aioshutil.rmtree for non-blocking directory removal.
+            if channel_hls_dir and await aiofiles.os.path.exists(channel_hls_dir):
+                await aioshutil.rmtree(channel_hls_dir, ignore_errors=True)
             return None
 
     async def _process_results(self) -> None:
