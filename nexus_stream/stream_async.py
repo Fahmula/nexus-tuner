@@ -266,14 +266,12 @@ class HLSStreamManager:
                 processes_to_stop = self.hls_ffmpeg_processes
                 self.hls_ffmpeg_processes = {}
             else:
-                for hls_key in hls_keys:
-                    if hls_key in self.hls_ffmpeg_processes:
-                        processes_to_stop[hls_key] = self.hls_ffmpeg_processes.pop(hls_key)
-        
+                processes_to_stop = {hls_key: self.hls_ffmpeg_processes[hls_key] for hls_key in hls_keys if hls_key in self.hls_ffmpeg_processes}
+                
         # Refactor Note: Use asyncio.gather to stop all processes concurrently, which is much
         # faster than stopping them one by one in a loop.
         tasks = [
-            self._stop_hls_ffmpeg_process(lc_id, data['logical_channel_name'], data_to_cleanup=data)
+            self.stop_hls_ffmpeg_process(lc_id, data['logical_channel_name'])
             for lc_id, data in processes_to_stop.items()
         ]
         if tasks:
