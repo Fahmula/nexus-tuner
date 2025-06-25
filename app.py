@@ -2,13 +2,15 @@
 The main Flask application file for NexusStream.
 
 This file initializes the Flask app and its components (Config, ChannelHandler, 
-HLSStreamManager, GhostSessionMonitor) and defines all the web routes for:
+StreamManager, GhostSessionMonitor) and defines all the web routes for:
 - Serving the master M3U playlist.
 - Handling HLS streaming requests (playlists and segments).
+- HDHomeRun endpoints.
 - Providing a web-based user interface (UI) for configuration and management.
 - A manual reload endpoint.
 """
 
+import json
 import os
 import signal
 import sys
@@ -16,22 +18,22 @@ import time
 import math
 from datetime import datetime, UTC
 from collections import deque
-from typing import Any
+from typing import Any, Generator
 
 from flask import (Flask, Response, abort, flash, redirect, render_template,
                    request, send_from_directory, url_for)
 
 from nexus_stream.config import Config
-from nexus_stream.create_stream import CREATE_STREAM_POLL_INTERVAL, CreateHLSStream, sort_sources
+from nexus_stream.create_stream import CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL, MPEGTS_PACKET_SIZE, MPEGTS_PACKETS_PER_CHUNK, CreateStream, VideoType, sort_sources
 from nexus_stream.handler import ChannelHandler, DEFAULT_PRIORITY
 from nexus_stream.quality_monitor import QualityMonitor
 from nexus_stream.session_monitor import GhostSessionMonitor
-from nexus_stream.stream import HLSStreamManager
+from nexus_stream.stream import StreamManager
 
 # --- Constants ---
-PLAYLIST_POLL_INTERVAL = 0.2  # Seconds to wait between checking for a new playlist
-UI_SEARCH_MIN_CHARS = 3       # Minimum characters for a UI search
-UI_SEARCH_MAX_RESULTS = 50    # Max results to return in a UI search
+PLAYLIST_POLL_INTERVAL = 0.2   # Seconds to wait between checking for a new playlist
+UI_SEARCH_MIN_CHARS = 3        # Minimum characters for a UI search
+UI_SEARCH_MAX_RESULTS = 50     # Max results to return in a UI search
 
 # --- App Initialization ---
 app = Flask(__name__)
@@ -39,17 +41,22 @@ app.secret_key = os.urandom(24)
 
 try:
     config = Config()
+except Exception as e:
+    print(f"FATAL: Could not initialize configuration: {e}")
+    exit(1)
+
+try:
     handler = ChannelHandler(config)
-    hls_manager = HLSStreamManager(config, handler)
-    GhostSessionMonitor(config, handler, hls_manager)
+    stream_manager = StreamManager(config, handler)
+    GhostSessionMonitor(config, handler, stream_manager)
     quality_monitor = QualityMonitor(config, handler)
 except ValueError as e:
     # A fatal error during startup should be logged and cause an exit
     config.log_message(f"FATAL: Could not initialize application due to a configuration error: {e}", level="FATAL")
-    exit(1)
+    exit(2)
 except Exception as e:
     config.log_message(f"FATAL: An unexpected error occurred during application startup: {e}", level="FATAL")
-    exit(1)
+    exit(3)
 
 
 def calculate_channel_uptime(channel: dict[str, Any], mapped_services: list[dict[str, Any]], all_quality_scores: dict[str, dict[str, float]]) -> None:
@@ -91,7 +98,149 @@ def inject_now() -> dict[str, datetime]:
 
 # --- Core Streaming and Playlist Endpoints ---
 
-@app.route('/hls/<string:logical_channel_id>/preview.m3u8')
+@app.route(f'/{VideoType.MPEGTS}/<string:logical_channel_id>')
+def serve_mpegts_stream(logical_channel_id: str) -> Response:
+    """Serves a channel stream using MPEG-TS format."""
+    added_pending_stream = False
+    end_time = time.monotonic() + CREATE_STREAM_DEADLINE
+    try:
+        while not handler.add_pending_stream(logical_channel_id, VideoType.MPEGTS):
+            if time.monotonic() > end_time:
+                msg = f"[{request.method} {request.path}] Exceeded timeout while waiting for earlier request for MPEGTS {logical_channel_id} to complete."
+                config.log_message(msg, level="ERROR")
+                abort(503, msg)
+            time.sleep(CREATE_STREAM_POLL_INTERVAL)
+        added_pending_stream = True
+
+        logical_channel = handler.get_logical_channel_by_id(logical_channel_id)
+        if not logical_channel:
+            msg = f"[{request.method} {request.path}] Logical channel {logical_channel_id} not found for MPEGTS."
+            config.log_message(msg, level="ERROR")
+            abort(404, msg)
+        logical_channel_name = str(logical_channel['display_name'])
+
+        lc_id_processes = stream_manager.get_ffmpeg_processes_from_logical_id(logical_channel_id, video_type=VideoType.MPEGTS, long_term_only=True)
+        if len(lc_id_processes):
+            video_key, p_info = lc_id_processes.popitem()
+            if p_info['is_mpegts_active']:
+                config.log_message(f"[{request.method} {request.path}] NexusStream does not currently support multiple concurrent MPEGTS streams for the same logical channel ID. Your media server should be reusing its existing request for logical channel '{logical_channel_name}' with key '{video_key}'.", level="ERROR")
+                abort(503, f"Another MPEGTS stream for logical channel '{logical_channel_name}' is already active. Please try again later.")
+        else:
+            res = CreateStream(config, handler, stream_manager, quality_monitor, logical_channel_id, logical_channel_name, VideoType.MPEGTS).result()
+            if isinstance(res, tuple):
+                code = res[0]
+                msg = f"[{request.method} {request.path}] {res[1]}"
+                config.log_message(msg, level="ERROR")
+                abort(code, msg)
+            video_key = res
+
+        process_info = stream_manager.get_ffmpeg_process_info(video_key)
+        if not process_info:
+            msg = f"[{request.method} {request.path}] Internal error: MPEGTS FFmpeg process not found for logical channel '{logical_channel_name}' with key '{video_key}'."
+            config.log_message(msg, level="ERROR")
+            abort(500, msg)
+
+        def stream_generator() -> Generator[bytes, None, None]:
+            process_info["is_mpegts_active"] = True
+            stdout = process_info["process"].stdout
+            chunk_size = MPEGTS_PACKET_SIZE * MPEGTS_PACKETS_PER_CHUNK
+            try:
+                while True:
+                    chunk = stdout.read(chunk_size)
+                    if not chunk:
+                        break
+                    yield chunk
+            finally:  # Don't stop early incase the user reconnects, let the timeout handle it
+                process_info["is_mpegts_active"] = False
+                config.log_message(f"Client disconnected from MPEGTS stream for '{logical_channel_name}' with key '{video_key}'.")
+
+        response = Response(stream_generator(), mimetype='video/mp2t')
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+    finally:
+        if added_pending_stream:
+            handler.remove_pending_stream(logical_channel_id, video_type=VideoType.MPEGTS)
+
+@app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/playlist.m3u8')
+def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str | None = None, sources: list[dict[str, Any]] | None = None) -> Response:
+    """
+    Serves the HLS playlist for a channel.
+    
+    This is the primary entry point for a client starting a stream. It triggers
+    the StreamManager to start the FFmpeg process if it's not already running.
+    It then waits for the playlist file to become available before serving it.
+    """
+    stream_manager.record_video_access(logical_channel_id, VideoType.HLS)
+    added_pending_stream = False
+    end_time = time.monotonic() + CREATE_STREAM_DEADLINE
+    try:
+        while not handler.add_pending_stream(logical_channel_id, VideoType.HLS):
+            if time.monotonic() > end_time:
+                msg = f"[{request.method} {request.path}] Exceeded timeout while waiting for earlier request for HLS {logical_channel_id} to complete."
+                config.log_message(msg, level="ERROR")
+                abort(503, msg)
+            time.sleep(CREATE_STREAM_POLL_INTERVAL)
+        added_pending_stream = True
+
+        if logical_channel_name is None:
+            logical_channel = handler.get_logical_channel_by_id(logical_channel_id)
+            if not logical_channel:
+                msg = f"[{request.method} {request.path}] Logical channel {logical_channel_id} not found for HLS."
+                config.log_message(msg, level="ERROR")
+                abort(404, msg)
+            logical_channel_name = str(logical_channel['display_name'])
+
+        lc_id_processes = stream_manager.get_ffmpeg_processes_from_logical_id(logical_channel_id, video_type=VideoType.HLS, long_term_only=True)
+        if len(lc_id_processes):
+            video_key = lc_id_processes.popitem()[0]
+        else:
+            res = CreateStream(config, handler, stream_manager, quality_monitor, logical_channel_id, logical_channel_name, VideoType.HLS, sources).result()
+            if isinstance(res, tuple):
+                code = res[0]
+                msg = f"[{request.method} {request.path}] {res[1]}"
+                config.log_message(msg, level="ERROR")
+                abort(code, msg)
+            video_key = res
+
+        playlist_path = stream_manager.get_hls_playlist_path(video_key)
+        if not playlist_path:
+            msg = f"[{request.method} {request.path}] Internal error: HLS playlist path not found for logical channel '{logical_channel_name}' with key '{video_key}'."
+            config.log_message(msg, level="ERROR")
+            abort(500, msg)
+
+        end_time = time.monotonic() + config.ffmpeg_start_timeout
+        while time.monotonic() < end_time:
+            with stream_manager.stream_process_lock:
+                if video_key not in stream_manager.ffmpeg_processes or stream_manager.ffmpeg_processes[video_key]['process'].poll() is not None:
+                    msg = f"[{request.method} {request.path}] HLS FFmpeg process for '{logical_channel_name}' with key '{video_key}' terminated unexpectedly while waiting for playlist."
+                    config.log_message(msg, level="ERROR")
+                    stream_manager.stop_ffmpeg_process(video_key, logical_channel_name)
+                    abort(503, msg)
+
+            if playlist_path.exists() and playlist_path.stat().st_size > 0:
+                try:
+                    response = send_from_directory(str(playlist_path.parent), playlist_path.name, mimetype="application/vnd.apple.mpegurl")
+                    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+                    response.headers["Pragma"] = "no-cache"
+                    response.headers["Expires"] = "0"
+                    return response
+                except Exception as e:
+                    msg = f"[{request.method} {request.path}] Error serving HLS playlist {playlist_path}: {e}"
+                    config.log_message(msg, level="ERROR")
+                    abort(500, msg)
+            time.sleep(PLAYLIST_POLL_INTERVAL)
+
+        msg = f"[{request.method} {request.path}] HLS playlist for logical channel '{logical_channel_name}' with key '{video_key}' was not available after {config.ffmpeg_start_timeout} seconds."
+        config.log_message(msg, level="ERROR")
+        abort(408, msg)
+    finally:
+        if added_pending_stream:
+            handler.remove_pending_stream(logical_channel_id, video_type=VideoType.HLS)
+
+
+@app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/preview.m3u8')
 def serve_hls_preview(logical_channel_id: str) -> Response:
     """Serves a preview HLS playlist for a channel."""
     source_service_id = logical_channel_id.replace("preview_", "")
@@ -120,93 +269,17 @@ def serve_hls_preview(logical_channel_id: str) -> Response:
 
     return serve_hls_playlist(logical_channel_id, logical_channel_name=logical_channel_name, sources=sources)
 
-@app.route('/hls/<string:logical_channel_id>/playlist.m3u8')
-def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str | None = None, sources: list[dict[str, Any]] | None = None) -> Response:
-    """
-    Serves the HLS playlist for a channel.
-    
-    This is the primary entry point for a client starting a stream. It triggers
-    the HLSStreamManager to start the FFmpeg process if it's not already running.
-    It then waits for the playlist file to become available before serving it.
-    """
-    hls_manager.record_hls_access(logical_channel_id)
-    added_pending_stream = False
-    end_time = time.monotonic() + 10
-    try:
-        while not handler.add_pending_stream(logical_channel_id):
-            if time.monotonic() > end_time:
-                msg = f"[{request.method} {request.path}] Exceeded timeout while waiting for earlier request for {logical_channel_id} to complete."
-                config.log_message(msg, level="ERROR")
-                abort(503, msg)
-            time.sleep(CREATE_STREAM_POLL_INTERVAL)
-        added_pending_stream = True
 
-        if logical_channel_name is None:
-            logical_channel = handler.get_logical_channel_by_id(logical_channel_id)
-            if not logical_channel:
-                msg = f"[{request.method} {request.path}] Logical channel {logical_channel_id} not found."
-                config.log_message(msg, level="ERROR")
-                abort(404, msg)
-            logical_channel_name = str(logical_channel['display_name'])
-
-        lc_id_processes = hls_manager.get_ffmpeg_processes_from_logical_id(logical_channel_id, long_term_only=True)
-        if len(lc_id_processes):
-            hls_key = lc_id_processes.popitem()[0]
-        else:
-            res = CreateHLSStream(config, handler, hls_manager, quality_monitor, logical_channel_id, logical_channel_name, sources).result()
-            if isinstance(res, tuple):
-                code = res[0]
-                msg = f"[{request.method} {request.path}] {res[1]}"
-                config.log_message(msg, level="ERROR")
-                abort(code, msg)
-            hls_key = res
-
-        playlist_path = hls_manager.get_hls_playlist_path(hls_key)
-        if not playlist_path:
-            msg = f"[{request.method} {request.path}] Internal error: HLS playlist path not found for logical channel '{logical_channel_name}' with key '{hls_key}'."
-            config.log_message(msg, level="ERROR")
-            abort(500, msg)
-
-        end_time = time.monotonic() + config.ffmpeg_start_timeout
-        while time.monotonic() < end_time:
-            with hls_manager.hls_process_lock:
-                if hls_key not in hls_manager.hls_ffmpeg_processes or hls_manager.hls_ffmpeg_processes[hls_key]['process'].poll() is not None:
-                    msg = f"[{request.method} {request.path}] FFmpeg process for '{logical_channel_name}' with key '{hls_key}' terminated unexpectedly while waiting for playlist."
-                    config.log_message(msg, level="ERROR")
-                    hls_manager.stop_hls_ffmpeg_process(hls_key, logical_channel_name)
-                    abort(503, msg)
-
-            if playlist_path.exists() and playlist_path.stat().st_size > 0:
-                try:
-                    response = send_from_directory(str(playlist_path.parent), playlist_path.name, mimetype="application/vnd.apple.mpegurl")
-                    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-                    response.headers["Pragma"] = "no-cache"
-                    response.headers["Expires"] = "0"
-                    return response
-                except Exception as e:
-                    msg = f"[{request.method} {request.path}] Error serving HLS playlist {playlist_path}: {e}"
-                    config.log_message(msg, level="ERROR")
-                    abort(500, msg)
-            time.sleep(PLAYLIST_POLL_INTERVAL)
-
-        msg = f"[{request.method} {request.path}] HLS playlist for logical channel '{logical_channel_name}' with key '{hls_key}' was not available after {config.ffmpeg_start_timeout} seconds."
-        config.log_message(msg, level="ERROR")
-        abort(408, msg)
-    finally:
-        if added_pending_stream:
-            handler.remove_pending_stream(logical_channel_id)
-
-
-@app.route('/hls/<string:logical_channel_id>/<path:segment_filename>')
+@app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/<path:segment_filename>')
 def serve_hls_segment(logical_channel_id: str, segment_filename: str) -> Response:
     """Serves an HLS video segment (.ts file)."""
-    hls_manager.record_hls_access(logical_channel_id)
+    stream_manager.record_video_access(logical_channel_id, VideoType.HLS)
     if not segment_filename.endswith(".ts") or ".." in segment_filename:
         msg = f"[{request.method} {request.path}] Invalid segment filename: {segment_filename}"
         config.log_message(msg, level="ERROR")
         abort(400, msg)
     
-    segment_path = hls_manager.get_hls_segment_path(logical_channel_id, segment_filename)
+    segment_path = stream_manager.get_hls_segment_path(logical_channel_id, VideoType.HLS, segment_filename)
     if not segment_path:
         msg = f"[{request.method} {request.path}] HLS segment path not found for logical channel '{logical_channel_id}' and segment '{segment_filename}'."
         config.log_message(msg, level="ERROR")
@@ -219,11 +292,11 @@ def serve_hls_segment(logical_channel_id: str, segment_filename: str) -> Respons
     return send_from_directory(str(segment_path.parent), segment_path.name, mimetype="video/mp2t")
 
 
-@app.route("/hls/<string:logical_channel_id>/stop", methods=["POST"])
-def stop_hls_stream(logical_channel_id: str) -> Response:
-    """Stops the HLS stream for a logical channel."""
-    hls_manager.stop_hls_ffmpeg_processes_with_logical_channel_id(logical_channel_id)
-    return Response(status=204) 
+@app.route("/<string:video_type>/<string:logical_channel_id>/stop", methods=["POST"])
+def stop_stream(video_type: str, logical_channel_id: str) -> Response:
+    """Stops the stream for a logical channel."""
+    stream_manager.stop_ffmpeg_processes_with_logical_channel_id(logical_channel_id, VideoType(video_type))
+    return Response(status=204)
 
 
 @app.route("/playlist.m3u")
@@ -709,10 +782,66 @@ def ui_player_for_service(service_id: str) -> str:
                            playlist_url=playlist_url, logical_channel_id=logical_channel_id, service_name=service_name)
 
 
+# --- HDHomeRun Emulation Endpoints ---
+
+@app.route('/discover.json')
+def hdhomerun_discover() -> Response:
+    """Emulates HDHomeRun device discovery API endpoint."""
+    response_dict: dict[str, str | int] = {
+        "FriendlyName": "NexusStream",
+        "DeviceAuth": "nexus-stream",
+        "ModelNumber": "2.0.0",
+        "FirmwareName": "nexus-stream_2.0.0",
+        "FirmwareVersion": "2.0.0",
+        "DeviceID": "12345678",
+        "Manufacturer": "nexus-stream",
+        "BaseURL": f"{config.nexus_url}",
+        "LineupURL": f"{config.nexus_url}/lineup.json",
+        "TunerCount": sum(status["max"] for status in handler.get_provider_stream_status().values())
+    }
+    return Response(json.dumps(response_dict), mimetype="application/json")
+
+
+@app.route('/lineup_status.json')
+def hdhomerun_lineup_status() -> Response:
+    """Returns the status of the lineup."""
+    response_dict: dict[str, int | str | list[str]] = {
+        "ScanInProgress": 1 if handler.is_loading() else 0,
+        "ScanPossible": 0,
+        "Source": "Cable",
+        "SourceList": ["Cable"]
+    }
+    return Response(json.dumps(response_dict), mimetype="application/json")
+
+
+@app.route('/lineup.json')
+def hdhomerun_lineup() -> Response:
+    """Returns the channel lineup in HDHomeRun format."""
+    lineup: list[dict[str, str | int]] = []
+    quality_scores = quality_monitor.get_quality_scores()
+    for channel in handler.logical_channels_data_from_json:
+        channel_number = channel.get('channel_num', '')
+        if not channel_number:
+            continue
+        is_hd = 1
+        for mapping in handler.channel_mappings_data_from_json.get(channel['logical_channel_id'], []):
+            if quality_scores.get(mapping['source_service_id'], {}).get('height', 0) >= 720:
+                break
+        else:
+            is_hd = 0
+        lineup.append({
+            "GuideNumber": channel_number,
+            "GuideName": channel.get('display_name', channel_number),
+            "HD": is_hd,
+            "URL": f"{config.nexus_url}/{VideoType.MPEGTS}/{channel['logical_channel_id']}"
+        })
+    return Response(json.dumps(lineup), mimetype="application/json")
+
+
 def signal_handler(signum: int, _: object) -> None:
     """Handles signals"""
     config.log_message(f"Received {signal.Signals(signum).name}, exiting...", level="INFO")
-    hls_manager.stop_hls_ffmpeg_processes()
+    stream_manager.stop_ffmpeg_processes()
     config.clean_up_hls_segments()
     sys.exit(0)
 

@@ -12,7 +12,8 @@ NexusStream is a smart, self-hosted IPTV proxy that empowers you to aggregate mu
 *   **In-Browser Previews:** Easily preview streams directly in your browser while configuring channels. No more guesswork and fiddling with external players to check stream region and language.
 *   **Automatic Quality Monitoring:** NexusStream continuously monitors the health of each source along with its resolution, bitrate, and framerate. No more endless tinkering to find the best source, just select them all and NexusStream automatically chooses the highest quality and reliable stream from your configured sources when a channel is requested.
 *   **Reliable & Fast Stream Startup:** When a channel is requested, NexusStream starts multiple mapped sources in parallel (up to the provider's limit). It then instantly selects the best healthy stream based on quality and priority, leading to faster, more reliable, and more consistent channel startup times.
-*   **On-the-Fly HLS Remux:** All streams are processed via FFmpeg to produce a standardized HLS format, maximizing compatibility across a wide range of client devices and applications.
+*   **HDHomeRun Server:** NexusStream can act as an HDHomeRun server, allowing you to use your IPTV channels with compatible clients that support HDHomeRun such as Plex.
+*   **On-the-Fly Remux:** All streams are processed via FFmpeg to produce an HLS or MPEGTS format, maximizing compatibility across a wide range of client devices and applications.
 *   **Ghost Session Cleanup:** Integrates with Emby and Jellyfin to detect and terminate "ghost" streams, FFmpeg processes that are still running after a client has disconnected improperly, freeing up valuable provider slots.
 
 ## Getting Started
@@ -60,7 +61,7 @@ This project is designed to be run as a Docker container, which is the recommend
     | :------------------------------------ | :------------------------------------------------------------------------------------------------------ | :------------------------------------ |
     | **`NEXUS_URL`** (Required)            | The full public URL of your NexusStream instance, including the port. Used to build playlist URLs.        | `http://192.168.1.100:4040`             |
     | `NEXUS_PORT`                          | The internal port the application listens on. Default is `4040`.                                        | `4040`                                |
-    | `NEXUS_FFMPEG_HLS_INACTIVITY_TIMEOUT` | Seconds of inactivity before an HLS stream is automatically stopped. Default is `900`.                    | `900`                                 |
+    | `NEXUS_FFMPEG_INACTIVITY_TIMEOUT` | Seconds of inactivity before a stream is automatically stopped. Default is `900`.                    | `900`                                 |
     | `NEXUS_LOG_LEVEL`                     | Sets the logging verbosity. Options: `DEBUG`, `INFO`, `WARNING`, `ERROR`. Default is `INFO`.              | `DEBUG`                               |
     | `NEXUS_GHOST_SESSION_CHECK_INTERVAL`  | Interval in seconds to check Jellyfin/Emby servers for ghost sessions. Default is `60`.                         | `120`                                 |
     | `NEXUS_EMBY_URL`                      | (Optional) URL for your Emby server to enable ghost session cleanup.                                      | `http://emby.local:8096`              |

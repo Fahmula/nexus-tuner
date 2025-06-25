@@ -5,14 +5,25 @@ import threading
 import logging
 import time
 import shutil
+from enum import StrEnum
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from dotenv import load_dotenv
-from typing import Any, Callable
+from typing import Any, Callable, NewType
+
+VideoKey = NewType("VideoKey", str)
+VideoName = NewType("VideoName", str)
+
+
+class VideoType(StrEnum):
+    HLS = "hls"
+    MPEGTS = "mpegts"
 
 
 # --- Constants ---
 NOT_ALPHANUM_REGEX = re.compile(r'[^a-zA-Z0-9_-]')
+CREATE_STREAM_DEADLINE = 25  # The maximum time that clients will wait for a stream to be created
+NEW_DEADLINE_NON_BEST = 1  # The number of seconds after a stream is healthy before giving up waiting on others, the best remaining source deadline is immediate
 
 
 class Config:
@@ -67,10 +78,10 @@ class Config:
         
         # --- FFmpeg & HLS Configs ---
         self.hls_segment_duration: int = 1  # This allows for a faster time to prune inactive streams
-        self.hls_segment_prune_timeout: int = 3  # This should be greater than hls_segment_duration by at least a few seconds
+        self.segment_prune_timeout: float = 3  # This should be greater than hls_segment_duration by at least a few seconds
         self.hls_playlist_length: int = 30
-        self.ffmpeg_start_timeout: int = 5  # Balance between getting the best source and being able to test more sources
-        self.ffmpeg_hls_inactivity_timeout: int = int(os.getenv("NEXUS_FFMPEG_HLS_INACTIVITY_TIMEOUT", 900))
+        self.ffmpeg_start_timeout: float = 5  # Balance between getting the best source and being able to test more sources
+        self.ffmpeg_inactivity_timeout: int = int(os.getenv("NEXUS_FFMPEG_INACTIVITY_TIMEOUT", 900))
         self.ffmpeg_path: str = os.getenv("FFMPEG_PATH", "/usr/bin/ffmpeg")
         self.ffmpeg_logs_dir: Path = self.logs_dir / "ffmpeg_logs"
         self.ffmpeg_logs_dir.mkdir(parents=True, exist_ok=True)
@@ -103,7 +114,7 @@ class Config:
         """
         return re.sub(NOT_ALPHANUM_REGEX, '_', name)
 
-    def get_ffmpeg_log_path(self, logical_channel_id: str) -> Path:
+    def get_ffmpeg_log_path(self, logical_channel_id: str, video_type: VideoType) -> Path:
         """
         Generates a safe file path for an FFmpeg log file.
 
@@ -114,7 +125,7 @@ class Config:
         Returns:
             A Path object for the log file.
         """
-        log_filename = f"ffmpeg_{self.get_fs_safe_alphanum(logical_channel_id)}.log" 
+        log_filename = f"ffmpeg_{self.get_fs_safe_alphanum(f'{video_type}_{logical_channel_id}')}.log" 
         return self.ffmpeg_logs_dir / log_filename
     
     def cleanup_ffmpeg_logs_by_age(self) -> None:
@@ -247,6 +258,9 @@ class Config:
 
     def save_logical_channels_config(self, data: list[dict[str, Any]]) -> bool:
         """Saves the logical channels configuration to logical_channels.json."""
+        for channel in data:  # These should values don't make sense to save
+            channel.pop("lowest_uptime", None)
+            channel.pop("health_score", None)
         return self._save_json_file(self.logical_channels_path, data)
 
     def get_channel_mappings_config(self) -> dict[str, Any]:
