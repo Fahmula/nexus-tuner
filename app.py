@@ -24,7 +24,7 @@ from flask import (Flask, Response, abort, flash, redirect, render_template,
                    request, send_from_directory, url_for)
 
 from nexus_stream.config import Config
-from nexus_stream.create_stream import CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL, CreateStream, VideoType, sort_sources
+from nexus_stream.create_stream import CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL, MPEGTS_PACKET_SIZE, MPEGTS_PACKETS_PER_CHUNK, CreateStream, VideoType, sort_sources
 from nexus_stream.handler import ChannelHandler, DEFAULT_PRIORITY
 from nexus_stream.quality_monitor import QualityMonitor
 from nexus_stream.session_monitor import GhostSessionMonitor
@@ -34,8 +34,6 @@ from nexus_stream.stream import StreamManager
 PLAYLIST_POLL_INTERVAL = 0.2   # Seconds to wait between checking for a new playlist
 UI_SEARCH_MIN_CHARS = 3        # Minimum characters for a UI search
 UI_SEARCH_MAX_RESULTS = 50     # Max results to return in a UI search
-MPEGTS_PACKET_SIZE = 188       # Size of a single MPEG-TS packet in bytes
-MPEGTS_PACKETS_PER_CHUNK = 20  # Number of packets to read at once in the MPEG-TS stream
 
 # --- App Initialization ---
 app = Flask(__name__)
@@ -123,7 +121,10 @@ def serve_mpegts_stream(logical_channel_id: str) -> Response:
 
         lc_id_processes = stream_manager.get_ffmpeg_processes_from_logical_id(logical_channel_id, video_type=VideoType.MPEGTS, long_term_only=True)
         if len(lc_id_processes):
-            video_key = lc_id_processes.popitem()[0]
+            video_key, p_info = lc_id_processes.popitem()
+            if p_info['is_mpegts_active']:
+                config.log_message(f"[{request.method} {request.path}] NexusStream does not currently support multiple concurrent MPEGTS streams for the same logical channel ID. Your media server should be reusing its existing request for logical channel '{logical_channel_name}' with key '{video_key}'.", level="ERROR")
+                abort(503, f"Another MPEGTS stream for logical channel '{logical_channel_name}' is already active. Please try again later.")
         else:
             res = CreateStream(config, handler, stream_manager, quality_monitor, logical_channel_id, logical_channel_name, VideoType.MPEGTS).result()
             if isinstance(res, tuple):
@@ -822,11 +823,16 @@ def hdhomerun_lineup() -> Response:
         channel_number = channel.get('channel_num', '')
         if not channel_number:
             continue
-        service_ids = [m['source_service_id'] for m in handler.channel_mappings_data_from_json.get(channel['logical_channel_id'], [])]
+        is_hd = 1
+        for mapping in handler.channel_mappings_data_from_json.get(channel['logical_channel_id'], []):
+            if quality_scores.get(mapping['source_service_id'], {}).get('height', 0) >= 720:
+                break
+        else:
+            is_hd = 0
         lineup.append({
             "GuideNumber": channel_number,
             "GuideName": channel.get('display_name', channel_number),
-            "HD": 1 if any(quality_scores.get(service_id, {}).get('height', '') >= 720 for service_id in service_ids) else 0,
+            "HD": is_hd,
             "URL": f"{config.nexus_url}/{VideoType.MPEGTS}/{channel['logical_channel_id']}"
         })
     return Response(json.dumps(lineup), mimetype="application/json")

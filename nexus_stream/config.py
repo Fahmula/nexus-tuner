@@ -22,6 +22,8 @@ class VideoType(StrEnum):
 
 # --- Constants ---
 NOT_ALPHANUM_REGEX = re.compile(r'[^a-zA-Z0-9_-]')
+CREATE_STREAM_DEADLINE = 25  # The maximum time that clients will wait for a stream to be created
+NEW_DEADLINE_NON_BEST = 1  # The number of seconds after a stream is healthy before giving up waiting on others, the best remaining source deadline is immediate
 
 
 class Config:

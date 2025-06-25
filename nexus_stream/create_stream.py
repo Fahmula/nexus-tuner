@@ -8,15 +8,15 @@ import threading
 import time
 from typing import IO, Any
 
-from nexus_stream.config import Config, VideoKey, VideoName, VideoType
+from nexus_stream.config import CREATE_STREAM_DEADLINE, NEW_DEADLINE_NON_BEST, Config, VideoKey, VideoName, VideoType
 from nexus_stream.quality_monitor import QualityMonitor
 from nexus_stream.slots import ProviderName, ProviderSlots
 from nexus_stream.stream import ChannelHandler, StreamManager
 
 
-CREATE_STREAM_DEADLINE = 25  # The maximum time that clients will wait for a stream to be created
-NEW_DEADLINE_NON_BEST = 1  # The number of seconds after a stream is healthy before giving up waiting on others, the best remaining source deadline is immediate
 CREATE_STREAM_POLL_INTERVAL = 0.01
+MPEGTS_PACKET_SIZE = 188       # Size of a single MPEG-TS packet in bytes
+MPEGTS_PACKETS_PER_CHUNK = 21  # Number of packets to read at once in the MPEG-TS stream
 
 
 def create_video_key(logical_channel_id: str, source_service_id: str, video_type: VideoType) -> VideoKey:
@@ -240,7 +240,7 @@ class CreateStream:
         """Tries to read from stdout, blocks until data is available or the stream ends."""
         error: Exception | str = "no data received or timed out"
         try:
-            if stdout.read(1):
+            if stdout.read(MPEGTS_PACKET_SIZE):
                 with mpegts_mtx:
                     is_healthy[0] = True
                     return
