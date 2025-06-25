@@ -9,14 +9,20 @@ HLSStreamManager, GhostSessionMonitor) and defines all the web routes for:
 - A manual reload endpoint.
 """
 
+import asyncio
+import json
 import os
 import signal
+import socket
+import subprocess
 import sys
+import threading
 import time
 import math
 from datetime import datetime, UTC
 from collections import deque
-from typing import Any
+from ssdp.aio import SSDP  # type: ignore
+from typing import Any, Generator, NoReturn
 
 from flask import (Flask, Response, abort, flash, redirect, render_template,
                    request, send_from_directory, url_for)
@@ -39,6 +45,11 @@ app.secret_key = os.urandom(24)
 
 try:
     config = Config()
+except Exception as e:
+    print(f"FATAL: Could not initialize configuration: {e}")
+    exit(1)
+
+try:
     handler = ChannelHandler(config)
     hls_manager = HLSStreamManager(config, handler)
     GhostSessionMonitor(config, handler, hls_manager)
@@ -46,10 +57,10 @@ try:
 except ValueError as e:
     # A fatal error during startup should be logged and cause an exit
     config.log_message(f"FATAL: Could not initialize application due to a configuration error: {e}", level="FATAL")
-    exit(1)
+    exit(2)
 except Exception as e:
     config.log_message(f"FATAL: An unexpected error occurred during application startup: {e}", level="FATAL")
-    exit(1)
+    exit(3)
 
 
 def calculate_channel_uptime(channel: dict[str, Any], mapped_services: list[dict[str, Any]], all_quality_scores: dict[str, dict[str, float]]) -> None:
@@ -707,6 +718,110 @@ def ui_player_for_service(service_id: str) -> str:
 
     return render_template("_video_player_modal.html", 
                            playlist_url=playlist_url, logical_channel_id=logical_channel_id, service_name=service_name)
+
+
+# --- HDHomeRun Emulation Endpoints ---
+
+def run_ssdp() -> NoReturn:
+    """Runs the SSDP server for automatic discovery."""
+    while True:
+        config.log_message("Starting SSDP server...")
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        coro = loop.create_datagram_endpoint(SSDP, family=socket.AF_INET)
+        transport, _ = loop.run_until_complete(coro)
+        try:
+            loop.run_forever()
+        finally:
+            config.log_message("Stopping SSDP server...")
+            transport.close()
+            loop.close()
+threading.Thread(target=run_ssdp, daemon=True).start()
+
+
+@app.route('/discover.json')
+def hdhomerun_discover() -> Response:
+    """Emulates HDHomeRun device discovery API endpoint."""
+    response_dict: dict[str, str | int] = {
+        "FriendlyName": "NexusStream",
+        "DeviceAuth": "nexus-stream",
+        "ModelNumber": "2.0.0",
+        "FirmwareName": "nexus-stream_2.0.0",
+        "FirmwareVersion": "2.0.0",
+        "DeviceID": "12345678",
+        "Manufacturer": "nexus-stream",
+        "BaseURL": f"{config.nexus_url}",
+        "LineupURL": f"{config.nexus_url}/lineup.json",
+        "TunerCount": sum(status["max"] for status in handler.get_provider_stream_status().values())
+    }
+    return Response(json.dumps(response_dict), mimetype="application/json")
+
+
+@app.route('/lineup_status.json')
+def hdhomerun_lineup_status() -> Response:
+    """Returns the status of the lineup."""
+    response_dict: dict[str, int | str | list[str]] = {
+        "ScanInProgress": 0,  # TODO: Update when actually scanning
+        "ScanPossible": 0,
+        "Source": "Cable",
+        "SourceList": ["Cable"]
+    }
+    return Response(json.dumps(response_dict), mimetype="application/json")
+
+
+@app.route('/lineup.json')
+def hdhomerun_lineup() -> Response:
+    """Returns the channel lineup in HDHomeRun format."""
+    lineup: list[dict[str, str | int]] = []
+    for channel in handler.logical_channels_data_from_json:
+        channel_number = channel.get('channel_num', '')
+        if not channel_number:
+            continue
+            
+        lineup.append({
+            "GuideNumber": channel_number,
+            "GuideName": channel.get('display_name', channel_number),
+            "HD": 1,
+            "URL": f"{config.nexus_url}/hdhr/{channel['logical_channel_id']}"
+        })
+    return Response(json.dumps(lineup), mimetype="application/json")
+
+
+@app.route('/hdhr/<string:logical_channel_id>')
+def hdhomerun_stream(logical_channel_id: str) -> Response:
+    """Serves a channel stream in a format compatible with Plex."""
+    # Now transpile the HLS to MPEG-TS for direct streaming
+    # Use FFmpeg to convert HLS to a direct MPEG-TS stream
+    cmd = [
+        config.ffmpeg_path,
+        "-hide_banner", "-loglevel", "error",
+        "-i", f"{config.nexus_url}/hls/{logical_channel_id}/playlist.m3u8",
+        "-c", "copy",
+        "-f", "mpegts",
+        "pipe:1"
+    ]
+    
+    def generate() -> Generator[Any, Any, None]:
+        try:
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            msg = f"[{request.method} {request.path}] Failed to start FFmpeg process for logical channel '{logical_channel_id}': {e}"
+            config.log_message(msg, level="ERROR")
+            abort(503, msg)
+        try:
+            while True:
+                if not process.stdout:
+                    msg = f"[{request.method} {request.path}] FFmpeg process for logical channel '{logical_channel_id}' failed to start."
+                    config.log_message(msg, level="ERROR")
+                    abort(503, msg)
+                chunk = process.stdout.read(64*1024)
+                if not chunk:
+                    config.log_message(f"[{request.method} {request.path}] FFmpeg process for logical channel '{logical_channel_id}' terminated.", level="INFO")
+                    break
+                yield chunk
+        finally:
+            process.kill()
+    return Response(generate(), mimetype="video/mp2t")
 
 
 def signal_handler(signum: int, _: object) -> None:

@@ -247,6 +247,9 @@ class Config:
 
     def save_logical_channels_config(self, data: list[dict[str, Any]]) -> bool:
         """Saves the logical channels configuration to logical_channels.json."""
+        for channel in data:  # These should values don't make sense to save
+            channel.pop("lowest_uptime", None)
+            channel.pop("health_score", None)
         return self._save_json_file(self.logical_channels_path, data)
 
     def get_channel_mappings_config(self) -> dict[str, Any]:
