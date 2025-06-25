@@ -82,9 +82,12 @@ def sort_sources(sources: list[dict[str, Any]], quality_scores: dict[str, dict[s
 
 class CreateHLSStream:
     """
-    A class to acquire and use resources for creating a stream asynchronously.
+    An asyncio-native class to acquire and use resources for creating a stream.
+    The original threaded logic is preserved using asyncio tasks and synchronization primitives.
     """
     def __init__(self, config: Config, handler: ChannelHandler, hls_manager: HLSStreamManager, quality_monitor: QualityMonitor, logical_channel_id: str, logical_channel_name: str, input_sources: list[dict[str, Any]] | None = None) -> None:
+        # Refactor Note: The __init__ method is now lightweight and synchronous.
+        # All async operations and task creation are moved to the `_initialize_and_start` method.
         self.config = config
         self.handler = handler
         self.hls_manager = hls_manager
@@ -93,7 +96,10 @@ class CreateHLSStream:
         self.logical_channel_name = logical_channel_name
         
         self._res: HLSKey | tuple[int, str] = (500, "Stream not created yet")
+        # Refactor Note: Replaced threading.Lock with asyncio.Lock for coroutine-safe state management.
         self._mutex = asyncio.Lock()
+        # Refactor Note: Replaced a blocking mutex on result() with an asyncio.Event.
+        # This allows `result()` to `await` completion without blocking the event loop.
         self._result_event = asyncio.Event()
 
         self._sources: list[dict[str, Any]] = []
@@ -217,9 +223,11 @@ class CreateHLSStream:
             if await self._get_selected():
                 return
 
+            # Refactor Note: The original logic of checking for an existing stream is preserved using an async lock.
             async with self.hls_manager.hls_process_lock:
                 if hls_key in self.hls_manager.hls_ffmpeg_processes and self.hls_manager.hls_ffmpeg_processes[hls_key]["process"].returncode is None:
                     if not self.hls_manager.hls_ffmpeg_processes[hls_key]["is_long_term"]:
+                        # Release lock and sleep to allow other tasks to run
                         await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
                         continue
                     
@@ -227,23 +235,28 @@ class CreateHLSStream:
                         await self._set_deadline(source)
                     return
 
+            # Refactor Note: Replaced blocking/non-blocking acquire with an async-native timed acquire.
+            # This attempts to get a slot without blocking indefinitely.
             try:
-                await asyncio.wait_for(provider_slots.acquire(), timeout=0.1)
+                # Refactor Note: `acquire()` now returns the new active slot count.
+                # This value is captured for accurate, non-racy logging.
+                new_active_count = await asyncio.wait_for(provider_slots.acquire(), timeout=0.1)
             except asyncio.TimeoutError:
                 await self.hls_manager.prune_hls_ffmpeg_processes()
+                await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
                 continue
 
-            try:
-                created_hls_key = await self._create_stream(hls_key, provider_alias, source)
-                if created_hls_key:
-                    if await self._set_result(created_hls_key, source):
-                        await self._set_deadline(source)
-                    else:
-                        await self.hls_manager.stop_hls_ffmpeg_process(created_hls_key, self._hls_names[created_hls_key])
-                    return
-            finally:
-                provider_slots.release()
+            log_status_string = f"{new_active_count}/{provider_slots.get_total_slots()}"
+            created_hls_key = await self._create_stream(hls_key, provider_alias, source, log_status_string)
+            if created_hls_key:
+                if not await self._set_result(created_hls_key, source):
+                    # Another stream was selected while this one was starting; clean up.
+                    await self.hls_manager.stop_hls_ffmpeg_process(created_hls_key, self._hls_names[created_hls_key])
+                else:
+                    await self._set_deadline(source)
+                return # Worker's job is done, either successfully or because another stream was chosen.
 
+            # If stream creation failed, get the next source and loop again.
             source = await self._pop_source(provider_sources, source)
             if not source:
                 return
