@@ -2,37 +2,34 @@
 The main Flask application file for NexusStream.
 
 This file initializes the Flask app and its components (Config, ChannelHandler, 
-HLSStreamManager, GhostSessionMonitor) and defines all the web routes for:
+StreamManager, GhostSessionMonitor) and defines all the web routes for:
 - Serving the master M3U playlist.
 - Handling HLS streaming requests (playlists and segments).
+- HDHomeRun endpoints.
 - Providing a web-based user interface (UI) for configuration and management.
 - A manual reload endpoint.
 """
 
-import asyncio
 import json
 import os
 import signal
-import socket
 import subprocess
 import sys
-import threading
 import time
 import math
 from datetime import datetime, UTC
 from collections import deque
-from ssdp.aio import SSDP  # type: ignore
-from typing import Any, Generator, NoReturn
+from typing import Any, Generator
 
 from flask import (Flask, Response, abort, flash, redirect, render_template,
                    request, send_from_directory, url_for)
 
 from nexus_stream.config import Config
-from nexus_stream.create_stream import CREATE_STREAM_POLL_INTERVAL, CreateHLSStream, sort_sources
+from nexus_stream.create_stream import CREATE_STREAM_POLL_INTERVAL, CreateStream, VideoType, sort_sources
 from nexus_stream.handler import ChannelHandler, DEFAULT_PRIORITY
 from nexus_stream.quality_monitor import QualityMonitor
 from nexus_stream.session_monitor import GhostSessionMonitor
-from nexus_stream.stream import HLSStreamManager
+from nexus_stream.stream import StreamManager
 
 # --- Constants ---
 PLAYLIST_POLL_INTERVAL = 0.2  # Seconds to wait between checking for a new playlist
@@ -51,8 +48,8 @@ except Exception as e:
 
 try:
     handler = ChannelHandler(config)
-    hls_manager = HLSStreamManager(config, handler)
-    GhostSessionMonitor(config, handler, hls_manager)
+    stream_manager = StreamManager(config, handler)
+    GhostSessionMonitor(config, handler, stream_manager)
     quality_monitor = QualityMonitor(config, handler)
 except ValueError as e:
     # A fatal error during startup should be logged and cause an exit
@@ -102,7 +99,7 @@ def inject_now() -> dict[str, datetime]:
 
 # --- Core Streaming and Playlist Endpoints ---
 
-@app.route('/hls/<string:logical_channel_id>/preview.m3u8')
+@app.route(f'/{VideoType.HLS.value}/<string:logical_channel_id>/preview.m3u8')
 def serve_hls_preview(logical_channel_id: str) -> Response:
     """Serves a preview HLS playlist for a channel."""
     source_service_id = logical_channel_id.replace("preview_", "")
@@ -131,16 +128,16 @@ def serve_hls_preview(logical_channel_id: str) -> Response:
 
     return serve_hls_playlist(logical_channel_id, logical_channel_name=logical_channel_name, sources=sources)
 
-@app.route('/hls/<string:logical_channel_id>/playlist.m3u8')
+@app.route(f'/{VideoType.HLS.value}/<string:logical_channel_id>/playlist.m3u8')
 def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str | None = None, sources: list[dict[str, Any]] | None = None) -> Response:
     """
     Serves the HLS playlist for a channel.
     
     This is the primary entry point for a client starting a stream. It triggers
-    the HLSStreamManager to start the FFmpeg process if it's not already running.
+    the StreamManager to start the FFmpeg process if it's not already running.
     It then waits for the playlist file to become available before serving it.
     """
-    hls_manager.record_hls_access(logical_channel_id)
+    stream_manager.record_video_access(logical_channel_id)
     added_pending_stream = False
     end_time = time.monotonic() + 10
     try:
@@ -160,31 +157,31 @@ def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str | None
                 abort(404, msg)
             logical_channel_name = str(logical_channel['display_name'])
 
-        lc_id_processes = hls_manager.get_ffmpeg_processes_from_logical_id(logical_channel_id, long_term_only=True)
+        lc_id_processes = stream_manager.get_ffmpeg_processes_from_logical_id(logical_channel_id, long_term_only=True)
         if len(lc_id_processes):
-            hls_key = lc_id_processes.popitem()[0]
+            video_key = lc_id_processes.popitem()[0]
         else:
-            res = CreateHLSStream(config, handler, hls_manager, quality_monitor, logical_channel_id, logical_channel_name, sources).result()
+            res = CreateStream(config, handler, stream_manager, quality_monitor, logical_channel_id, logical_channel_name, VideoType.HLS, sources).result()
             if isinstance(res, tuple):
                 code = res[0]
                 msg = f"[{request.method} {request.path}] {res[1]}"
                 config.log_message(msg, level="ERROR")
                 abort(code, msg)
-            hls_key = res
+            video_key = res
 
-        playlist_path = hls_manager.get_hls_playlist_path(hls_key)
+        playlist_path = stream_manager.get_hls_playlist_path(video_key)
         if not playlist_path:
-            msg = f"[{request.method} {request.path}] Internal error: HLS playlist path not found for logical channel '{logical_channel_name}' with key '{hls_key}'."
+            msg = f"[{request.method} {request.path}] Internal error: HLS playlist path not found for logical channel '{logical_channel_name}' with key '{video_key}'."
             config.log_message(msg, level="ERROR")
             abort(500, msg)
 
         end_time = time.monotonic() + config.ffmpeg_start_timeout
         while time.monotonic() < end_time:
-            with hls_manager.hls_process_lock:
-                if hls_key not in hls_manager.hls_ffmpeg_processes or hls_manager.hls_ffmpeg_processes[hls_key]['process'].poll() is not None:
-                    msg = f"[{request.method} {request.path}] FFmpeg process for '{logical_channel_name}' with key '{hls_key}' terminated unexpectedly while waiting for playlist."
+            with stream_manager.stream_process_lock:
+                if video_key not in stream_manager.ffmpeg_processes or stream_manager.ffmpeg_processes[video_key]['process'].poll() is not None:
+                    msg = f"[{request.method} {request.path}] FFmpeg process for '{logical_channel_name}' with key '{video_key}' terminated unexpectedly while waiting for playlist."
                     config.log_message(msg, level="ERROR")
-                    hls_manager.stop_hls_ffmpeg_process(hls_key, logical_channel_name)
+                    stream_manager.stop_ffmpeg_process(video_key, logical_channel_name)
                     abort(503, msg)
 
             if playlist_path.exists() and playlist_path.stat().st_size > 0:
@@ -200,7 +197,7 @@ def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str | None
                     abort(500, msg)
             time.sleep(PLAYLIST_POLL_INTERVAL)
 
-        msg = f"[{request.method} {request.path}] HLS playlist for logical channel '{logical_channel_name}' with key '{hls_key}' was not available after {config.ffmpeg_start_timeout} seconds."
+        msg = f"[{request.method} {request.path}] HLS playlist for logical channel '{logical_channel_name}' with key '{video_key}' was not available after {config.ffmpeg_start_timeout} seconds."
         config.log_message(msg, level="ERROR")
         abort(408, msg)
     finally:
@@ -208,16 +205,16 @@ def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str | None
             handler.remove_pending_stream(logical_channel_id)
 
 
-@app.route('/hls/<string:logical_channel_id>/<path:segment_filename>')
+@app.route(f'/{VideoType.HLS.value}/<string:logical_channel_id>/<path:segment_filename>')
 def serve_hls_segment(logical_channel_id: str, segment_filename: str) -> Response:
     """Serves an HLS video segment (.ts file)."""
-    hls_manager.record_hls_access(logical_channel_id)
+    stream_manager.record_video_access(logical_channel_id)
     if not segment_filename.endswith(".ts") or ".." in segment_filename:
         msg = f"[{request.method} {request.path}] Invalid segment filename: {segment_filename}"
         config.log_message(msg, level="ERROR")
         abort(400, msg)
     
-    segment_path = hls_manager.get_hls_segment_path(logical_channel_id, segment_filename)
+    segment_path = stream_manager.get_hls_segment_path(logical_channel_id, segment_filename)
     if not segment_path:
         msg = f"[{request.method} {request.path}] HLS segment path not found for logical channel '{logical_channel_id}' and segment '{segment_filename}'."
         config.log_message(msg, level="ERROR")
@@ -230,11 +227,11 @@ def serve_hls_segment(logical_channel_id: str, segment_filename: str) -> Respons
     return send_from_directory(str(segment_path.parent), segment_path.name, mimetype="video/mp2t")
 
 
-@app.route("/hls/<string:logical_channel_id>/stop", methods=["POST"])
-def stop_hls_stream(logical_channel_id: str) -> Response:
-    """Stops the HLS stream for a logical channel."""
-    hls_manager.stop_hls_ffmpeg_processes_with_logical_channel_id(logical_channel_id)
-    return Response(status=204) 
+@app.route("/<string:logical_channel_id>/stop", methods=["POST"])
+def stop_stream(logical_channel_id: str) -> Response:
+    """Stops the stream for a logical channel."""
+    stream_manager.stop_ffmpeg_processes_with_logical_channel_id(logical_channel_id)
+    return Response(status=204)
 
 
 @app.route("/playlist.m3u")
@@ -722,23 +719,6 @@ def ui_player_for_service(service_id: str) -> str:
 
 # --- HDHomeRun Emulation Endpoints ---
 
-def run_ssdp() -> NoReturn:
-    """Runs the SSDP server for automatic discovery."""
-    while True:
-        config.log_message("Starting SSDP server...")
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        coro = loop.create_datagram_endpoint(SSDP, family=socket.AF_INET)
-        transport, _ = loop.run_until_complete(coro)
-        try:
-            loop.run_forever()
-        finally:
-            config.log_message("Stopping SSDP server...")
-            transport.close()
-            loop.close()
-threading.Thread(target=run_ssdp, daemon=True).start()
-
-
 @app.route('/discover.json')
 def hdhomerun_discover() -> Response:
     """Emulates HDHomeRun device discovery API endpoint."""
@@ -761,7 +741,7 @@ def hdhomerun_discover() -> Response:
 def hdhomerun_lineup_status() -> Response:
     """Returns the status of the lineup."""
     response_dict: dict[str, int | str | list[str]] = {
-        "ScanInProgress": 0,  # TODO: Update when actually scanning
+        "ScanInProgress": 1 if handler.is_loading() else 0,
         "ScanPossible": 0,
         "Source": "Cable",
         "SourceList": ["Cable"]
@@ -773,25 +753,24 @@ def hdhomerun_lineup_status() -> Response:
 def hdhomerun_lineup() -> Response:
     """Returns the channel lineup in HDHomeRun format."""
     lineup: list[dict[str, str | int]] = []
+    quality_scores = quality_monitor.get_quality_scores()
     for channel in handler.logical_channels_data_from_json:
         channel_number = channel.get('channel_num', '')
         if not channel_number:
             continue
-            
+        service_ids = [m['source_service_id'] for m in handler.channel_mappings_data_from_json.get(channel['logical_channel_id'], [])]
         lineup.append({
             "GuideNumber": channel_number,
             "GuideName": channel.get('display_name', channel_number),
-            "HD": 1,
-            "URL": f"{config.nexus_url}/hdhr/{channel['logical_channel_id']}"
+            "HD": 1 if any(quality_scores.get(service_id, {}).get('height', '') >= 720 for service_id in service_ids) else 0,
+            "URL": f"{config.nexus_url}/{VideoType.MPEGTS.value}/{channel['logical_channel_id']}"
         })
     return Response(json.dumps(lineup), mimetype="application/json")
 
 
-@app.route('/hdhr/<string:logical_channel_id>')
-def hdhomerun_stream(logical_channel_id: str) -> Response:
-    """Serves a channel stream in a format compatible with Plex."""
-    # Now transpile the HLS to MPEG-TS for direct streaming
-    # Use FFmpeg to convert HLS to a direct MPEG-TS stream
+@app.route(f'/{VideoType.MPEGTS.value}/<string:logical_channel_id>')
+def serve_mpegts_stream(logical_channel_id: str) -> Response:
+    """Serves a channel stream using MPEG-TS format."""
     cmd = [
         config.ffmpeg_path,
         "-hide_banner", "-loglevel", "error",
@@ -827,7 +806,7 @@ def hdhomerun_stream(logical_channel_id: str) -> Response:
 def signal_handler(signum: int, _: object) -> None:
     """Handles signals"""
     config.log_message(f"Received {signal.Signals(signum).name}, exiting...", level="INFO")
-    hls_manager.stop_hls_ffmpeg_processes()
+    stream_manager.stop_ffmpeg_processes()
     config.clean_up_hls_segments()
     sys.exit(0)
 

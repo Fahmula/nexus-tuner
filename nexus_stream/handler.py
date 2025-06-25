@@ -5,7 +5,7 @@ import threading
 import hashlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
-from nexus_stream.config import Config
+from nexus_stream.config import Config, VideoType
 from nexus_stream.slots import ProviderName, ProviderSlots
 
 # --- Constants ---
@@ -44,6 +44,7 @@ class ChannelHandler:
             config: The main application Config object.
         """
         self._startup = True
+        self._loading = False
         self.config = config
         self._mutex = threading.RLock()
 
@@ -65,6 +66,10 @@ class ChannelHandler:
         self._load_and_process_configurations(update_providers=True)
         self._startup = False
 
+    def is_loading(self) -> bool:
+        """Returns True if the handler is currently loading configurations."""
+        return self._loading
+
     def reset_kill_provider_streams(self) -> set[str]:
         """Resets the kill_provider_streams, returns the aliases that should be killed."""
         with self._mutex:
@@ -84,6 +89,7 @@ class ChannelHandler:
         Loads all data from JSON files and rebuilds the in-memory channel structures.
         This is the main "reload" function for the handler.
         """
+        self._loading = True
         self.config.log_message("Loading/Reloading ChannelHandler configurations", level="INFO")
 
         if update_providers:
@@ -100,7 +106,8 @@ class ChannelHandler:
         self._parse_all_provider_m3us_and_populate_discovered_services()
         self._build_client_facing_channels()
         self.generate_master_client_m3u()
-        
+
+        self._loading = False
         self.config.log_message(
             f"ChannelHandler ready. Discovered: {len(self.discovered_source_services)}, "
             f"Client-Facing: {len(self.client_facing_channels)}",
@@ -256,7 +263,7 @@ class ChannelHandler:
             if group := lc_data.get("group_title"): extinf_parts.append(f'group-title="{group}"')
             
             m3u_lines.append(f"#EXTINF:-1 {' '.join(extinf_parts)},{name}")
-            m3u_lines.append(f"{self.config.nexus_url}/hls/{lc_data['logical_channel_id']}/playlist.m3u8")
+            m3u_lines.append(f"{self.config.nexus_url}/{VideoType.HLS.value}/{lc_data['logical_channel_id']}/playlist.m3u8")
         
         self.master_m3u_content = "\n".join(m3u_lines) + "\n"
         self.config.log_message(f"Generated master client M3U with {len(self.client_facing_channels)} channels.", level="INFO")

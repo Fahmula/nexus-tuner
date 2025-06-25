@@ -3,9 +3,9 @@ import time
 import requests
 from typing import NoReturn, Set
 from nexus_stream.config import Config
-from nexus_stream.create_stream import HLSKey
+from nexus_stream.create_stream import VideoKey
 from nexus_stream.handler import ChannelHandler
-from nexus_stream.stream import HLSStreamManager
+from nexus_stream.stream import StreamManager
 
 
 # --- Constants ---
@@ -15,13 +15,13 @@ SESSION_ACTIVE_BUFFER_SECONDS = 60 # Check for sessions active within interval +
 class GhostSessionMonitor:
     """
     A background thread that monitors media servers (Emby/Jellyfin) to find and
-    terminate "ghost" HLS streams.
+    terminate "ghost" streams.
     
     A ghost stream is an FFmpeg process that is running on the server but has no
     corresponding active viewing session on any configured media server. This can
     happen if a client disconnects improperly.
     """
-    def __init__(self, config: Config, handler: ChannelHandler, hls_manager: HLSStreamManager) -> None:
+    def __init__(self, config: Config, handler: ChannelHandler, stream_manager: StreamManager) -> None:
         """
         Initializes the monitor.
         
@@ -31,11 +31,11 @@ class GhostSessionMonitor:
         Args:
             config: The main application Config object.
             handler: The main ChannelHandler object.
-            hls_manager: The main HLSStreamManager object.
+            stream_manager: The main StreamManager object.
         """
         self.config = config
         self.handler = handler
-        self.hls_manager = hls_manager
+        self.stream_manager = stream_manager
         
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.display_name_to_lc_id_map: dict[str, str] = {}
@@ -129,20 +129,20 @@ class GhostSessionMonitor:
             self.config.log_message(f"Monitor: Could not get active sessions from media servers: {e}", level="ERROR")
             return
 
-        ghost_hls_keys: Set[tuple[HLSKey, str]] = set()  # A ghost is a stream that is running but NOT in the legitimate list.
-        with self.hls_manager.hls_process_lock:
-            for hls_key, data in self.hls_manager.hls_ffmpeg_processes.items():
+        ghost_video_keys: Set[tuple[VideoKey, str]] = set()  # A ghost is a stream that is running but NOT in the legitimate list.
+        with self.stream_manager.stream_process_lock:
+            for video_key, data in self.stream_manager.ffmpeg_processes.items():
                 if data['is_long_term'] and data['logical_channel_id'] not in legitimately_active_lc_ids:
-                    ghost_hls_keys.add((hls_key, data['logical_channel_name']))
+                    ghost_video_keys.add((video_key, data['logical_channel_name']))
 
-        if not ghost_hls_keys:
+        if not ghost_video_keys:
             self.config.log_message("Monitor: No ghost sessions found.", level="DEBUG")
             return
 
-        self.config.log_message(f"Monitor: Found {len(ghost_hls_keys)} ghost session(s) to terminate: {', '.join(g[0] for g in ghost_hls_keys)}", level="WARN")
-        for hls_key, logical_channel_name in ghost_hls_keys:
-            self.config.log_message(f"Monitor: Terminating ghost stream for '{logical_channel_name}' [{hls_key}]...", level="INFO")
-            self.hls_manager.stop_hls_ffmpeg_process(hls_key, logical_channel_name)
+        self.config.log_message(f"Monitor: Found {len(ghost_video_keys)} ghost session(s) to terminate: {', '.join(g[0] for g in ghost_video_keys)}", level="WARN")
+        for video_key, logical_channel_name in ghost_video_keys:
+            self.config.log_message(f"Monitor: Terminating ghost stream for '{logical_channel_name}' [{video_key}]...", level="INFO")
+            self.stream_manager.stop_ffmpeg_process(video_key, logical_channel_name)
 
     def _run(self) -> NoReturn:
         """The main execution loop for the monitor thread."""
