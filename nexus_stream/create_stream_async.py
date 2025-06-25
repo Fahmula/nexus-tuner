@@ -327,37 +327,54 @@ class CreateHLSStream:
             return None
 
     async def _process_results(self) -> None:
-        """Supervisor task to wait until the deadline, select the best stream, and clean up."""
+        """
+        Supervisor task that actively monitors the deadline to select a stream as
+        quickly as possible, and then robustly cleans up all related resources.
+        """
         try:
-            deadline = await self._get_deadline()
-            sleep_duration = max(0, deadline - time.monotonic())
-            await asyncio.sleep(sleep_duration)
+            while time.monotonic() < await self._get_deadline():
+                await asyncio.sleep(0.02)
 
             async with self._mutex:
-                if self._selected: return
+                if self._selected:
+                    return
                 self._selected = True
 
                 if not self._results:
                     self._res = (503, f"{self.logical_channel_name}: Failed to start HLS stream from any source.")
                     return
 
+                # 1. Select the winner.
                 hls_key, source = min(self._results, key=lambda x: self._remaining_priorities[x[1]["source_service_id"]])
+
+                # 2. Make the result available to the client IMMEDIATELY.
                 self._res = hls_key
-                
+                self._result_event.set()
+
+                # 3. Promote the winner to a long-term stream.
                 await self.hls_manager.set_ffmpeg_process_long_term(hls_key, True)
-                
+
+                # 4. Log the selection success.
+                self.config.log_message(
+                    f"{self._hls_names[hls_key]} {self._source_quality_messages[hls_key]}: "
+                    f"Selected as the best stream from {len(self._results)} tested and healthy sources "
+                    f"(Total: {len(self._sources)} sources)",
+                    level="INFO"
+                )
+
+                # 5. Identify losers and wait for their cleanup to complete.
                 keys_to_stop = [k for k in self._active_hls_keys if k != hls_key]
                 if keys_to_stop:
                     stop_tasks: list[Coroutine] = [
                         self.hls_manager.stop_hls_ffmpeg_process(k, self._hls_names.get(k, HLSName("Unknown")))
                         for k in keys_to_stop
                     ]
-                    asyncio.create_task(asyncio.gather(*stop_tasks))
+                    # Awaiting cleanup to ensure transactional integrity.
+                    # This prevents race conditions if a new request for the same channel arrives.
+                    # while cleanup is in progress. The client is not blocked by this await.
+                    await asyncio.gather(*stop_tasks, return_exceptions=True)
 
-                self.config.log_message(f"{self._hls_names[hls_key]} {self._source_quality_messages[hls_key]}: Selected as the best stream from {len(self._results)} tested and healthy sources (Total: {len(self._sources)} sources)", level="INFO")
-        
         finally:
-            for task in self._tasks:
-                if not task.done():
-                    task.cancel()
-            self._result_event.set()
+            # If the event wasn't set due to an early exit or error, ensure it's set now.
+            if not self._result_event.is_set():
+                self._result_event.set()
