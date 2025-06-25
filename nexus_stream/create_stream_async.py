@@ -37,8 +37,8 @@ def create_hls_name(logical_channel_name: str, source_service_id: str) -> HLSNam
 async def create_hls_ffmpeg_command(hls_manager: HLSStreamManager, config: Config, input_url: str, hls_key: HLSKey) -> tuple[list[str], Path]:
     """Constructs the FFmpeg command list and creates the necessary HLS directory asynchronously."""
     channel_hls_dir = hls_manager.hls_base_dir / config.get_fs_safe_alphanum(hls_key)
-    # Refactor Note: Replaced Path.mkdir with aiofiles.os.makedirs for non-blocking I/O.
-    await aiofiles.os.makedirs(channel_hls_dir, parents=True, exist_ok=True)
+    # Refactor Note: Replaced blocking Path.mkdir with aiofiles.os.makedirs for non-blocking I/O.
+    await aiofiles.os.makedirs(channel_hls_dir, exist_ok=True)
     
     playlist_path = channel_hls_dir / "playlist.m3u8"
     segment_filename = channel_hls_dir / "segment_%05d.ts"
@@ -96,7 +96,7 @@ class CreateHLSStream:
         self._mutex = asyncio.Lock()
         self._result_event = asyncio.Event()
 
-        self._sources = []
+        self._sources: list[dict[str, Any]] = []
         self._quality_scores: dict[str, dict[str, float]] = {}
         self._remaining_priorities: dict[str, int] = {}
         self._input_sources = input_sources
@@ -107,11 +107,17 @@ class CreateHLSStream:
         self._source_quality_messages: dict[str, str] = {}
         self._hls_names: dict[HLSKey, HLSName] = {}
         self._deadline = time.monotonic() + 10
-        self._tasks: list[asyncio.Task] = []
+        # Refactor Note: Separate lists for supervisor and worker tasks.
+        self._worker_tasks: list[asyncio.Task] = []
+        self._supervisor_task: asyncio.Task | None = None
 
     @classmethod
     async def create(cls, *args, **kwargs) -> "CreateHLSStream":
-        """Asynchronously creates and initializes the stream creation process."""
+        """
+        Asynchronously creates and initializes the stream creation process.
+        This factory pattern is idiomatic for async classes that need to perform
+        async operations during initialization.
+        """
         instance = cls(*args, **kwargs)
         await instance._initialize_and_start()
         return instance
@@ -131,17 +137,20 @@ class CreateHLSStream:
         for source in self._sources:
             all_provider_sources.setdefault(ProviderName(source["provider_alias"]), []).append(source)
 
-        self._tasks.append(asyncio.create_task(self._process_results()))
+        # Refactor Note: Replaced threading.Thread with asyncio.create_task to run background coroutines.
+        self._supervisor_task = asyncio.create_task(self._process_results())
 
         for provider_alias, provider_sources in all_provider_sources.items():
             task = asyncio.create_task(self._create_provider_stream(provider_alias, provider_sources))
-            self._tasks.append(task)
+            self._worker_tasks.append(task)
+
 
     async def result(self) -> HLSKey | tuple[int, str]:
         """Awaits the result of the stream creation process without blocking the event loop."""
         await self._result_event.wait()
         return self._res
 
+    # Refactor Note: All internal state accessors are now async to use the asyncio.Lock.
     async def _get_deadline(self) -> float:
         async with self._mutex:
             return self._deadline
@@ -188,11 +197,13 @@ class CreateHLSStream:
         status = await self.handler.get_provider_stream_status()
         max_streams = status[provider_alias]["max"]
         
+        # Refactor Note: Replaced ThreadPoolExecutor with a list of asyncio.Tasks and asyncio.gather.
+        # This achieves the same goal of running a fixed number of concurrent workers non-blockingly.
         worker_tasks = [
             asyncio.create_task(self._provider_worker_task(provider_alias, provider_slots, provider_sources))
             for _ in range(max_streams)
         ]
-        await asyncio.gather(*worker_tasks)
+        await asyncio.gather(*worker_tasks, return_exceptions=False)
 
     async def _provider_worker_task(self, provider_alias: ProviderName, provider_slots: ProviderSlots, provider_sources: list[dict[str, Any]]) -> None:
         """Tries sources for a provider until a stream is created or sources are exhausted."""
