@@ -141,7 +141,7 @@ class StreamManager:
                         self._stop_ffmpeg_process(video_key, data['logical_channel_name'], data_to_cleanup=data)
                 now = datetime.now()
                 for video_key, data in self.ffmpeg_processes.items():
-                    timeout = self.config.segment_prune_timeout if data['is_preview'] else self.config.ffmpeg_inactivity_timeout
+                    timeout = self.config.ffmpeg_inactivity_timeout if data['is_preview'] else self.config.ffmpeg_inactivity_timeout
                     if data['process'].poll() is not None:
                         logical_channel_name = data['logical_channel_name']
                         self.config.log_message(f"Cleanup: Found dead process for '{logical_channel_name}' (PID: {data['process'].pid}).", level="INFO")

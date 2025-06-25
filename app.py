@@ -14,6 +14,7 @@ import json
 import os
 import signal
 import sys
+import threading
 import time
 import math
 from datetime import datetime, UTC
@@ -34,6 +35,8 @@ from nexus_stream.stream import StreamManager
 PLAYLIST_POLL_INTERVAL = 0.2   # Seconds to wait between checking for a new playlist
 UI_SEARCH_MIN_CHARS = 3        # Minimum characters for a UI search
 UI_SEARCH_MAX_RESULTS = 50     # Max results to return in a UI search
+HLS_SEGMENT_TIMES: list[float] = []
+HLS_SEGMENT_TIMES_LOCK = threading.Lock()
 
 # --- App Initialization ---
 app = Flask(__name__)
@@ -101,6 +104,11 @@ def inject_now() -> dict[str, datetime]:
 @app.route(f'/{VideoType.MPEGTS}/<string:logical_channel_id>')
 def serve_mpegts_stream(logical_channel_id: str) -> Response:
     """Serves a channel stream using MPEG-TS format."""
+    request_time = time.perf_counter()
+    first_request = True
+
+    TEST_DELAY_SECONDS = 0
+
     added_pending_stream = False
     end_time = time.monotonic() + CREATE_STREAM_DEADLINE
     try:
@@ -121,6 +129,7 @@ def serve_mpegts_stream(logical_channel_id: str) -> Response:
 
         lc_id_processes = stream_manager.get_ffmpeg_processes_from_logical_id(logical_channel_id, video_type=VideoType.MPEGTS, long_term_only=True)
         if len(lc_id_processes):
+            first_request = False
             video_key, p_info = lc_id_processes.popitem()
             if p_info['is_mpegts_active']:
                 config.log_message(f"[{request.method} {request.path}] NexusStream does not currently support multiple concurrent MPEGTS streams for the same logical channel ID. Your media server should be reusing its existing request for logical channel '{logical_channel_name}' with key '{video_key}'.", level="ERROR")
@@ -158,6 +167,10 @@ def serve_mpegts_stream(logical_channel_id: str) -> Response:
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
+        if first_request:
+            sleep_time = max(request_time + TEST_DELAY_SECONDS - time.perf_counter(), 0)
+            config.log_message(f"[{request.method} {request.path}] No existing HLS process found for logical channel '{logical_channel_name}' with ID '{logical_channel_id}', simulating delay of {TEST_DELAY_SECONDS}s by sleeping for {sleep_time:.3f}s...", level="INFO")
+            time.sleep(sleep_time)
         return response
     finally:
         if added_pending_stream:
@@ -172,6 +185,11 @@ def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str | None
     the StreamManager to start the FFmpeg process if it's not already running.
     It then waits for the playlist file to become available before serving it.
     """
+    request_time = time.perf_counter()
+    first_request = True
+
+    TEST_DELAY_SECONDS = 0
+
     stream_manager.record_video_access(logical_channel_id, VideoType.HLS)
     added_pending_stream = False
     end_time = time.monotonic() + CREATE_STREAM_DEADLINE
@@ -194,6 +212,7 @@ def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str | None
 
         lc_id_processes = stream_manager.get_ffmpeg_processes_from_logical_id(logical_channel_id, video_type=VideoType.HLS, long_term_only=True)
         if len(lc_id_processes):
+            first_request = False
             video_key = lc_id_processes.popitem()[0]
         else:
             res = CreateStream(config, handler, stream_manager, quality_monitor, logical_channel_id, logical_channel_name, VideoType.HLS, sources).result()
@@ -225,6 +244,10 @@ def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str | None
                     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
                     response.headers["Pragma"] = "no-cache"
                     response.headers["Expires"] = "0"
+                    if first_request:
+                        sleep_time = max(request_time + TEST_DELAY_SECONDS - time.perf_counter(), 0)
+                        config.log_message(f"[{request.method} {request.path}] No existing HLS process found for logical channel '{logical_channel_name}' with ID '{logical_channel_id}', simulating delay of {TEST_DELAY_SECONDS}s by sleeping for {sleep_time:.3f}s...", level="INFO")
+                        time.sleep(sleep_time)
                     return response
                 except Exception as e:
                     msg = f"[{request.method} {request.path}] Error serving HLS playlist {playlist_path}: {e}"
@@ -273,6 +296,9 @@ def serve_hls_preview(logical_channel_id: str) -> Response:
 @app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/<path:segment_filename>')
 def serve_hls_segment(logical_channel_id: str, segment_filename: str) -> Response:
     """Serves an HLS video segment (.ts file)."""
+    curr_time = time.perf_counter()
+    with HLS_SEGMENT_TIMES_LOCK:
+        HLS_SEGMENT_TIMES.append(curr_time)
     stream_manager.record_video_access(logical_channel_id, VideoType.HLS)
     if not segment_filename.endswith(".ts") or ".." in segment_filename:
         msg = f"[{request.method} {request.path}] Invalid segment filename: {segment_filename}"
@@ -843,6 +869,60 @@ def signal_handler(signum: int, _: object) -> None:
     config.log_message(f"Received {signal.Signals(signum).name}, exiting...", level="INFO")
     stream_manager.stop_ffmpeg_processes()
     config.clean_up_hls_segments()
+    with HLS_SEGMENT_TIMES_LOCK:
+        if len(HLS_SEGMENT_TIMES) > 1:
+            segment_diffs = [HLS_SEGMENT_TIMES[i] - HLS_SEGMENT_TIMES[i - 1] for i in range(1, len(HLS_SEGMENT_TIMES))]
+            total = len(segment_diffs)
+            min_diff = min(segment_diffs)
+            max_diff = max(segment_diffs)
+            avg_diff = sum(segment_diffs) / total
+            config.log_message(f"HLS segment time differences - Min: {min_diff:.3f}s, Avg: {avg_diff:.3f}s, Max: {max_diff:.3f}s - Total {total:,}", level="INFO")
+            max_5_perc = max(segment_diffs[:max(1, total // 20)])
+            max_10_perc = max(segment_diffs[:max(1, total // 10)])
+            max_15_perc = max(segment_diffs[:max(1, total // 6)])
+            max_20_perc = max(segment_diffs[:max(1, total // 5)])
+            max_25_perc = max(segment_diffs[:max(1, total // 4)])
+            max_50_perc = max(segment_diffs[:max(1, total // 2)])
+            max_75_perc = max(segment_diffs[:max(1, total * 3 // 4)])
+            config.log_message(f"Max segment time within first 5% of times: {max_5_perc:.3f}s", level="INFO")
+            config.log_message(f"Max segment time within first 10% of times: {max_10_perc:.3f}s", level="INFO")
+            config.log_message(f"Max segment time within first 15% of times: {max_15_perc:.3f}s", level="INFO")
+            config.log_message(f"Max segment time within first 20% of times: {max_20_perc:.3f}s", level="INFO")
+            config.log_message(f"Max segment time within first 25% of times: {max_25_perc:.3f}s", level="INFO")
+            config.log_message(f"Max segment time within first 50% of times: {max_50_perc:.3f}s", level="INFO")
+            config.log_message(f"Max segment time within first 75% of times: {max_75_perc:.3f}s", level="INFO")
+            
+            times_above_1_25 = [d for d in segment_diffs if d > 1.25]
+            times_above_1_50 = [d for d in segment_diffs if d > 1.50]
+            times_above_1_75 = [d for d in segment_diffs if d > 1.75]
+            times_above_2_00 = [d for d in segment_diffs if d > 2.00]
+            times_above_2_25 = [d for d in segment_diffs if d > 2.25]
+            times_above_2_50 = [d for d in segment_diffs if d > 2.50]
+            times_above_2_75 = [d for d in segment_diffs if d > 2.75]
+            times_above_3_00 = [d for d in segment_diffs if d > 3.00]
+            times_above_3_50 = [d for d in segment_diffs if d > 3.50]
+            times_above_4_00 = [d for d in segment_diffs if d > 4.00]
+            times_above_4_50 = [d for d in segment_diffs if d > 4.50]
+            times_above_5_00 = [d for d in segment_diffs if d > 5.00]
+            times_above_5_50 = [d for d in segment_diffs if d > 5.50]
+            times_above_6_00 = [d for d in segment_diffs if d > 6.00]
+            config.log_message(f"Segment times above 1.25s: {len(times_above_1_25)}/{total} = {len(times_above_1_25) / total:.2%}", level="INFO")
+            config.log_message(f"Segment times above 1.50s: {len(times_above_1_50)}/{total} = {len(times_above_1_50) / total:.2%}", level="INFO")
+            config.log_message(f"Segment times above 1.75s: {len(times_above_1_75)}/{total} = {len(times_above_1_75) / total:.2%}", level="INFO")
+            config.log_message(f"Segment times above 2.00s: {len(times_above_2_00)}/{total} = {len(times_above_2_00) / total:.2%}", level="INFO")
+            config.log_message(f"Segment times above 2.25s: {len(times_above_2_25)}/{total} = {len(times_above_2_25) / total:.2%}", level="INFO")
+            config.log_message(f"Segment times above 2.50s: {len(times_above_2_50)}/{total} = {len(times_above_2_50) / total:.2%}", level="INFO")
+            config.log_message(f"Segment times above 2.75s: {len(times_above_2_75)}/{total} = {len(times_above_2_75) / total:.2%}", level="INFO")
+            config.log_message(f"Segment times above 3.00s: {len(times_above_3_00)}/{total} = {len(times_above_3_00) / total:.2%}", level="INFO")
+            config.log_message(f"Segment times above 3.50s: {len(times_above_3_50)}/{total} = {len(times_above_3_50) / total:.2%}", level="INFO")
+            config.log_message(f"Segment times above 4.00s: {len(times_above_4_00)}/{total} = {len(times_above_4_00) / total:.2%}", level="INFO")
+            config.log_message(f"Segment times above 4.50s: {len(times_above_4_50)}/{total} = {len(times_above_4_50) / total:.2%}", level="INFO")
+            config.log_message(f"Segment times above 5.00s: {len(times_above_5_00)}/{total} = {len(times_above_5_00) / total:.2%}", level="INFO")
+            config.log_message(f"Segment times above 5.50s: {len(times_above_5_50)}/{total} = {len(times_above_5_50) / total:.2%}", level="INFO")
+            config.log_message(f"Segment times above 6.00s: {len(times_above_6_00)}/{total} = {len(times_above_6_00) / total:.2%}", level="INFO")
+            config.log_message("\n\n\n", level="INFO")
+        else:
+            config.log_message("No HLS segment times recorded for differences.", level="INFO")
     sys.exit(0)
 
 
