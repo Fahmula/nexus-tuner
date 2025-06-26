@@ -151,8 +151,10 @@ def serve_mpegts_stream(logical_channel_id: str) -> Response:
                         break
                     yield chunk
             finally:  # Don't stop early incase the user reconnects, let the timeout handle it
-                process_info["is_mpegts_active"] = False
                 config.log_message(f"Client disconnected from MPEGTS stream for '{logical_channel_name}' with key '{video_key}'.")
+                with stream_manager.stream_process_lock:
+                    process_info["last_access"] = datetime.now()
+                    process_info["is_mpegts_active"] = False
 
         response = Response(stream_generator(), mimetype='video/mp2t')
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
