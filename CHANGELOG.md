@@ -5,6 +5,17 @@
 
 * **ci:** enable manual release workflow ([#24](https://github.com/Fahmula/nexus-stream/issues/24)) ([ba3115e](https://github.com/Fahmula/nexus-stream/commit/ba3115e88f39eebd1f93cc8d0982acfa2f9eaf00))
 * **ci:** Enhance release workflow with dynamic config and dry run ([#33](https://github.com/Fahmula/nexus-stream/issues/33)) ([8cbffd7](https://github.com/Fahmula/nexus-stream/commit/8cbffd756196e7b01a2add09e2c00a7ba8256a98))
+* **ci:** Streamline Docker image tagging and labeling ([ef2798c](https://github.com/Fahmula/nexus-stream/commit/ef2798c14b1a3f04794370bc48dd213bd398a86f))
+* **hdhomerun:** add hdhomerun server support ([#34](https://github.com/Fahmula/nexus-stream/issues/34)) ([8eee656](https://github.com/Fahmula/nexus-stream/commit/8eee656cfb36622c9bbbfd28ec9a157f11dd2f1e))
+* **quality_monitor:** automatically probe stream if metrics ([#26](https://github.com/Fahmula/nexus-stream/issues/26)) ([e2bfea5](https://github.com/Fahmula/nexus-stream/commit/e2bfea57204cefaf1c6d35ae8151f7bfb8e2415e))
+
+# [2.0.0-rc.1](https://github.com/Fahmula/nexus-stream/compare/v1.11.0...v2.0.0-rc.1) (2025-06-26)
+
+
+### Features
+
+* **ci:** enable manual release workflow ([#24](https://github.com/Fahmula/nexus-stream/issues/24)) ([ba3115e](https://github.com/Fahmula/nexus-stream/commit/ba3115e88f39eebd1f93cc8d0982acfa2f9eaf00))
+* **ci:** Enhance release workflow with dynamic config and dry run ([#33](https://github.com/Fahmula/nexus-stream/issues/33)) ([8cbffd7](https://github.com/Fahmula/nexus-stream/commit/8cbffd756196e7b01a2add09e2c00a7ba8256a98))
 * **hdhomerun:** add hdhomerun server support ([#34](https://github.com/Fahmula/nexus-stream/issues/34)) ([8eee656](https://github.com/Fahmula/nexus-stream/commit/8eee656cfb36622c9bbbfd28ec9a157f11dd2f1e))
 * **quality_monitor:** automatically probe stream if metrics ([#26](https://github.com/Fahmula/nexus-stream/issues/26)) ([e2bfea5](https://github.com/Fahmula/nexus-stream/commit/e2bfea57204cefaf1c6d35ae8151f7bfb8e2415e))
 
