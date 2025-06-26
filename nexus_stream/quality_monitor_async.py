@@ -5,9 +5,9 @@ from typing import NoReturn, Any
 
 # Refactor Note: Replaced threading with asyncio for non-blocking concurrency.
 # The ChannelHandler and Config imports point to the async versions.
-from config_async import Config
-from handler_async import ChannelHandler
-from slots_async import ProviderName
+from nexus_stream.config_async import Config
+from nexus_stream.handler_async import ChannelHandler
+from nexus_stream.slots_async import ProviderName
 
 # --- Constants ---
 RESOLUTION_WEIGHT = 50

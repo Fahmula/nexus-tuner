@@ -8,8 +8,8 @@ from typing import Any
 import aiohttp
 # Refactor Note: Replaced threading with asyncio for non-blocking concurrency control.
 # The RLock is replaced with a non-reentrant asyncio.Lock, which is sufficient here.
-from config_async import Config
-from slots_async import ProviderName, ProviderSlots
+from nexus_stream.config_async import Config
+from nexus_stream.slots_async import ProviderName, ProviderSlots
 
 # --- Constants ---
 DEFAULT_PRIORITY = 5

@@ -7,9 +7,9 @@ from datetime import datetime, timedelta
 # Refactor Note: TYPE_CHECKING imports are updated to point to the async versions of the classes.
 from typing import TYPE_CHECKING, Any, Iterable, NoReturn
 
-from config_async import Config
-from handler_async import ChannelHandler
-from slots_async import ProviderName
+from nexus_stream.config_async import Config
+from nexus_stream.handler_async import ChannelHandler
+from nexus_stream.slots_async import ProviderName
 
 if TYPE_CHECKING:
     # This type hint is for the unique key used to identify a stream.

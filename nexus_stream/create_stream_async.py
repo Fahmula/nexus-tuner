@@ -13,10 +13,10 @@ import aiofiles
 import aiofiles.os
 
 # Refactor Note: All dependent modules are now the async versions.
-from config_async import Config
-from quality_monitor_async import QualityMonitor
-from slots_async import ProviderName, ProviderSlots
-from stream_async import ChannelHandler, HLSStreamManager
+from nexus_stream.config_async import Config
+from nexus_stream.quality_monitor_async import QualityMonitor
+from nexus_stream.slots_async import ProviderName, ProviderSlots
+from nexus_stream.stream_async import ChannelHandler, HLSStreamManager
 
 HLSKey = NewType("HLSKey", str)
 HLSName = NewType("HLSName", str)

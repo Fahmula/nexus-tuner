@@ -4,10 +4,10 @@ import aiohttp
 from typing import NoReturn, Set, Any
 
 # Refactor Note: Imports are updated to point to the async versions of the classes.
-from config_async import Config
-from handler_async import ChannelHandler
-from stream_async import HLSStreamManager
-from create_stream import HLSKey
+from nexus_stream.config_async import Config
+from nexus_stream.handler_async import ChannelHandler
+from nexus_stream.stream_async import HLSStreamManager
+from nexus_stream.create_stream_async import HLSKey
 
 # --- Constants ---
 MEDIA_SERVER_API_TIMEOUT = 10
