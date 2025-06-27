@@ -123,6 +123,8 @@ class GhostSessionMonitor:
         # Refactor Note: Using an async context manager for the asyncio.Lock.
         async with self.hls_manager.hls_process_lock:
             for hls_key, data in self.hls_manager.hls_ffmpeg_processes.items():
+                if data['is_preview']:
+                    continue
                 if data['is_long_term'] and data['logical_channel_id'] not in legitimately_active_lc_ids:
                     ghost_hls_keys.add((hls_key, data['logical_channel_name']))
 
