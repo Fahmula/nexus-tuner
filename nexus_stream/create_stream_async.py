@@ -233,6 +233,10 @@ class CreateHLSStream:
                         # Release lock and sleep to allow other tasks to run
                         await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
                         continue
+
+                    async with self._mutex:
+                        if hls_key not in self._active_hls_keys:
+                            self._active_hls_keys.append(hls_key)
                     
                     if await self._set_result(hls_key, source):
                         await self._set_deadline(source)
