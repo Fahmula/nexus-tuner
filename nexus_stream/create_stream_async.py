@@ -1,5 +1,4 @@
 import asyncio
-import time
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
@@ -115,7 +114,7 @@ class CreateHLSStream:
         self._active_hls_keys: list[HLSKey] = []
         self._source_quality_messages: dict[str, str] = {}
         self._hls_names: dict[HLSKey, HLSName] = {}
-        self._deadline = time.monotonic() + 10
+        self._deadline: float = 0.0 
         # Refactor Note: Separate lists for supervisor and worker tasks.
         self._worker_tasks: list[asyncio.Task] = []
         self._supervisor_task: asyncio.Task | None = None
@@ -133,6 +132,9 @@ class CreateHLSStream:
 
     async def _initialize_and_start(self) -> None:
         """Performs async setup and launches all processing tasks."""
+       # Set the initial deadline using the event loop's clock
+        loop = asyncio.get_running_loop()
+        self._deadline = loop.time() + 10
         self._sources = self.handler.get_sources_for_client_facing_channel(self.logical_channel_id) if self._input_sources is None else deepcopy(self._input_sources)
         if not self._sources:
             self._res = (404, f"Logical channel '{self.logical_channel_name}' ({self.logical_channel_id}) not found or has no sources.")
@@ -169,11 +171,12 @@ class CreateHLSStream:
             return self._selected
 
     async def _set_deadline(self, source: dict[str, Any]) -> None:
+        loop = asyncio.get_running_loop()
         async with self._mutex:
             if self._remaining_priorities[source["source_service_id"]] <= min(self._remaining_priorities.values()):
-                new_deadline = time.monotonic()
+                new_deadline = loop.time()
             else:
-                new_deadline = time.monotonic() + 1
+                new_deadline = loop.time() + 1
             self._deadline = min(self._deadline, new_deadline)
 
     async def _set_result(self, hls_key: HLSKey, source: dict[str, Any]) -> bool:
@@ -222,7 +225,8 @@ class CreateHLSStream:
         
         hls_key = create_hls_key(self.logical_channel_id, source["source_service_id"])
         
-        while time.monotonic() < await self._get_deadline():
+        loop = asyncio.get_running_loop()
+        while loop.time() < await self._get_deadline():
             if await self._get_selected():
                 return
 
@@ -305,8 +309,10 @@ class CreateHLSStream:
             
             self.config.log_message(f"{hls_name} {full_msg}: Claimed a '{provider_alias}' slot and started FFmpeg (PID: {process.pid}) {{{provider_alias}:{log_status_string}}}.", level="INFO")
 
-            end_time = time.monotonic() + self.config.ffmpeg_start_timeout
-            while time.monotonic() < end_time:
+            loop = asyncio.get_running_loop()
+            end_time = loop.time() + self.config.ffmpeg_start_timeout
+
+            while loop.time() < end_time:
                 if await self._get_selected():
                     raise asyncio.CancelledError("Stream selected elsewhere.")
                 if process.returncode is not None:
@@ -337,7 +343,8 @@ class CreateHLSStream:
         quickly as possible, and then robustly cleans up all related resources.
         """
         try:
-            while time.monotonic() < await self._get_deadline():
+            loop = asyncio.get_running_loop()
+            while loop.time()  < await self._get_deadline():
                 await asyncio.sleep(0.02)
 
             async with self._mutex:
