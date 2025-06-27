@@ -243,8 +243,9 @@ class CreateHLSStream:
             try:
                 # Refactor Note: `acquire()` now returns the new active slot count.
                 # This value is captured for accurate, non-racy logging.
-                new_active_count = await asyncio.wait_for(provider_slots.acquire(), timeout=0.1)
-            except asyncio.TimeoutError:
+                new_active_count = await provider_slots.acquire_user_slot()
+            except asyncio.TimeoutError as e:
+                self.config.log_message(f"Failed to acquire user slot: {e}", level="WARN")
                 await self.hls_manager.prune_hls_ffmpeg_processes()
                 await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
                 continue

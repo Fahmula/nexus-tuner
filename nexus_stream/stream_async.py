@@ -238,7 +238,7 @@ class HLSStreamManager:
                 self.config.log_message(f"{name}: Error closing FFmpeg log file: {e}", level="ERROR")
 
         if should_release_slot:
-            await self.handler.slots.get(provider).release()
+            await self.handler.slots.get(provider).release_user_slot()
         
         # Refactor Note: Awaiting the async method from the refactored ChannelHandler.
         provider_streams = await self.handler.get_active_stream_status_for_logging(provider)

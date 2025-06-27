@@ -119,16 +119,27 @@ class QualityMonitor:
         return {"status": "online", "width": width, "height": height, "bitrate": bitrate, "framerate": frame_rate}
 
     # Refactor Note: This method is now async.
-    async def _run_single_probe(self, service_id: str, service_url: str, provider_alias: ProviderName) -> tuple[str, dict[str, Any]]:
+    async def _run_single_probe(self, service_id: str, service_url: str, provider_alias: ProviderName) -> tuple[str, dict[str, str | float | int]]:
         """Probes a single stream URL asynchronously after acquiring a provider slot."""
         provider_slots = self.handler.slots.get(provider_alias)
         if not provider_slots:
             return service_id, {"status": "error", "reason": "Slot not found"}
 
-        # Refactor Note: Replaced the busy-wait polling loop with a simple, non-blocking await.
-        # The semaphore in ProviderSlots handles the waiting efficiently.
-        await provider_slots.acquire()
+        current_task = asyncio.current_task()
         
+        slot_acquired = False
+        while True:
+            # Non-blocking sleep to avoid overwhelming the provider.
+            await asyncio.sleep(3)
+            if await self.handler.get_pending_stream_count() == 0:
+                try:
+                    slot_acquired = await provider_slots.acquire_background_slot(current_task)
+                    if slot_acquired:
+                        break
+                except asyncio.TimeoutError:
+                    pass 
+            await asyncio.sleep(1)
+
         try:
             # Refactor Note: Awaiting the async _get_stream_info method.
             stream_info = await self._get_stream_info(service_url)
@@ -139,9 +150,8 @@ class QualityMonitor:
             # Catch any unexpected errors during the probe itself.
             return service_id, {"status": "offline", "reason": f"Probe failed: {e}"}
         finally:
-            provider_slots.release()
-            # Refactor Note: Non-blocking sleep to avoid overwhelming the provider.
-            await asyncio.sleep(3)
+            if slot_acquired:
+                await provider_slots.release_background_slot(current_task)
     
     # Refactor Note: This method is now fully async.
     async def _analyze_mapped_services(self) -> None:
