@@ -1,3 +1,10 @@
+# [2.0.0-rc.2](https://github.com/Fahmula/nexus-stream/compare/v2.0.0-rc.1...v2.0.0-rc.2) (2025-06-28)
+
+
+### Bug Fixes
+
+* **mpegts:** update last_access on connection close ([#36](https://github.com/Fahmula/nexus-stream/issues/36)) ([636bd8e](https://github.com/Fahmula/nexus-stream/commit/636bd8e85639275955badb5d8486301176162aa7))
+
 # [2.0.0-rc.1](https://github.com/Fahmula/nexus-stream/compare/v1.11.0...v2.0.0-rc.1) (2025-06-26)
 
 
