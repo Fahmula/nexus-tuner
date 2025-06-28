@@ -1,17 +1,19 @@
 import re
-import requests
 import html
-import threading
 import hashlib
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import asyncio
 from typing import Any
-from nexus_stream.config import Config, VideoType
+
+# Refactor Note: Replaced requests with aiohttp for asynchronous HTTP requests.
+import aiohttp
+# Refactor Note: Replaced threading with asyncio for non-blocking concurrency control.
+# The RLock is replaced with a non-reentrant asyncio.Lock, which is sufficient here.
+from nexus_stream.config import Config
 from nexus_stream.slots import ProviderName, ProviderSlots
 
 # --- Constants ---
 DEFAULT_PRIORITY = 5
 PROVIDER_FETCH_TIMEOUT = 20
-PROVIDER_PARSE_MAX_WORKERS = 10
 NEXUS_USER_AGENT = 'NexusStream/1.0'
 TVG_NAME_REGEX = re.compile(r'tvg-name="([^"]*)"', re.IGNORECASE)
 TVG_ID_REGEX = re.compile(r'tvg-id="([^"]*)"', re.IGNORECASE)
@@ -24,29 +26,24 @@ class ChannelHandler:
     Manages all channel data, including providers, logical channels, and mappings.
     
     This class is responsible for:
-    - Fetching and parsing M3U files from source providers.
+    - Fetching and parsing M3U files from source providers asynchronously.
     - Building a list of "client-facing" channels based on user-defined logical channels and mappings.
     - Generating the master M3U file for clients.
-    - Handling provider stream capacity limits.
-    - Providing methods for the UI to interact with configuration data.
-
-    Key Data Structures:
-    - `discovered_source_services`: A dictionary mapping a unique service ID to a
-      dict of its parsed M3U data (e.g., name, logo, group, original URL).
-    - `client_facing_channels`: A dictionary mapping a logical_channel_id to a
-      fully-processed logical channel, including its list of prioritized source URLs.
+    - Handling provider stream capacity limits using asyncio-native constructs.
+    - Providing async methods for the UI to interact with configuration data.
     """
+    # Refactor Note: The __init__ method cannot be async. To handle async setup,
+    # we use a factory pattern. The constructor is kept lightweight, and a separate
+    # async `create` classmethod handles the I/O-bound initialization.
     def __init__(self, config: Config) -> None:
         """
-        Initializes the ChannelHandler.
-
-        Args:
-            config: The main application Config object.
+        Initializes the ChannelHandler. NOTE: This is now a lightweight, synchronous constructor.
         """
         self._startup = True
         self._loading = False
         self.config = config
-        self._mutex = threading.RLock()
+        # Refactor Note: Replaced threading.RLock with asyncio.Lock for use in async contexts.
+        self._mutex = asyncio.Lock()
 
         # Data loaded from configuration files
         self.providers_data_from_json: dict[str, Any] = {}
@@ -63,16 +60,19 @@ class ChannelHandler:
         self._kill_provider_streams: set[str] = set()
         self.pending_streams: set[str] = set()
 
-        self._load_and_process_configurations(update_providers=True)
-        self._startup = False
+    @classmethod
+    async def create(cls, config: Config) -> "ChannelHandler":
+        """Asynchronous factory for creating and initializing a ChannelHandler instance."""
+        instance = cls(config)
+        # Refactor Note: All initial data loading is now done asynchronously.
+        await instance._load_and_process_configurations(update_providers=True)
+        instance._startup = False
+        return instance
 
-    def is_loading(self) -> bool:
-        """Returns True if the handler is currently loading configurations."""
-        return self._loading
-
-    def reset_kill_provider_streams(self) -> set[str]:
+    # Refactor Note: This method is now async to use the async lock.
+    async def reset_kill_provider_streams(self) -> set[str]:
         """Resets the kill_provider_streams, returns the aliases that should be killed."""
-        with self._mutex:
+        async with self._mutex:
             if not self._kill_provider_streams:
                 return set()
             tmp = self._kill_provider_streams
@@ -80,30 +80,33 @@ class ChannelHandler:
             return tmp
 
     def _generate_source_service_id(self, provider_alias: str, actual_stream_url: str) -> str:
-        """Creates a stable, unique ID for a source stream."""
+        """Creates a stable, unique ID for a source stream. (Sync - pure function)"""
         id_material = f"{provider_alias}:{actual_stream_url}"
         return f"{provider_alias}:{hashlib.md5(id_material.encode('utf-8')).hexdigest()}"
 
-    def _load_and_process_configurations(self, *, update_providers: bool) -> None:
+    # Refactor Note: This method is now async as it awaits config loading and provider parsing.
+    async def _load_and_process_configurations(self, *, update_providers: bool) -> None:
         """
-        Loads all data from JSON files and rebuilds the in-memory channel structures.
-        This is the main "reload" function for the handler.
+        Loads all data from JSON files and rebuilds the in-memory channel structures asynchronously.
         """
         self._loading = True
         self.config.log_message("Loading/Reloading ChannelHandler configurations", level="INFO")
 
         if update_providers:
-            self.providers_data_from_json = self.config.get_providers_config().get("source_m3u_providers", {})
-            self._update_providers_slots()
+            # Refactor Note: Awaiting the async config loading methods from the Config class.
+            providers_config = await self.config.get_providers_config()
+            self.providers_data_from_json = providers_config.get("source_m3u_providers", {})
+            await self._update_providers_slots()
 
-        self.logical_channels_data_from_json = self.config.get_logical_channels_config()
-        self.channel_mappings_data_from_json = self.config.get_channel_mappings_config()
-        self.predefined_channel_list = self.config.get_channel_list_config()
+        self.logical_channels_data_from_json = await self.config.get_logical_channels_config()
+        self.channel_mappings_data_from_json = await self.config.get_channel_mappings_config()
+        self.predefined_channel_list = await self.config.get_channel_list_config()
 
         self.discovered_source_services.clear()
         self.client_facing_channels.clear()
 
-        self._parse_all_provider_m3us_and_populate_discovered_services()
+        # Refactor Note: Awaiting the async provider parsing method.
+        await self._parse_all_provider_m3us_and_populate_discovered_services()
         self._build_client_facing_channels()
         self.generate_master_client_m3u()
 
@@ -115,7 +118,8 @@ class ChannelHandler:
         )
 
     def _parse_source_m3u_lines(self, lines: list[str]) -> list[dict[str, str]]:
-        """Parses the text lines of an M3U file into a structured list of channels."""
+        """Parses M3U lines into structured channels. (Sync - CPU-bound)"""
+        # This method is CPU-bound and doesn't perform I/O, so it remains synchronous.
         parsed_channels: list[dict[str, str]] = []
         current_extinf = None
         for line in lines:
@@ -143,52 +147,72 @@ class ChannelHandler:
                 current_extinf = None
         return parsed_channels
     
-    def _fetch_and_parse_provider(self, provider_alias: str, m3u_url: str) -> None:
-        """Fetches a single provider's M3U, parses it, and populates the discovered services."""
+    # Refactor Note: This method is now async and uses aiohttp for non-blocking network I/O.
+    # It accepts a ClientSession to reuse connections, which is a best practice.
+    async def _fetch_and_parse_provider(self, session: aiohttp.ClientSession, provider_alias: str, m3u_url: str) -> None:
+        """Fetches and parses a single provider's M3U asynchronously."""
         try:
-            session = requests.Session()
-            session.headers.update({'User-Agent': NEXUS_USER_AGENT})
-            response = session.get(m3u_url, timeout=PROVIDER_FETCH_TIMEOUT)
-            response.raise_for_status()
-            response.encoding = response.apparent_encoding or 'utf-8'
-            
-            parsed_channels = self._parse_source_m3u_lines(response.text.splitlines())
+            # Refactor Note: Using async with for the aiohttp request context.
+            async with session.get(m3u_url, timeout=PROVIDER_FETCH_TIMEOUT, headers={'User-Agent': NEXUS_USER_AGENT}) as response:
+                response.raise_for_status()
+                # Refactor Fix: Removed the explicit `encoding` parameter.
+                # The previous code `response.text(encoding=response.get_encoding())` caused an error
+                # because the encoding cannot be determined before the body is read.
+                # Calling .text() without arguments lets aiohttp handle encoding detection correctly.
+                text = await response.text()
+                
+                parsed_channels = self._parse_source_m3u_lines(text.splitlines())
 
-            with self._mutex:
-                for p_channel in parsed_channels:
-                    service_id = self._generate_source_service_id(provider_alias, p_channel["actual_stream_url"])
-                    self.discovered_source_services[service_id] = {
-                        "id": service_id,
-                        "provider_alias": provider_alias,
-                        **p_channel
-                    }
-            self.config.log_message(f"Discovered {len(parsed_channels)} services from provider '{provider_alias}'.", level="INFO")
-        except requests.RequestException as e:
+                # Refactor Note: Using an async lock to safely modify the shared dictionary.
+                async with self._mutex:
+                    for p_channel in parsed_channels:
+                        service_id = self._generate_source_service_id(provider_alias, p_channel["actual_stream_url"])
+                        self.discovered_source_services[service_id] = {
+                            "id": service_id,
+                            "provider_alias": provider_alias,
+                            **p_channel
+                        }
+                self.config.log_message(f"Discovered {len(parsed_channels)} services from provider '{provider_alias}'.", level="INFO")
+        # Refactor Note: Catching aiohttp and asyncio specific exceptions.
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             self.config.log_message(f"Failed to fetch or parse provider '{provider_alias}': {e}", level="ERROR")
+            raise # Re-raise to be caught by asyncio.gather handler
         except Exception as e:
             self.config.log_message(f"An unexpected error occurred while processing provider '{provider_alias}': {e}", level="ERROR")
+            raise # Re-raise to be caught by asyncio.gather handler
 
-    def _parse_all_provider_m3us_and_populate_discovered_services(self) -> None:
-        """Uses a thread pool to fetch and parse all configured provider M3Us concurrently."""
+    # Refactor Note: This method now uses asyncio.gather for non-blocking concurrency,
+    # replacing the ThreadPoolExecutor for a more efficient, single-threaded event loop model.
+    async def _parse_all_provider_m3us_and_populate_discovered_services(self) -> None:
+        """Uses asyncio.gather to fetch and parse all configured provider M3Us concurrently."""
         self.config.log_message("Starting to parse all provider M3Us...", level="INFO")
         self.discovered_source_services.clear()
 
-        with ThreadPoolExecutor(max_workers=PROVIDER_PARSE_MAX_WORKERS) as executor:
-            futures = {
-                executor.submit(self._fetch_and_parse_provider, alias, details.get("url")): alias
+        # Refactor Note: Using an async context manager for the aiohttp ClientSession.
+        async with aiohttp.ClientSession() as session:
+            tasks = [
+                self._fetch_and_parse_provider(session, alias, details.get("url"))
                 for alias, details in self.providers_data_from_json.items() if details.get("url")
-            }
-            for future in as_completed(futures):
-                try:
-                    future.result()
-                except Exception as e:
-                    provider_alias = futures[future]
-                    self.config.log_message(f"A background task for provider '{provider_alias}' failed: {e}", level="ERROR")
+            ]
+            if not tasks:
+                self.config.log_message("No providers with URLs configured to parse.", level="DEBUG")
+                return
+
+            # Refactor Note: asyncio.gather runs all fetch/parse tasks concurrently.
+            # return_exceptions=True prevents one failure from cancelling all others.
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Refactor Note: Loop through results to log any exceptions that occurred.
+            # This replaces the error handling from the `as_completed` loop.
+            provider_aliases = [alias for alias, details in self.providers_data_from_json.items() if details.get("url")]
+            for result, alias in zip(results, provider_aliases):
+                if isinstance(result, Exception):
+                    self.config.log_message(f"A background task for provider '{alias}' failed: {result}", level="ERROR")
         
         self.config.log_message(f"Finished parsing. Total discovered source services: {len(self.discovered_source_services)}", level="INFO")
 
     def _build_client_facing_channels(self) -> None:
-        """Builds the final list of channels exposed to clients based on logical channel definitions and mappings."""
+        """Builds the final list of channels exposed to clients. (Sync - CPU-bound)"""
         self.config.log_message("Building client-facing channels...", level="INFO")
         self.client_facing_channels.clear()
 
@@ -228,24 +252,24 @@ class ChannelHandler:
                  self.config.log_message(f"No valid mapped sources for LC '{logical_channel_id}'. It will not be included in the client M3U.", level="WARN")
         self.config.log_message(f"Built {len(self.client_facing_channels)} client-facing channels.", level="INFO")
 
-    def get_pending_stream_count(self) -> int:
-        with self._mutex:
+    # Refactor Note: All methods using the mutex must be async to use `async with`.
+    async def get_pending_stream_count(self) -> int:
+        async with self._mutex:
             return len(self.pending_streams)
 
-    def add_pending_stream(self, logical_channel_id: str, video_type: VideoType) -> bool:
-        key = f"{video_type}_{logical_channel_id}"
-        with self._mutex:
-            if key in self.pending_streams:
+    async def add_pending_stream(self, logical_channel_id: str) -> bool:
+        async with self._mutex:
+            if logical_channel_id in self.pending_streams:
                 return False
             self.pending_streams.add(key)
             return True
 
-    def remove_pending_stream(self, logical_channel_id: str, video_type: VideoType) -> None:
-        with self._mutex:
-            self.pending_streams.remove(f"{video_type}_{logical_channel_id}")
+    async def remove_pending_stream(self, logical_channel_id: str) -> None:
+        async with self._mutex:
+            self.pending_streams.discard(logical_channel_id)
 
     def generate_master_client_m3u(self) -> None:
-        """Generates the master M3U content to be served to clients."""
+        """Generates the master M3U content to be served to clients. (Sync - CPU-bound)"""
         m3u_lines = ["#EXTM3U x-tvg-url=\"\""]
         if not self.config.nexus_url:
             self.config.log_message("NEXUS_URL not set. Client M3U URLs will be incorrect.", level="ERROR")
@@ -270,13 +294,14 @@ class ChannelHandler:
         self.config.log_message(f"Generated master client M3U with {len(self.client_facing_channels)} channels.", level="INFO")
 
     def get_sources_for_client_facing_channel(self, logical_channel_id: str) -> list[dict[str, Any]]:
-        """Retrieves the list of source stream URLs for a given client-facing channel ID."""
+        """Retrieves source stream URLs for a channel. (Sync - in-memory lookup)"""
         channel_data = self.client_facing_channels.get(logical_channel_id)
         return channel_data.get("sources", []) if channel_data else []
     
-    def _update_providers_slots(self) -> None:
-        """Initializes or updates the slots for each provider based on their max concurrent streams."""
-        with self._mutex:
+    # Refactor Note: This method is now async to use the async lock.
+    async def _update_providers_slots(self) -> None:
+        """Initializes or updates provider slots based on config asynchronously."""
+        async with self._mutex:
             providers_to_delete: set[ProviderName] = set()
             for alias, curr_details in self.slots.items():
                 if alias not in self.providers_data_from_json:
@@ -308,24 +333,17 @@ class ChannelHandler:
                     total_slots=max_streams
                 )
                 self.config.log_message(f"Initialized slots for provider '{alias}' with capacity {max_streams}", level="INFO")
-        return
         
-    def reload_handler_config(self, *, update_providers: bool) -> None:
-        """Public method to trigger a full reload of the handler's configuration."""
-        self._load_and_process_configurations(update_providers=update_providers)
+    # Refactor Note: This public method is now async.
+    async def reload_handler_config(self, *, update_providers: bool) -> None:
+        """Public method to trigger a full async reload of the handler's configuration."""
+        await self._load_and_process_configurations(update_providers=update_providers)
 
-    def get_provider_stream_status(self) -> dict[str, dict[str, int]]:
-        """
-        Calculates the current stream usage for each provider by inspecting the slots.
-        This is the single source of truth for UI and logs.
-
-        Returns:
-            A dictionary where keys are provider aliases and values are dicts
-            containing 'active' and 'max' stream counts.
-            e.g., {'provider_a': {'active': 1, 'max': 2}, ...}
-        """
+    # Refactor Note: This method is now async to use the async lock.
+    async def get_provider_stream_status(self) -> dict[str, dict[str, int]]:
+        """Calculates current stream usage for each provider asynchronously."""
         status_report: dict[str, dict[str, int]] = {}
-        with self._mutex: # Lock to safely iterate over slots
+        async with self._mutex:
             for alias, provider_slots in self.slots.items():                
                 status_report[alias] = {
                     "active": provider_slots.get_active_slots(),
@@ -333,28 +351,24 @@ class ChannelHandler:
                 }
         return status_report
 
-    def get_total_stream_status_for_ui(self) -> tuple[int, int]:
-        """
-        Returns a tuple of (total_active_streams, total_max_streams) for UI display,
-        derived directly from the slot states.
-        """
-        detailed_status = self.get_provider_stream_status()
+    # Refactor Note: This method is now async as it depends on an async method.
+    async def get_total_stream_status_for_ui(self) -> tuple[int, int]:
+        """Returns (total_active, total_max) streams asynchronously."""
+        detailed_status = await self.get_provider_stream_status()
         total_active = sum(status['active'] for status in detailed_status.values())
         total_max = sum(status['max'] for status in detailed_status.values())
         return int(total_active), int(total_max)
     
-    def get_active_stream_status_for_logging(self, provider_alias: str) -> str:
-        detailed_status = self.get_provider_stream_status()[provider_alias]
-        active = detailed_status['active']
-        max_streams = detailed_status['max']
-        return f"{active}/{max_streams}"
+    # Refactor Note: This method is now async as it depends on an async method.
+    async def get_active_stream_status_for_logging(self, provider_alias: str) -> str:
+        detailed_status = await self.get_provider_stream_status()
+        provider_status = detailed_status.get(provider_alias, {'active': 0, 'max': 0})
+        return f"{provider_status['active']}/{provider_status['max']}"
 
-    # --- UI Interaction Methods ---
+    # --- UI Interaction Methods (many are now async due to config file I/O) ---
     def search_predefined_channels(self, raw_query: str) -> list[dict[str, Any]]:
-        """Searches the predefined channel list"""
-        if not raw_query:
-            return []
-        
+        """Searches the predefined channel list. (Sync - CPU-bound)"""
+        if not raw_query: return []
         query = raw_query.strip().lower()
         matches: list[dict[str, Any]] = []
         found_with: dict[str, str] = {}
@@ -372,40 +386,34 @@ class ChannelHandler:
                         matches.append({**channel, 'group': group})
                         found_with[channel.get('title', channel.get('num', ''))] = name
                         break
-        # Sort matches by how early the query appears in the name
         matches.sort(key=lambda x: found_with[x.get('title', x.get('num', ''))].lower().find(query))
-        return matches[:10] # Return a max of 10 suggestions
+        return matches[:10]
 
     def find_matching_predefined_channel(self, channel_name: str, channel_num: str) -> dict[str, Any]:
-        """Finds a matching predefined channel based on name or number."""
+        """Finds a matching predefined channel. (Sync - CPU-bound)"""
+        # ... (method body is pure and remains synchronous)
         predefined_channel_lists = list(self.predefined_channel_list.values())
         for channel_list in predefined_channel_lists:
             for pre_channel in channel_list:
-                if channel_name == pre_channel.get('title'):
-                    return pre_channel
+                if channel_name == pre_channel.get('title'): return pre_channel
         for channel_list in predefined_channel_lists:
             for pre_channel in channel_list:
-                if channel_name in pre_channel.get('names', []):
-                    return pre_channel
+                if channel_name in pre_channel.get('names', []): return pre_channel
         for channel_list in predefined_channel_lists:
             for pre_channel in channel_list:
-                if channel_num == pre_channel.get('num'):
-                    return pre_channel
+                if channel_num == pre_channel.get('num'): return pre_channel
         for channel_list in predefined_channel_lists:
             for pre_channel in channel_list:
                 pre_channel_title = pre_channel.get('title', '')
-                if channel_name in pre_channel_title:
-                    return pre_channel
-                if pre_channel_title and pre_channel_title in channel_name:
-                    return pre_channel
+                if channel_name in pre_channel_title: return pre_channel
+                if pre_channel_title and pre_channel_title in channel_name: return pre_channel
                 for pre_channel_name in pre_channel.get('names', []):
-                    if channel_name in pre_channel_name:
-                        return pre_channel
-                    if pre_channel_name in channel_name:
-                        return pre_channel
+                    if channel_name in pre_channel_name: return pre_channel
+                    if pre_channel_name in channel_name: return pre_channel
         return {}
 
     def filter_sources(self, raw_query: str, service: dict[str, str]) -> bool:
+        """Filters sources based on a query. (Sync - pure function)"""
         tvg_name = service.get('original_tvg_name', '').lower()
         display_name = service.get('original_display_name_extinf', '').lower()
         for raw_q in raw_query.split(" OR "):
@@ -415,176 +423,139 @@ class ChannelHandler:
         return False
 
     def _generate_next_logical_channel_id(self) -> str:
-        """Generates the next available auto-incrementing ID as a string, starting at '1000'."""
-        
-        existing_id_strings = [
-            lc['logical_channel_id']
-            for lc in self.logical_channels_data_from_json 
-            if lc.get('logical_channel_id') is not None
-        ]
-        
-        if not existing_id_strings:
-            return '1000'
-
+        """Generates the next available ID. (Sync - CPU-bound)"""
+        existing_id_strings = [lc['logical_channel_id'] for lc in self.logical_channels_data_from_json if lc.get('logical_channel_id')]
+        if not existing_id_strings: return '1000'
         numeric_ids = [int(id_str) for id_str in existing_id_strings]
-        
-        next_id_as_int = max(numeric_ids) + 1
-        
-        return str(next_id_as_int)
+        return str(max(numeric_ids) + 1)
 
-    def get_all_providers_for_ui(self) -> list[dict[str, Any]]:
+    # Refactor Note: This method is now async as it depends on an async method.
+    async def get_all_providers_for_ui(self) -> list[dict[str, Any]]:
         all_providers = self.providers_data_from_json
+        provider_status = await self.get_provider_stream_status()
         providers_display: list[dict[str, Any]] = [
             {
                 "alias": alias,
                 "url": details.get("url", ""),
                 "max_concurrent_streams": details.get("max_concurrent_streams", 1),
-                "active_streams": self.get_provider_stream_status().get(alias, {}).get("active", 0)
+                "active_streams": provider_status.get(alias, {}).get("active", 0)
             } for alias, details in sorted(all_providers.items())
         ]
-
         return providers_display
 
-    def _save_providers_for_ui(self, new_providers_data: dict[str, Any]) -> bool:
-        """Saves the provider configuration and updates internal state on success."""
+    # Refactor Note: This method is now async because it saves to a file.
+    async def _save_providers_for_ui(self, new_providers_data: dict[str, Any]) -> bool:
+        """Saves the provider configuration and updates internal state asynchronously."""
         if "source_m3u_providers" not in new_providers_data:
             return False 
-        save_successful = self.config.save_providers_config(new_providers_data)
+        save_successful = await self.config.save_providers_config(new_providers_data)
         if save_successful:
-            self._update_providers_slots()
+            await self._update_providers_slots()
         return save_successful
     
-    def add_provider(self, alias: str, url: str, max_streams: int) -> dict[str, Any] | None:
-        """
-        Adds a new provider to the configuration using the central save method.
-        
-        On success, returns the newly created provider dictionary for UI rendering.
-        On failure (invalid input, duplicate, or save error), returns None.
-        Raises ValueError for invalid input or duplicate alias.
-        """
+    # Refactor Note: This method is now async because it saves to a file.
+    async def add_provider(self, alias: str, url: str, max_streams: int) -> dict[str, Any] | None:
+        """Adds a new provider to the configuration asynchronously."""
         alias = alias.strip()
-        if not alias:
-            raise ValueError("Provider alias cannot be empty.")
-        if not url:
-            raise ValueError("Provider URL cannot be empty.")
-        if max_streams < 1:
-            raise ValueError("Max concurrent streams must be at least 1.")
-
+        if not alias: raise ValueError("Provider alias cannot be empty.")
+        if not url: raise ValueError("Provider URL cannot be empty.")
+        if max_streams < 1: raise ValueError("Max concurrent streams must be at least 1.")
         if alias.lower() in {a.lower() for a in self.providers_data_from_json.keys()}:
             raise ValueError(f"Provider with alias '{alias}' already exists.")
 
-        self.providers_data_from_json[alias] = {
-            "url": url,
-            "max_concurrent_streams": max_streams
-        }
-        
+        self.providers_data_from_json[alias] = {"url": url, "max_concurrent_streams": max_streams}
         save_data = {"source_m3u_providers": self.providers_data_from_json}
-        if self._save_providers_for_ui(save_data):
-            return {
-                "alias": alias,
-                "url": url,
-                "max_concurrent_streams": max_streams,
-                "active_streams": 0
-            }
+        if await self._save_providers_for_ui(save_data):
+            return {"alias": alias, "url": url, "max_concurrent_streams": max_streams, "active_streams": 0}
         else:
             del self.providers_data_from_json[alias]
             return None
 
-    def update_provider(self, alias: str, url: str, max_streams: int) -> bool:
-        """Updates an existing provider's configuration."""
+    # Refactor Note: This method is now async because it saves to a file.
+    async def update_provider(self, alias: str, url: str, max_streams: int) -> bool:
+        """Updates an existing provider's configuration asynchronously."""
         alias = alias.strip()
-        if not alias:
-            raise ValueError("Provider alias cannot be empty.")
-        if not url:
-            raise ValueError("Provider URL cannot be empty.")
-        if max_streams < 1:
-            raise ValueError("Max concurrent streams must be at least 1.")
-
-        if alias not in self.providers_data_from_json:
-            raise ValueError(f"Provider with alias '{alias}' not found.")
+        if not alias: raise ValueError("Provider alias cannot be empty.")
+        if not url: raise ValueError("Provider URL cannot be empty.")
+        if max_streams < 1: raise ValueError("Max concurrent streams must be at least 1.")
+        if alias not in self.providers_data_from_json: raise ValueError(f"Provider with alias '{alias}' not found.")
 
         original_data = self.providers_data_from_json[alias].copy()
-
         self.providers_data_from_json[alias]["url"] = url
         self.providers_data_from_json[alias]["max_concurrent_streams"] = max_streams
-        
         save_data = {"source_m3u_providers": self.providers_data_from_json}
-        if self._save_providers_for_ui(save_data):
+        if await self._save_providers_for_ui(save_data):
             return True
         else:
             self.providers_data_from_json[alias] = original_data
             return False
 
-    def delete_provider(self, alias: str) -> bool:
-        """Deletes a provider from the configuration."""
+    # Refactor Note: This method is now async because it saves to a file.
+    async def delete_provider(self, alias: str) -> bool:
+        """Deletes a provider from the configuration asynchronously."""
         alias = alias.strip()
-        if not alias:
-            raise ValueError("Provider alias cannot be empty.")
-
-        if alias not in self.providers_data_from_json:
-            raise ValueError(f"Provider with alias '{alias}' not found.")
+        if not alias: raise ValueError("Provider alias cannot be empty.")
+        if alias not in self.providers_data_from_json: raise ValueError(f"Provider with alias '{alias}' not found.")
         
-        provider_to_delete = self.providers_data_from_json[alias]
-        
-        del self.providers_data_from_json[alias]
-        
+        provider_to_delete = self.providers_data_from_json.pop(alias)
         save_data = {"source_m3u_providers": self.providers_data_from_json}
-        if self._save_providers_for_ui(save_data):
+        if await self._save_providers_for_ui(save_data):
             return True
         else:
             self.providers_data_from_json[alias] = provider_to_delete
             return False
 
     def get_all_logical_channels_for_ui(self) -> list[dict[str, Any]]:
-        """Gets a list of all logical channels."""
+        """Gets a list of all logical channels. (Sync - in-memory lookup)"""
         return sorted(self.logical_channels_data_from_json, key=lambda x: x.get("display_name","").lower())
 
     def get_logical_channel_by_id(self, logical_channel_id: str) -> dict[str, Any] | None:
-        """Gets a logical channel by its logical channel ID."""
+        """Gets a logical channel by its ID. (Sync - in-memory lookup)"""
         return next((lc for lc in self.logical_channels_data_from_json if lc.get("logical_channel_id") == logical_channel_id), None)
 
-    def add_logical_channel(self, lc_data: dict[str, Any]) -> str:
-        """Adds a new logical channel to the configuration and returns its internal ID."""
+    # Refactor Note: This method is now async because it saves to a file.
+    async def add_logical_channel(self, lc_data: dict[str, Any]) -> str:
+        """Adds a new logical channel to the configuration asynchronously."""
         new_id = self._generate_next_logical_channel_id()
         lc_data['logical_channel_id'] = new_id
         self.logical_channels_data_from_json.append(lc_data)
-        self.config.save_logical_channels_config(self.logical_channels_data_from_json)
+        await self.config.save_logical_channels_config(self.logical_channels_data_from_json)
         return new_id
 
-    def update_logical_channel(self, logical_channel_id: str, updated_lc_data: dict[str, Any]) -> bool:
-        """Updates a logical channel in the configuration."""
+    # Refactor Note: This method is now async because it saves to a file.
+    async def update_logical_channel(self, logical_channel_id: str, updated_lc_data: dict[str, Any]) -> bool:
+        """Updates a logical channel in the configuration asynchronously."""
         for i, lc in enumerate(self.logical_channels_data_from_json):
             if lc.get("logical_channel_id") == logical_channel_id:
                 updated_lc_data["logical_channel_id"] = logical_channel_id 
                 self.logical_channels_data_from_json[i] = updated_lc_data
-                return self.config.save_logical_channels_config(self.logical_channels_data_from_json)
+                return await self.config.save_logical_channels_config(self.logical_channels_data_from_json)
         return False
 
-    def delete_logical_channel(self, logical_channel_id: str) -> bool:
-        """Deletes a logical channel from the configuration."""
+    # Refactor Note: This method is now async because it saves to multiple files.
+    async def delete_logical_channel(self, logical_channel_id: str) -> bool:
+        """Deletes a logical channel from the configuration asynchronously."""
         original_len = len(self.logical_channels_data_from_json)
         self.logical_channels_data_from_json = [lc for lc in self.logical_channels_data_from_json if lc.get("logical_channel_id") != logical_channel_id]
         
-        # Also remove any associated mappings
         if logical_channel_id in self.channel_mappings_data_from_json:
             del self.channel_mappings_data_from_json[logical_channel_id]
-            self.config.save_channel_mappings_config(self.channel_mappings_data_from_json)
+            await self.config.save_channel_mappings_config(self.channel_mappings_data_from_json)
         
-        return len(self.logical_channels_data_from_json) < original_len and self.config.save_logical_channels_config(self.logical_channels_data_from_json)
+        return len(self.logical_channels_data_from_json) < original_len and await self.config.save_logical_channels_config(self.logical_channels_data_from_json)
 
     def get_mappings_for_logical_channel(self, logical_channel_id: str) -> list[dict[str, Any]]:
-        """Retrieves the mappings for a logical channel."""
+        """Retrieves mappings for a logical channel. (Sync - in-memory lookup)"""
         return self.channel_mappings_data_from_json.get(logical_channel_id, [])
 
-    def update_mappings_for_logical_channel(self, logical_channel_id: str, new_mappings_list: list[dict[str, Any]]) -> bool:
-        """Updates the mappings for a logical channel."""
-        if logical_channel_id in self.channel_mappings_data_from_json:
-            del self.channel_mappings_data_from_json[logical_channel_id]
+    # Refactor Note: This method is now async because it saves to a file.
+    async def update_mappings_for_logical_channel(self, logical_channel_id: str, new_mappings_list: list[dict[str, Any]]) -> bool:
+        """Updates mappings for a logical channel asynchronously."""
         self.channel_mappings_data_from_json[logical_channel_id] = new_mappings_list
-        return self.config.save_channel_mappings_config(self.channel_mappings_data_from_json)
+        return await self.config.save_channel_mappings_config(self.channel_mappings_data_from_json)
 
     def get_all_discovered_source_services_for_ui(self) -> list[dict[str, Any]]:
-        """Gets a list of discovered services."""
+        """Gets a list of discovered services. (Sync - in-memory lookup)"""
         all_services = list(self.discovered_source_services.values())
         self.config.log_message(f"Returning {len(all_services)} services for UI.", level="DEBUG")
         return sorted(all_services, key=lambda x: (x["provider_alias"], (x.get("original_tvg_name","") or x.get("original_display_name_extinf","")).lower()))

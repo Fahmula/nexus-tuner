@@ -1,24 +1,18 @@
 import os
 import json
 import re
-import threading
 import logging
 import time
-import shutil
-from enum import StrEnum
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from dotenv import load_dotenv
-from typing import Any, Callable, NewType
+from typing import Any, Callable
 
-VideoKey = NewType("VideoKey", str)
-VideoName = NewType("VideoName", str)
-
-
-class VideoType(StrEnum):
-    HLS = "hls"
-    MPEGTS = "mpegts"
-
+# Refactor Note: Replaced threading, shutil, and os with their async counterparts.
+import asyncio
+import aiofiles
+import aiofiles.os
+import aioshutil
 
 # --- Constants ---
 NOT_ALPHANUM_REGEX = re.compile(r'[^a-zA-Z0-9_-]')
@@ -30,18 +24,27 @@ class Config:
     """
     Manages all application configuration, file paths, and logging.
     
-    Loads settings from environment variables and provides methods for
-    accessing and persisting data to JSON files in a thread-safe manner.
+    Loads settings from environment variables and provides async methods for
+    accessing and persisting data to JSON files in a non-blocking, safe manner.
     """
+    # Refactor Note: The __init__ method cannot be async. To handle async setup
+    # operations, we use a factory pattern. The constructor is kept lightweight
+    # and a separate async `create` classmethod handles the I/O-bound initialization.
     def __init__(self) -> None:
-        """Initializes the configuration object."""
+        """
+        Initializes the configuration object.
+        
+        NOTE: This constructor is now lightweight and performs no I/O.
+        All file system operations are deferred to the async `_initialize` method,
+        which is called by the `create` factory method.
+        """
         load_dotenv()
         config_dir_str = os.getenv("NEXUS_CONFIG_DIR")
         if not config_dir_str:
             raise ValueError("NEXUS_CONFIG_DIR environment variable is not set on docker container or system.")
-        config_dir = Path(config_dir_str)
-        env_file = config_dir / ".env"
-        if env_file.exists():
+        self.config_dir = Path(config_dir_str)
+        env_file = self.config_dir / ".env"
+        if env_file.exists(): # This initial check is sync, but acceptable at startup.
             load_dotenv(env_file)
         
         nexus_url = os.getenv("NEXUS_URL")
@@ -50,41 +53,31 @@ class Config:
         self.nexus_url: str = nexus_url
         self.nexus_port = int(os.getenv("NEXUS_PORT", 4040))
         
-
         # --- Logging ---
-        self.logs_dir: Path = config_dir / "logs"
-        self.logs_dir.mkdir(exist_ok=True)
+        self.logs_dir: Path = self.config_dir / "logs"
         self._loggers: dict[str, logging.Logger] = {}
         self.log_level: str = os.getenv("NEXUS_LOG_LEVEL", "INFO").upper()
         self.log_backup_count = int(os.getenv("NEXUS_LOG_BACKUP_COUNT", 7))
         self.ffmpeg_logs_retention_seconds = int(os.getenv("NEXUS_FFMPEG_LOGS_RETENTION_SECONDS", 86400))
 
         # --- JSON Data Paths ---
-        config_dir.mkdir(parents=True, exist_ok=True)
-        self.providers_path: Path = config_dir / "providers.json"
-        self.logical_channels_path: Path = config_dir / "logical_channels.json"
-        self.channel_mappings_path: Path = config_dir / "channel_mappings.json"
-        self.service_quality_cache_path: Path = config_dir / "service_quality_cache.json"
-        self.channel_list_path: Path = config_dir / "channel_list.json"
-        if not self.channel_list_path.exists():
-            self.log_message(f"Creating default channel list at {self.channel_list_path}", level="DEBUG")
-            shutil.copy(Path(__file__).parent / "channel_list.json.default", self.channel_list_path)
+        self.providers_path: Path = self.config_dir / "providers.json"
+        self.logical_channels_path: Path = self.config_dir / "logical_channels.json"
+        self.channel_mappings_path: Path = self.config_dir / "channel_mappings.json"
+        self.service_quality_cache_path: Path = self.config_dir / "service_quality_cache.json"
+        self.channel_list_path: Path = self.config_dir / "channel_list.json"
         
         # --- HLS Segment Directory ---
-        self.hls_base_segment_dir: Path = config_dir / "hls_segments"
-        self.log_message(f"Cleaning HLS directory at startup: {self.hls_base_segment_dir}", level="DEBUG")
-        shutil.rmtree(self.hls_base_segment_dir, ignore_errors=True)
-        self.hls_base_segment_dir.mkdir(parents=True, exist_ok=True)
+        self.hls_base_segment_dir: Path = self.config_dir / "hls_segments"
         
         # --- FFmpeg & HLS Configs ---
-        self.hls_segment_duration: int = 1  # This allows for a faster time to prune inactive streams
-        self.segment_prune_timeout: float = 3  # This should be greater than hls_segment_duration by at least a few seconds
+        self.hls_segment_duration: int = 1
+        self.hls_segment_prune_timeout: int = 3
         self.hls_playlist_length: int = 30
-        self.ffmpeg_start_timeout: float = 5  # Balance between getting the best source and being able to test more sources
-        self.ffmpeg_inactivity_timeout: int = int(os.getenv("NEXUS_FFMPEG_INACTIVITY_TIMEOUT", 900))
+        self.ffmpeg_start_timeout: int = 5
+        self.ffmpeg_hls_inactivity_timeout: int = int(os.getenv("NEXUS_FFMPEG_HLS_INACTIVITY_TIMEOUT", 900))
         self.ffmpeg_path: str = os.getenv("FFMPEG_PATH", "/usr/bin/ffmpeg")
         self.ffmpeg_logs_dir: Path = self.logs_dir / "ffmpeg_logs"
-        self.ffmpeg_logs_dir.mkdir(parents=True, exist_ok=True)
 
         # --- Media Server Monitoring Configs ---
         self.emby_url: str | None = os.getenv("NEXUS_EMBY_URL")
@@ -93,116 +86,143 @@ class Config:
         self.jellyfin_api_key: str | None = os.getenv("NEXUS_JELLYFIN_API_KEY")
         self.ghost_check_interval: int = int(os.getenv("NEXUS_GHOST_SESSION_CHECK_INTERVAL", 60))
 
-        self.file_lock = threading.Lock()
+        # Refactor Note: Replaced threading.Lock with asyncio.Lock for use in async contexts.
+        self.file_lock = asyncio.Lock()
 
-    def clean_up_hls_segments(self) -> None:
-        """Cleans up old HLS segment files in the configured directory."""
+    @classmethod
+    async def create(cls) -> "Config":
+        """
+        Asynchronous factory for creating and initializing a Config instance.
+        This pattern is used because __init__ cannot be async.
+        Usage: `config = await Config.create()`
+        """
+        instance = cls()
+        await instance._initialize()
+        return instance
+
+    async def _initialize(self) -> None:
+        """
+        Performs all asynchronous I/O operations required for initialization.
+        """
+        # Refactor Note: Use aiofiles.os.makedirs for non-blocking directory creation.
+        await aiofiles.os.makedirs(self.logs_dir, exist_ok=True)
+        await aiofiles.os.makedirs(self.config_dir, exist_ok=True)
+        
+        # Refactor Note: Use aiofiles.os.path.exists for a non-blocking file check.
+        if not await aiofiles.os.path.exists(self.channel_list_path):
+            self.log_message(f"Creating default channel list at {self.channel_list_path}", level="DEBUG")
+            # Refactor Note: Use aioshutil.copy for non-blocking file copy.
+            default_list_path = Path(__file__).parent / "channel_list.json.default"
+            await aioshutil.copy(default_list_path, self.channel_list_path)
+        
+        self.log_message(f"Cleaning HLS directory at startup: {self.hls_base_segment_dir}", level="DEBUG")
+        # Refactor Note: Use aioshutil.rmtree for non-blocking recursive directory removal.
+        await aioshutil.rmtree(self.hls_base_segment_dir, ignore_errors=True)
+        await aiofiles.os.makedirs(self.hls_base_segment_dir, exist_ok=True)
+        
+        await aiofiles.os.makedirs(self.ffmpeg_logs_dir, exist_ok=True)
+
+    async def clean_up_hls_segments(self) -> None:
+        """Cleans up old HLS segment files in the configured directory asynchronously."""
         self.log_message(f"Cleaning up HLS segments in {self.hls_base_segment_dir}", level="INFO")
-        shutil.rmtree(self.hls_base_segment_dir, ignore_errors=True)
+        # Refactor Note: Replaced shutil.rmtree with aioshutil.rmtree for non-blocking I/O.
+        await aioshutil.rmtree(self.hls_base_segment_dir, ignore_errors=True)
 
     def get_fs_safe_alphanum(self, name: str) -> str:
         """
         Converts a string to a filesystem-safe alphanumeric format.
-
-        Replaces non-alphanumeric characters with underscores.
-
-        Args:
-            name: The input string to sanitize.
-
-        Returns:
-            A sanitized string suitable for filesystem use.
+        This is a pure function with no I/O, so it remains synchronous.
         """
         return re.sub(NOT_ALPHANUM_REGEX, '_', name)
 
     def get_ffmpeg_log_path(self, logical_channel_id: str, video_type: VideoType) -> Path:
         """
         Generates a safe file path for an FFmpeg log file.
-
-        Args:
-            logical_channel_id: The ID of the logical channel.
-            provider_alias: The alias of the provider being used.
-
-        Returns:
-            A Path object for the log file.
+        This is a pure function with no I/O, so it remains synchronous.
         """
         log_filename = f"ffmpeg_{self.get_fs_safe_alphanum(f'{video_type}_{logical_channel_id}')}.log" 
         return self.ffmpeg_logs_dir / log_filename
     
-    def cleanup_ffmpeg_logs_by_age(self) -> None:
+    async def cleanup_ffmpeg_logs_by_age(self) -> None:
         """
-        Deletes FFmpeg log files older than a configured number of days.
+        Deletes FFmpeg log files older than a configured number of seconds asynchronously.
         """
-        if not self.ffmpeg_logs_dir.exists():
+        # Refactor Note: Replaced sync os.path.exists with async aiofiles.os.path.exists.
+        if not await aiofiles.os.path.exists(self.ffmpeg_logs_dir):
             self.log_message(f"No FFmpeg logs directory at {self.ffmpeg_logs_dir}. Skipping cleanup.", level="DEBUG")
             return
 
         cutoff_time = time.time() - self.ffmpeg_logs_retention_seconds
         files_cleaned_up = False
-        for log_file in self.ffmpeg_logs_dir.glob("ffmpeg_*.log"):
+        
+        # Refactor Note: Replaced sync os.listdir/glob with async aiofiles.os.listdir to avoid blocking.
+        try:
+            log_files = await aiofiles.os.listdir(self.ffmpeg_logs_dir)
+        except OSError as e:
+            self.log_message(f"Error listing files in {self.ffmpeg_logs_dir}: {e}", level="ERROR")
+            return
+
+        for filename in log_files:
+            if not filename.startswith("ffmpeg_") or not filename.endswith(".log"):
+                continue
+            
+            log_file = self.ffmpeg_logs_dir / filename
             try:
-                if log_file.stat().st_mtime < cutoff_time:
-                    log_file.unlink()
+                # Refactor Note: Replaced sync stat().st_mtime with async aiofiles.os.stat.
+                stat_result = await aiofiles.os.stat(log_file)
+                if stat_result.st_mtime < cutoff_time:
+                    # Refactor Note: Replaced sync unlink() with async aiofiles.os.remove.
+                    await aiofiles.os.remove(log_file)
                     files_cleaned_up = True
             except OSError as e:
                 self.log_message(f"Error deleting old log file {log_file}: {e}", level="ERROR")
+        
         if files_cleaned_up:
-            self.log_message(f"Cleaned up FFmpeg log files older than 24 hours.", level="DEBUG")
+            self.log_message(f"Cleaned up FFmpeg log files older than {self.ffmpeg_logs_retention_seconds} seconds.", level="DEBUG")
 
-    def _load_json_file(self, file_path: Path, default_content_factory: Callable[[], Any]) -> Any:
+    async def _load_json_file(self, file_path: Path, default_content_factory: Callable[[], Any]) -> Any:
         """
-        Loads data from a JSON file in a thread-safe manner.
-
-        If the file doesn't exist or is empty/invalid, it creates it with
-        default content.
-
-        Args:
-            file_path: The path to the JSON file.
-            default_content_factory: A function (e.g., `dict` or `list`) to generate default content.
-
-        Returns:
-            The parsed JSON data.
+        Loads data from a JSON file asynchronously and in a coroutine-safe manner.
         """
-        with self.file_lock:
+        # Refactor Note: Use an async context manager for the asyncio.Lock.
+        async with self.file_lock:
             try:
-                if not file_path.exists():
+                if not await aiofiles.os.path.exists(file_path):
                     self.log_message(f"{file_path} not found. Creating with default content.", level="DEBUG")
                     default_content = default_content_factory()
-                    with file_path.open("w") as f:
-                        json.dump(default_content, f, indent=2)
+                    # Refactor Note: Use aiofiles.open for non-blocking file writing.
+                    async with aiofiles.open(file_path, "w") as f:
+                        await f.write(json.dumps(default_content, indent=2))
                     return default_content
                 
-                with file_path.open("r") as f:
-                    content = f.read()
+                # Refactor Note: Use aiofiles.open for non-blocking file reading.
+                async with aiofiles.open(file_path, "r") as f:
+                    content = await f.read()
                     if not content.strip():
                          self.log_message(f"{file_path} is empty. Initializing with default content.", level="DEBUG")
                          default_content = default_content_factory()
-                         with file_path.open("w") as wf:
-                            json.dump(default_content, wf, indent=2)
+                         async with aiofiles.open(file_path, "w") as wf:
+                            await wf.write(json.dumps(default_content, indent=2))
                          return default_content
+                    # json.loads is CPU-bound, not I/O-bound, so it remains synchronous.
                     return json.loads(content)
             except (json.JSONDecodeError, OSError) as e:
                 self.log_message(f"Could not load or parse {file_path}: {e}. Returning default.", level="ERROR")
                 return default_content_factory()
 
-    def _save_json_file(self, file_path: Path, data: Any) -> bool:
+    async def _save_json_file(self, file_path: Path, data: Any) -> bool:
         """
-        Saves data to a JSON file atomically and in a thread-safe manner.
-
-        Uses a temporary file and an atomic `os.replace` to prevent data corruption.
-
-        Args:
-            file_path: The path to the JSON file to save.
-            data: The Python object (dict, list, etc.) to serialize.
-
-        Returns:
-            True if the save was successful, False otherwise.
+        Saves data to a JSON file atomically and asynchronously.
         """
-        with self.file_lock:
+        # Refactor Note: Use an async context manager for the asyncio.Lock.
+        async with self.file_lock:
             try:
                 temp_file_path = file_path.with_suffix(file_path.suffix + '.tmp')
-                with temp_file_path.open("w") as f:
-                    json.dump(data, f, indent=2)
-                os.replace(temp_file_path, file_path)
+                async with aiofiles.open(temp_file_path, "w") as f:
+                    # json.dumps is CPU-bound, so it remains synchronous.
+                    await f.write(json.dumps(data, indent=2))
+                # Refactor Note: Replaced sync os.replace with async aiofiles.os.replace for an atomic, non-blocking move.
+                await aiofiles.os.replace(temp_file_path, file_path)
                 return True
             except (IOError, OSError) as e:
                 self.log_message(f"Could not write to {file_path}: {e}", level="ERROR")
@@ -212,12 +232,10 @@ class Config:
         """
         Logs a message to a specified file and the console.
 
-        Manages logger instances to avoid duplicating handlers.
-
-        Args:
-            message: The message to log.
-            log_filename: The file to log to (within the logs directory).
-            level: The logging level (e.g., "INFO", "ERROR", "DEBUG").
+        Refactor Note: The standard logging library's file handlers can be blocking.
+        For most applications, this is acceptable. For extremely high-throughput
+        logging, a dedicated async logging library might be considered. This
+        method is kept synchronous for simplicity and compatibility.
         """
         log_level_map = {
             "DEBUG": logging.DEBUG, "INFO": logging.INFO,
@@ -244,45 +262,43 @@ class Config:
 
         self._loggers[log_filename].log(log_level_const, message)
 
-    def get_providers_config(self) -> dict[str, dict[str, dict[str, Any]]]:
-        """Loads the providers configuration from providers.json."""
-        return self._load_json_file(self.providers_path, lambda: {"source_m3u_providers": {}})
+    # Refactor Note: All public API methods that perform I/O are now async.
+    async def get_providers_config(self) -> dict[str, dict[str, dict[str, Any]]]:
+        """Loads the providers configuration from providers.json asynchronously."""
+        return await self._load_json_file(self.providers_path, lambda: {"source_m3u_providers": {}})
 
-    def save_providers_config(self, data: dict[str, dict[str, dict[str, Any]]]) -> bool:
-        """Saves the providers configuration to providers.json."""
-        return self._save_json_file(self.providers_path, data)
+    async def save_providers_config(self, data: dict[str, dict[str, dict[str, Any]]]) -> bool:
+        """Saves the providers configuration to providers.json asynchronously."""
+        return await self._save_json_file(self.providers_path, data)
 
-    def get_logical_channels_config(self) -> list[dict[str, Any]]:
-        """Loads the logical channels configuration from logical_channels.json."""
-        return self._load_json_file(self.logical_channels_path, list)
+    async def get_logical_channels_config(self) -> list[dict[str, Any]]:
+        """Loads the logical channels configuration from logical_channels.json asynchronously."""
+        return await self._load_json_file(self.logical_channels_path, list)
 
-    def save_logical_channels_config(self, data: list[dict[str, Any]]) -> bool:
-        """Saves the logical channels configuration to logical_channels.json."""
-        for channel in data:  # These should values don't make sense to save
-            channel.pop("lowest_uptime", None)
-            channel.pop("health_score", None)
-        return self._save_json_file(self.logical_channels_path, data)
+    async def save_logical_channels_config(self, data: list[dict[str, Any]]) -> bool:
+        """Saves the logical channels configuration to logical_channels.json asynchronously."""
+        return await self._save_json_file(self.logical_channels_path, data)
 
-    def get_channel_mappings_config(self) -> dict[str, Any]:
-        """Loads the channel mappings from channel_mappings.json."""
-        return self._load_json_file(self.channel_mappings_path, dict)
+    async def get_channel_mappings_config(self) -> dict[str, Any]:
+        """Loads the channel mappings from channel_mappings.json asynchronously."""
+        return await self._load_json_file(self.channel_mappings_path, dict)
     
-    def get_channel_list_config(self) -> dict[str, Any]:
-        """Loads the predefined channel list from channel_list.json."""
-        return self._load_json_file(self.channel_list_path, dict)
+    async def get_channel_list_config(self) -> dict[str, Any]:
+        """Loads the predefined channel list from channel_list.json asynchronously."""
+        return await self._load_json_file(self.channel_list_path, dict)
 
-    def save_channel_mappings_config(self, data: dict[str, Any]) -> bool:
-        """Saves the channel mappings to channel_mappings.json."""
-        return self._save_json_file(self.channel_mappings_path, data)
+    async def save_channel_mappings_config(self, data: dict[str, Any]) -> bool:
+        """Saves the channel mappings to channel_mappings.json asynchronously."""
+        return await self._save_json_file(self.channel_mappings_path, data)
 
-    def get_service_quality_cache(self) -> dict[str, Any]:
-        """Loads the service quality cache from service_quality_cache.json."""
-        return self._load_json_file(self.service_quality_cache_path, dict)
+    async def get_service_quality_cache(self) -> dict[str, Any]:
+        """Loads the service quality cache from service_quality_cache.json asynchronously."""
+        return await self._load_json_file(self.service_quality_cache_path, dict)
 
-    def save_service_quality_cache(self, data: dict[str, Any]) -> bool:
-        """Saves the service quality cache to service_quality_cache.json."""
-        return self._save_json_file(self.service_quality_cache_path, data)
+    async def save_service_quality_cache(self, data: dict[str, Any]) -> bool:
+        """Saves the service quality cache to service_quality_cache.json asynchronously."""
+        return await self._save_json_file(self.service_quality_cache_path, data)
 
-    def reload_all_configs(self) -> None:
+    async def reload_all_configs(self) -> None:
         """Logs a message indicating that configs should be reloaded by handlers."""
         self.log_message("Signalling reload of all JSON configurations.", level="INFO")
