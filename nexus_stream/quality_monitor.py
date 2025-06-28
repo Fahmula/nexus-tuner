@@ -64,7 +64,10 @@ class QualityMonitor:
 
     # Refactor Note: This method is now async and uses asyncio.create_subprocess_exec.
     async def _get_stream_info(self, service_url: str) -> dict[str, Any] | None:
-        """Extracts stream information using ffprobe asynchronously."""
+        """
+        Extracts stream information using ffprobe, ensuring the subprocess is
+        terminated on timeout or cancellation.
+        """
         duration = QUALITY_MONITOR_TIMEOUT
         cmd = [
             "ffprobe", "-v", "error", "-select_streams", "v:0",
@@ -75,29 +78,42 @@ class QualityMonitor:
             service_url
         ]
 
-        # Refactor Note: Replaced blocking subprocess.run with non-blocking asyncio subprocess.
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        
+        proc = None
         try:
-            # Refactor Note: await proc.communicate() waits for the process to finish without blocking the event loop.
-            # asyncio.wait_for is used to enforce a timeout.
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=duration + 3)
+
             if proc.returncode != 0:
                 self.config.log_message(f"ffprobe for {service_url} failed with code {proc.returncode}: {stderr.decode()}", level="WARN")
                 return None
             info = json.loads(stdout)
+
         except asyncio.TimeoutError:
             self.config.log_message(f"ffprobe for {service_url} timed out.", level="WARN")
-            proc.kill() # Ensure the process is terminated
-            await proc.wait()
             return None
+        except asyncio.CancelledError:
+            self.config.log_message(f"ffprobe task for {service_url} was cancelled.", level="WARN")
+            # Re-raise the exception
+            raise
         except (json.JSONDecodeError, IndexError) as e:
             self.config.log_message(f"Failed to parse ffprobe output for {service_url}: {e}", level="ERROR")
             return None
+        finally:
+            if proc and proc.returncode is None:
+                self.config.log_message(f"Ensuring ffprobe process {proc.pid} is terminated...", level="DEBUG")
+                try:
+                    # Use kill() for forceful termination on cancellation or timeout.
+                    proc.kill()
+                    # Wait for the process to avoid leaving zombies.
+                    await proc.wait()
+                except ProcessLookupError:
+                    # The process already terminated, which is fine.
+                    pass
 
         stream = info.get('streams', [{}])[0]
         width = int(stream.get('width', 0))
@@ -120,38 +136,59 @@ class QualityMonitor:
 
     # Refactor Note: This method is now async.
     async def _run_single_probe(self, service_id: str, service_url: str, provider_alias: ProviderName) -> tuple[str, dict[str, str | float | int]]:
-        """Probes a single stream URL asynchronously after acquiring a provider slot."""
+        """
+        Probes a single stream, persistently trying to acquire a slot, and ensures
+        all resources are cleaned up upon completion, failure, or cancellation.
+        """
         provider_slots = self.handler.slots.get(provider_alias)
         if not provider_slots:
-            return service_id, {"status": "error", "reason": "Slot not found"}
+            return service_id, {"status": "error", "reason": "Provider slot manager not found"}
 
         current_task = asyncio.current_task()
-        
         slot_acquired = False
-        while True:
-            # Non-blocking sleep to avoid overwhelming the provider.
-            await asyncio.sleep(3)
-            if await self.handler.get_pending_stream_count() == 0:
-                try:
-                    slot_acquired = await provider_slots.acquire_background_slot(current_task)
-                    if slot_acquired:
-                        break
-                except asyncio.TimeoutError:
-                    pass 
-            await asyncio.sleep(1)
-
+        
         try:
-            # Refactor Note: Awaiting the async _get_stream_info method.
+            while True:
+                # First, check if there are pending user streams. If so, wait.
+                # This is a "back-off" strategy to prioritize users.
+                if await self.handler.get_pending_stream_count() > 0:
+                    self.config.log_message(f"Probe for {service_id} pausing for user streams...", level="DEBUG")
+                    await asyncio.sleep(3)
+                    continue
+
+                try:
+                    await provider_slots.acquire_background_slot(current_task)
+                    slot_acquired = True
+                    self.config.log_message(f"Slot acquired for {service_id}", level="DEBUG")
+                    break # Exit the acquisition loop on success
+                except asyncio.TimeoutError:
+                    # Slot was not available immediately. Wait a bit before retrying.
+                    self.config.log_message(f"Probe for {service_id} waiting for an available slot...", level="DEBUG")
+                    await asyncio.sleep(1)
+
+            # If this task is cancelled by ProviderSlots, the CancelledError is raised here.
+            # It will propagate into _get_stream_info, which will kill its ffprobe process.
             stream_info = await self._get_stream_info(service_url)
+            
             if not stream_info:
                 return service_id, {"status": "offline", "reason": "No stream info available"}
             return service_id, stream_info
+
+        except asyncio.CancelledError:
+            # This is caught if ProviderSlots preempts us at any `await` point.
+            # This can happen either during the acquisition loop or during the probe itself.
+            self.config.log_message(f"Probe task for {service_id} was cancelled by slot manager.", level="INFO")
+            # Re-raise to signal that cancellation was successful.
+            raise
         except Exception as e:
-            # Catch any unexpected errors during the probe itself.
+            # This will catch any unexpected error *not* related to cancellation.
+            self.config.log_message(f"Unexpected error during probe for {service_id}: {e}", level="ERROR")
             return service_id, {"status": "offline", "reason": f"Probe failed: {e}"}
         finally:
+            # This block ensures that if we successfully acquired a slot, we ALWAYS release it.
             if slot_acquired:
                 await provider_slots.release_background_slot(current_task)
+                self.config.log_message(f"Slot released for {service_id}", level="DEBUG")
     
     # Refactor Note: This method is now fully async.
     async def _analyze_mapped_services(self) -> None:

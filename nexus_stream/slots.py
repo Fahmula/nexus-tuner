@@ -60,18 +60,13 @@ class ProviderSlots:
 
     async def acquire_user_slot(self) -> int:
         """
-        Acquires a slot for a user. If all slots are busy, it will identify
-        a background task if any, wait for a short 'grace_period' for it to finish,
-        and then forcibly cancel it if it's still running.
-        Returns the new active slot count on success.
+        Acquires a user slot, preempting a background task if necessary.
         """
         try:
-            # Try to acquire immediately.
             return await asyncio.wait_for(self._semaphore.acquire(), timeout=0.01)
         except asyncio.TimeoutError:
             pass
 
-        # Try to preempt a background task.
         task_to_preempt = None
         async with self._lock:
             if self._active_background_tasks:
@@ -79,19 +74,19 @@ class ProviderSlots:
 
         if task_to_preempt:
             try:
-                # Give it a chance to complete on its own.
                 await asyncio.wait_for(asyncio.shield(task_to_preempt), timeout=GRACE_PERIOD)
             except asyncio.TimeoutError:
+                # This sends CancelledError into the background task,
+                # triggering its 'finally' block for cleanup.
                 task_to_preempt.cancel()
             except asyncio.CancelledError:
                 pass
 
-        # Final attempt to acquire after preemption.
         try:
-            # Use a more generous timeout to handle potential scheduling delays
+            # The cancelled background task's finally block will release the semaphore.
             return await asyncio.wait_for(self._semaphore.acquire(), timeout=3.0)
         except asyncio.TimeoutError:
-            raise asyncio.TimeoutError(f"Could not acquire preempted slot for {self._name}, another task may have taken it.")
+            raise asyncio.TimeoutError(f"Could not acquire preempted slot for {self._name}.")
 
 
     async def release_user_slot(self) -> None:
@@ -99,18 +94,16 @@ class ProviderSlots:
         self._semaphore.release()
 
     async def acquire_background_slot(self, task: asyncio.Task) -> None:
-        """ Acquires a slot for background tasks """
+        """ Acquires a slot for a background task and registers the task. """
         try:
-            active_count = await asyncio.wait_for(self._semaphore.acquire(), timeout=0.01)
+            await asyncio.wait_for(self._semaphore.acquire(), timeout=0.01)
             async with self._lock:
                 self._active_background_tasks.append(task)
-            return active_count
         except asyncio.TimeoutError:
-            raise
-      
+            raise # Re-raise for the caller to handle.
 
     async def release_background_slot(self, task: asyncio.Task) -> None:
-        """ Releases a slot for background tasks """
+        """ Releases a slot for background tasks and de-registers the task. """
         async with self._lock:
             if task in self._active_background_tasks:
                 self._active_background_tasks.remove(task)
