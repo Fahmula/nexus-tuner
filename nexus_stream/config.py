@@ -3,16 +3,24 @@ import json
 import re
 import logging
 import time
+from enum import StrEnum
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from dotenv import load_dotenv
-from typing import Any, Callable
+from typing import Any, Callable, NewType
 
 # Refactor Note: Replaced threading, shutil, and os with their async counterparts.
 import asyncio
 import aiofiles
 import aiofiles.os
 import aioshutil
+
+VideoKey = NewType("VideoKey", str)
+VideoName = NewType("VideoName", str)
+
+class VideoType(StrEnum):
+    HLS = "hls"
+    MPEGTS = "mpegts"
 
 # --- Constants ---
 NOT_ALPHANUM_REGEX = re.compile(r'[^a-zA-Z0-9_-]')
@@ -72,10 +80,10 @@ class Config:
         
         # --- FFmpeg & HLS Configs ---
         self.hls_segment_duration: int = 1
-        self.hls_segment_prune_timeout: int = 3
+        self.segment_prune_timeout: float = 3
         self.hls_playlist_length: int = 30
-        self.ffmpeg_start_timeout: int = 5
-        self.ffmpeg_hls_inactivity_timeout: int = int(os.getenv("NEXUS_FFMPEG_HLS_INACTIVITY_TIMEOUT", 900))
+        self.ffmpeg_start_timeout: float = 5
+        self.ffmpeg_inactivity_timeout: int = int(os.getenv("NEXUS_FFMPEG_INACTIVITY_TIMEOUT", 900))
         self.ffmpeg_path: str = os.getenv("FFMPEG_PATH", "/usr/bin/ffmpeg")
         self.ffmpeg_logs_dir: Path = self.logs_dir / "ffmpeg_logs"
 
@@ -277,6 +285,10 @@ class Config:
 
     async def save_logical_channels_config(self, data: list[dict[str, Any]]) -> bool:
         """Saves the logical channels configuration to logical_channels.json asynchronously."""
+        # Remove transient runtime keys before saving.
+        for channel in data:
+            channel.pop("lowest_uptime", None)
+            channel.pop("health_score", None)
         return await self._save_json_file(self.logical_channels_path, data)
 
     async def get_channel_mappings_config(self) -> dict[str, Any]:
