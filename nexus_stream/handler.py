@@ -8,7 +8,7 @@ from typing import Any
 import aiohttp
 # Refactor Note: Replaced threading with asyncio for non-blocking concurrency control.
 # The RLock is replaced with a non-reentrant asyncio.Lock, which is sufficient here.
-from nexus_stream.config import Config
+from nexus_stream.config import Config, VideoType
 from nexus_stream.slots import ProviderName, ProviderSlots
 
 # --- Constants ---
@@ -41,6 +41,7 @@ class ChannelHandler:
         """
         self._startup = True
         self._loading = False
+        self._loading = False
         self.config = config
         # Refactor Note: Replaced threading.RLock with asyncio.Lock for use in async contexts.
         self._mutex = asyncio.Lock()
@@ -69,6 +70,10 @@ class ChannelHandler:
         instance._startup = False
         return instance
 
+    def is_loading(self) -> bool:
+        """Returns True if the handler is currently loading configurations."""
+        return self._loading
+
     # Refactor Note: This method is now async to use the async lock.
     async def reset_kill_provider_streams(self) -> set[str]:
         """Resets the kill_provider_streams, returns the aliases that should be killed."""
@@ -90,6 +95,7 @@ class ChannelHandler:
         Loads all data from JSON files and rebuilds the in-memory channel structures asynchronously.
         """
         self._loading = True
+        self._loading = True
         self.config.log_message("Loading/Reloading ChannelHandler configurations", level="INFO")
 
         if update_providers:
@@ -109,7 +115,7 @@ class ChannelHandler:
         await self._parse_all_provider_m3us_and_populate_discovered_services()
         self._build_client_facing_channels()
         self.generate_master_client_m3u()
-
+        
         self._loading = False
         self.config.log_message(
             f"ChannelHandler ready. Discovered: {len(self.discovered_source_services)}, "
@@ -257,16 +263,18 @@ class ChannelHandler:
         async with self._mutex:
             return len(self.pending_streams)
 
-    async def add_pending_stream(self, logical_channel_id: str) -> bool:
+    async def add_pending_stream(self, logical_channel_id: str, video_type: VideoType) -> bool:
+        key = f"{video_type}_{logical_channel_id}"
         async with self._mutex:
-            if logical_channel_id in self.pending_streams:
+            if key in self.pending_streams:
                 return False
+            self.pending_streams.add(key)
             self.pending_streams.add(key)
             return True
 
-    async def remove_pending_stream(self, logical_channel_id: str) -> None:
+    async def remove_pending_stream(self, logical_channel_id: str, video_type: VideoType) -> None:
         async with self._mutex:
-            self.pending_streams.discard(logical_channel_id)
+            self.pending_streams.discard(f"{video_type}_{logical_channel_id}")
 
     def generate_master_client_m3u(self) -> None:
         """Generates the master M3U content to be served to clients. (Sync - CPU-bound)"""
@@ -288,6 +296,7 @@ class ChannelHandler:
             if group := lc_data.get("group_title"): extinf_parts.append(f'group-title="{group}"')
             
             m3u_lines.append(f"#EXTINF:-1 {' '.join(extinf_parts)},{name}")
+            m3u_lines.append(f"{self.config.nexus_url}/{VideoType.HLS}/{lc_data['logical_channel_id']}/playlist.m3u8")
             m3u_lines.append(f"{self.config.nexus_url}/{VideoType.HLS}/{lc_data['logical_channel_id']}/playlist.m3u8")
         
         self.master_m3u_content = "\n".join(m3u_lines) + "\n"
