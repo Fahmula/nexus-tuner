@@ -2,15 +2,17 @@
 The main Quart application file for NexusStream.
 
 This file initializes the Quart app and its async components (Config, ChannelHandler, 
-HLSStreamManager, GhostSessionMonitor) and defines all the web routes for:
+StreamManager, GhostSessionMonitor) and defines all the web routes for:
 - Serving the master M3U playlist.
-- Handling HLS streaming requests (playlists and segments) asynchronously.
+- Handling HLS and MPEG-TS streaming requests asynchronously.
+- HDHomeRun emulation endpoints.
 - Providing a web-based user interface (UI) for configuration and management.
 - A manual reload endpoint.
 """
 
 import asyncio
 import aiofiles
+import json
 import math
 import os
 import sys
@@ -18,7 +20,7 @@ from collections import deque
 from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, NewType
+from typing import Any, AsyncGenerator, NewType
 
 # Refactor Note: Replaced Flask with Quart for native asyncio support.
 from quart import (Quart, Response, abort, flash, redirect, render_template,
@@ -26,11 +28,14 @@ from quart import (Quart, Response, abort, flash, redirect, render_template,
 
 # Refactor Note: Importing the newly created async versions of the core modules.
 from nexus_stream.config import Config
+# Refactor Note: Importing generic StreamManager and CreateStream components.
+from nexus_stream.create_stream import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL, 
+                                        MPEGTS_PACKET_SIZE, MPEGTS_PACKETS_PER_CHUNK, 
+                                        CreateStream, VideoType, sort_sources)
 from nexus_stream.handler import ChannelHandler, DEFAULT_PRIORITY
 from nexus_stream.quality_monitor import QualityMonitor
 from nexus_stream.session_monitor import GhostSessionMonitor
-from nexus_stream.stream import HLSStreamManager
-from nexus_stream.create_stream import CREATE_STREAM_POLL_INTERVAL, CreateHLSStream, sort_sources
+from nexus_stream.stream import StreamManager
 
 # --- Constants ---
 PLAYLIST_POLL_INTERVAL = 0.2  # Seconds to wait between checking for a new playlist
@@ -38,8 +43,8 @@ UI_SEARCH_MIN_CHARS = 3       # Minimum characters for a UI search
 UI_SEARCH_MAX_RESULTS = 50    # Max results to return in a UI search
 
 # --- Type Hinting ---
-HLSKey = NewType("HLSKey", str)
-HLSName = NewType("HLSName", str)
+VideoKey = NewType("VideoKey", str)
+VideoName = NewType("VideoName", str)
 
 # --- App Initialization ---
 # Refactor Note: Switched from Flask to Quart.
@@ -50,7 +55,7 @@ app.secret_key = os.urandom(24)
 # in the `startup` function, as async initialization cannot happen at the top level.
 config: Config | None = None
 handler: ChannelHandler | None = None
-hls_manager: HLSStreamManager | None = None
+stream_manager: StreamManager | None = None
 ghost_monitor: GhostSessionMonitor | None = None
 quality_monitor: QualityMonitor | None = None
 
@@ -60,17 +65,18 @@ async def startup():
     Asynchronous startup function. Initializes all core components and starts background tasks.
     This is the standard Quart pattern for handling async setup.
     """
-    global config, handler, hls_manager, ghost_monitor, quality_monitor
+    global config, handler, stream_manager, ghost_monitor, quality_monitor
     try:
         # Refactor Note: Using the async `create` factory methods for initialization.
         config = await Config.create()
         handler = await ChannelHandler.create(config)
-        hls_manager = HLSStreamManager(config, handler)
-        ghost_monitor = GhostSessionMonitor(config, handler, hls_manager)
+        # Refactor Note: Using the generic StreamManager.
+        stream_manager = StreamManager(config, handler)
+        ghost_monitor = GhostSessionMonitor(config, handler, stream_manager)
         quality_monitor = await QualityMonitor.create(config, handler)
 
         # Refactor Note: Replaced background threads with asyncio tasks.
-        hls_manager.start_cleanup_task()
+        stream_manager.start_cleanup_task()
         asyncio.create_task(ghost_monitor.run())
         asyncio.create_task(quality_monitor.run())
 
@@ -83,9 +89,9 @@ async def startup():
 @app.after_serving
 async def shutdown():
     """Handles graceful shutdown of the application."""
-    if hls_manager:
-        # Refactor Note: Awaiting the async shutdown method.
-        await hls_manager.stop_hls_ffmpeg_processes()
+    if stream_manager:
+        # Refactor Note: Awaiting the async shutdown method for all stream types.
+        await stream_manager.stop_ffmpeg_processes()
     if config:
         await config.clean_up_hls_segments()
 
@@ -114,8 +120,75 @@ def inject_now() -> dict[str, datetime]:
 
 # --- Core Streaming and Playlist Endpoints ---
 
-# Refactor Note: All route handlers are now `async def`.
-@app.route('/hls/<string:logical_channel_id>/preview.m3u8')
+@app.route(f'/{VideoType.MPEGTS}/<string:logical_channel_id>')
+async def serve_mpegts_stream(logical_channel_id: str) -> Response:
+    """Serves a channel stream using MPEG-TS format asynchronously."""
+    added_pending_stream = False
+    loop = asyncio.get_running_loop()
+    end_time = loop.time() + CREATE_STREAM_DEADLINE
+    try:
+        while not await handler.add_pending_stream(logical_channel_id, VideoType.MPEGTS):
+            if loop.time() > end_time:
+                msg = f"[{request.method} {request.path}] Exceeded timeout while waiting for earlier request for MPEGTS {logical_channel_id} to complete."
+                config.log_message(msg, level="ERROR")
+                abort(503, msg)
+            await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
+        added_pending_stream = True
+
+        logical_channel = handler.get_logical_channel_by_id(logical_channel_id)
+        if not logical_channel:
+            msg = f"[{request.method} {request.path}] Logical channel {logical_channel_id} not found for MPEGTS."
+            config.log_message(msg, level="ERROR")
+            abort(404, msg)
+        logical_channel_name = str(logical_channel['display_name'])
+
+        lc_id_processes = await stream_manager.get_ffmpeg_processes_from_logical_id(logical_channel_id, video_type=VideoType.MPEGTS, long_term_only=True)
+        if len(lc_id_processes):
+            video_key, p_info = lc_id_processes.popitem()
+            if p_info['is_mpegts_active']:
+                msg = f"[{request.method} {request.path}] NexusStream does not currently support multiple concurrent MPEGTS streams for the same logical channel ID. Your media server should be reusing its existing request for logical channel '{logical_channel_name}' with key '{video_key}'."
+                config.log_message(msg, level="ERROR")
+                abort(503, f"Another MPEGTS stream for logical channel '{logical_channel_name}' is already active. Please try again later.")
+        else:
+            create_stream_task = await CreateStream.create(config, handler, stream_manager, quality_monitor, logical_channel_id, logical_channel_name, VideoType.MPEGTS)
+            res = await create_stream_task.result()
+            if isinstance(res, tuple):
+                code, msg_text = res
+                msg = f"[{request.method} {request.path}] {msg_text}"
+                config.log_message(msg, level="ERROR")
+                abort(code, msg)
+            video_key = res
+
+        process_info = await stream_manager.get_ffmpeg_process_info(video_key)
+        if not process_info:
+            msg = f"[{request.method} {request.path}] Internal error: MPEGTS FFmpeg process not found for logical channel '{logical_channel_name}' with key '{video_key}'."
+            config.log_message(msg, level="ERROR")
+            abort(500, msg)
+
+        async def stream_generator() -> AsyncGenerator[bytes, None]:
+            process_info["is_mpegts_active"] = True
+            stdout = process_info["process"].stdout
+            chunk_size = MPEGTS_PACKET_SIZE * MPEGTS_PACKETS_PER_CHUNK
+            try:
+                while True:
+                    chunk = await stdout.read(chunk_size)
+                    if not chunk:
+                        break
+                    yield chunk
+            finally:
+                process_info["is_mpegts_active"] = False
+                config.log_message(f"Client disconnected from MPEGTS stream for '{logical_channel_name}' with key '{video_key}'.")
+
+        response = Response(stream_generator(), mimetype='video/mp2t')
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+    finally:
+        if added_pending_stream:
+            await handler.remove_pending_stream(logical_channel_id, video_type=VideoType.MPEGTS)
+
+@app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/preview.m3u8')
 async def serve_hls_preview(logical_channel_id: str) -> Response:
     """Serves a preview HLS playlist for a channel asynchronously."""
     source_service_id = logical_channel_id.replace("preview_", "")
@@ -140,22 +213,19 @@ async def serve_hls_preview(logical_channel_id: str) -> Response:
     }]
     logical_channel_name = source_service.get('original_display_name_extinf', source_service.get('original_tvg_name', 'Preview'))
 
-    # Refactor Note: The function call is now awaited.
     return await serve_hls_playlist(logical_channel_id, logical_channel_name=logical_channel_name, sources=sources)
 
-@app.route('/hls/<string:logical_channel_id>/playlist.m3u8')
+@app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/playlist.m3u8')
 async def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str | None = None, sources: list[dict[str, Any]] | None = None) -> Response:
     """Serves the HLS playlist for a channel asynchronously."""
-    # Refactor Note: Using await for async method calls.
-    await hls_manager.record_hls_access(logical_channel_id)
+    await stream_manager.record_video_access(logical_channel_id, VideoType.HLS)
     added_pending_stream = False
     loop = asyncio.get_running_loop()
-    end_time = loop.time() + 10
+    end_time = loop.time() + CREATE_STREAM_DEADLINE
     try:
-        # Refactor Note: Replaced `time.sleep` with `await asyncio.sleep` for non-blocking waits.
-        while not await handler.add_pending_stream(logical_channel_id):
+        while not await handler.add_pending_stream(logical_channel_id, VideoType.HLS):
             if loop.time() > end_time:
-                msg = f"[{request.method} {request.path}] Exceeded timeout while waiting for earlier request for {logical_channel_id} to complete."
+                msg = f"[{request.method} {request.path}] Exceeded timeout while waiting for earlier request for HLS {logical_channel_id} to complete."
                 config.log_message(msg, level="ERROR")
                 abort(503, msg)
             await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
@@ -164,44 +234,41 @@ async def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str 
         if logical_channel_name is None:
             logical_channel = handler.get_logical_channel_by_id(logical_channel_id)
             if not logical_channel:
-                msg = f"[{request.method} {request.path}] Logical channel {logical_channel_id} not found."
+                msg = f"[{request.method} {request.path}] Logical channel {logical_channel_id} not found for HLS."
                 config.log_message(msg, level="ERROR")
                 abort(404, msg)
             logical_channel_name = str(logical_channel['display_name'])
 
-        lc_id_processes = await hls_manager.get_ffmpeg_processes_from_logical_id(logical_channel_id, long_term_only=True)
+        lc_id_processes = await stream_manager.get_ffmpeg_processes_from_logical_id(logical_channel_id, video_type=VideoType.HLS, long_term_only=True)
         if len(lc_id_processes):
-            hls_key = lc_id_processes.popitem()[0]
+            video_key = lc_id_processes.popitem()[0]
         else:
-            # Refactor Note: Replaced the blocking `CreateHLSStream(...).result()` with a single awaitable function call.
-            create_stream_task = await CreateHLSStream.create(config, handler, hls_manager, quality_monitor, logical_channel_id, logical_channel_name, sources)
+            create_stream_task = await CreateStream.create(config, handler, stream_manager, quality_monitor, logical_channel_id, logical_channel_name, VideoType.HLS, sources)
             res = await create_stream_task.result()
             if isinstance(res, tuple):
                 code, msg_text = res
                 msg = f"[{request.method} {request.path}] {msg_text}"
                 config.log_message(msg, level="ERROR")
                 abort(code, msg)
-            hls_key = res
+            video_key = res
 
-        playlist_path = await hls_manager.get_hls_playlist_path(hls_key)
+        playlist_path = await stream_manager.get_hls_playlist_path(video_key)
         if not playlist_path:
-            msg = f"[{request.method} {request.path}] Internal error: HLS playlist path not found for logical channel '{logical_channel_name}' with key '{hls_key}'."
+            msg = f"[{request.method} {request.path}] Internal error: HLS playlist path not found for logical channel '{logical_channel_name}' with key '{video_key}'."
             config.log_message(msg, level="ERROR")
             abort(500, msg)
 
         end_time = loop.time() + config.ffmpeg_start_timeout
         while loop.time() < end_time:
-            async with hls_manager.hls_process_lock:
-                if hls_key not in hls_manager.hls_ffmpeg_processes or hls_manager.hls_ffmpeg_processes[hls_key]['process'].returncode is not None:
-                    msg = f"[{request.method} {request.path}] FFmpeg process for '{logical_channel_name}' with key '{hls_key}' terminated unexpectedly."
+            async with stream_manager.stream_process_lock:
+                if video_key not in stream_manager.ffmpeg_processes or stream_manager.ffmpeg_processes[video_key]['process'].returncode is not None:
+                    msg = f"[{request.method} {request.path}] HLS FFmpeg process for '{logical_channel_name}' with key '{video_key}' terminated unexpectedly."
                     config.log_message(msg, level="ERROR")
-                    await hls_manager.stop_hls_ffmpeg_process(hls_key, logical_channel_name)
+                    await stream_manager.stop_ffmpeg_process(video_key, logical_channel_name)
                     abort(503, msg)
 
-            # Refactor Note: Using async file system operations from `aiofiles`.
             if await aiofiles.os.path.exists(playlist_path) and (await aiofiles.os.stat(playlist_path)).st_size > 0:
                 try:
-                    # Refactor Note: `send_from_directory` is now an awaitable coroutine in Quart.
                     response = await send_from_directory(str(playlist_path.parent), playlist_path.name, mimetype="application/vnd.apple.mpegurl")
                     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
                     response.headers["Pragma"] = "no-cache"
@@ -218,25 +285,25 @@ async def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str 
         abort(408, msg)
     finally:
         if added_pending_stream:
-            await handler.remove_pending_stream(logical_channel_id)
+            await handler.remove_pending_stream(logical_channel_id, video_type=VideoType.HLS)
 
-@app.route('/hls/<string:logical_channel_id>/<path:segment_filename>')
+@app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/<path:segment_filename>')
 async def serve_hls_segment(logical_channel_id: str, segment_filename: str) -> Response:
     """Serves an HLS video segment (.ts file) asynchronously."""
-    await hls_manager.record_hls_access(logical_channel_id)
+    await stream_manager.record_video_access(logical_channel_id, VideoType.HLS)
     if not segment_filename.endswith(".ts") or ".." in segment_filename:
         abort(400, f"Invalid segment filename: {segment_filename}")
     
-    segment_path = await hls_manager.get_hls_segment_path(logical_channel_id, segment_filename)
+    segment_path = await stream_manager.get_hls_segment_path(logical_channel_id, VideoType.HLS, segment_filename)
     if not segment_path or not await aiofiles.os.path.isfile(segment_path):
         abort(404, f"HLS segment not found for channel '{logical_channel_id}'")
 
     return await send_from_directory(str(segment_path.parent), segment_path.name, mimetype="video/mp2t")
 
-@app.route("/hls/<string:logical_channel_id>/stop", methods=["POST"])
-async def stop_hls_stream(logical_channel_id: str) -> Response:
-    """Stops the HLS stream for a logical channel asynchronously."""
-    await hls_manager.stop_hls_ffmpeg_processes_with_logical_channel_id(logical_channel_id)
+@app.route("/<string:video_type>/<string:logical_channel_id>/stop", methods=["POST"])
+async def stop_stream(video_type: str, logical_channel_id: str) -> Response:
+    """Stops the stream for a logical channel asynchronously."""
+    await stream_manager.stop_ffmpeg_processes_with_logical_channel_id(logical_channel_id, VideoType(video_type))
     return Response(status=204)
 
 @app.route("/playlist.m3u")
@@ -255,7 +322,6 @@ async def reload_configuration() -> Response:
         config.log_message(f"An error occurred during manual reload: {e}", level="ERROR")
         await flash(f"An error occurred during reload: {e}", "error")
     
-    # Refactor Note: `render_template` is now awaited.
     response = Response(await render_template("_flash_messages.html"))
     response.headers["HX-Trigger"] = "flashMessagesUpdated"
     return response
@@ -266,9 +332,6 @@ async def ui_flash_messages() -> str:
     return await render_template("_flash_messages.html")
 
 # --- UI Endpoints ---
-# Note: The logic within the UI routes remains largely the same, but key I/O
-# operations (like rendering templates or fetching data) are now awaited.
-
 @app.route("/")
 @app.route("/ui")
 async def ui_main_dashboard() -> str:
@@ -358,7 +421,6 @@ async def ui_logical_channel_form(logical_channel_id: str | None = None):
     all_services = handler.get_all_discovered_source_services_for_ui()
     all_quality_scores = await quality_monitor.get_quality_scores()
     
-    # ... (The rest of the complex filtering and pagination logic is CPU-bound and remains synchronous)
     other_mappings:dict[str, list[dict[str, Any]]] = handler.channel_mappings_data_from_json.copy()
     current_mappings = other_mappings.pop(logical_channel_id, []) if logical_channel_id else []
     sort_sources(current_mappings, all_quality_scores, reverse=False)
@@ -402,7 +464,6 @@ async def ui_logical_channel_form(logical_channel_id: str | None = None):
         search_query=search_query, filter_query=filter_query,
     )
 
-# ... (The remaining UI routes follow the same pattern: `async def` and `await render_template`)
 @app.route("/ui/source-services")
 async def ui_source_services_list() -> str:
     per_page = request.args.get('per_page', 100, type=int)
@@ -535,7 +596,62 @@ async def ui_player_for_service(service_id: str) -> str:
     playlist_url = url_for('serve_hls_preview', logical_channel_id=logical_channel_id)
     return await render_template("_video_player_modal.html", playlist_url=playlist_url, logical_channel_id=logical_channel_id, service_name=service_name)
 
-# Refactor Note: Manual signal handling is removed. Quart's `after_serving` hook provides a cleaner, more reliable shutdown mechanism.
+# --- HDHomeRun Emulation Endpoints ---
+
+@app.route('/discover.json')
+async def hdhomerun_discover() -> Response:
+    """Emulates HDHomeRun device discovery API endpoint."""
+    _, max_streams = await handler.get_total_stream_status_for_ui()
+    response_dict: dict[str, str | int] = {
+        "FriendlyName": "NexusStream",
+        "DeviceAuth": "nexus-stream",
+        "ModelNumber": "2.0.0",
+        "FirmwareName": "nexus-stream_2.0.0",
+        "FirmwareVersion": "2.0.0",
+        "DeviceID": "12345678",
+        "Manufacturer": "nexus-stream",
+        "BaseURL": f"{config.nexus_url}",
+        "LineupURL": f"{config.nexus_url}/lineup.json",
+        "TunerCount": max_streams
+    }
+    return Response(json.dumps(response_dict), mimetype="application/json")
+
+
+@app.route('/lineup_status.json')
+async def hdhomerun_lineup_status() -> Response:
+    """Returns the status of the lineup."""
+    response_dict: dict[str, int | str | list[str]] = {
+        "ScanInProgress": 1 if handler.is_loading() else 0,
+        "ScanPossible": 0,
+        "Source": "Cable",
+        "SourceList": ["Cable"]
+    }
+    return Response(json.dumps(response_dict), mimetype="application/json")
+
+
+@app.route('/lineup.json')
+async def hdhomerun_lineup() -> Response:
+    """Returns the channel lineup in HDHomeRun format."""
+    lineup: list[dict[str, str | int]] = []
+    quality_scores = await quality_monitor.get_quality_scores()
+    for channel in handler.logical_channels_data_from_json:
+        channel_number = channel.get('channel_num', '')
+        if not channel_number:
+            continue
+        is_hd = 1
+        for mapping in handler.channel_mappings_data_from_json.get(channel['logical_channel_id'], []):
+            if quality_scores.get(mapping['source_service_id'], {}).get('height', 0) >= 720:
+                break
+        else:
+            is_hd = 0
+        lineup.append({
+            "GuideNumber": channel_number,
+            "GuideName": channel.get('display_name', channel_number),
+            "HD": is_hd,
+            "URL": f"{config.nexus_url}/{VideoType.MPEGTS}/{channel['logical_channel_id']}"
+        })
+    return Response(json.dumps(lineup), mimetype="application/json")
+
 
 if __name__ == "__main__":
     # The startup logic will run via the `before_serving` hook when the app starts.
