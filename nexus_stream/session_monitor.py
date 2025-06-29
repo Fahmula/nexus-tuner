@@ -6,8 +6,8 @@ from typing import NoReturn, Set, Any
 # Refactor Note: Imports are updated to point to the async versions of the classes.
 from nexus_stream.config import Config
 from nexus_stream.handler import ChannelHandler
-from nexus_stream.stream import HLSStreamManager
-from nexus_stream.create_stream import HLSKey
+from nexus_stream.stream import StreamManager
+from nexus_stream.create_stream import VideoKey
 
 # --- Constants ---
 MEDIA_SERVER_API_TIMEOUT = 10
@@ -16,7 +16,7 @@ SESSION_ACTIVE_BUFFER_SECONDS = 60 # Check for sessions active within interval +
 class GhostSessionMonitor:
     """
     A background task that monitors media servers (Emby/Jellyfin) to find and
-    terminate "ghost" HLS streams using asyncio.
+    terminate "ghost" streams using asyncio.
     
     A ghost stream is an FFmpeg process that is running on the server but has no
     corresponding active viewing session on any configured media server.
@@ -119,10 +119,9 @@ class GhostSessionMonitor:
             self.config.log_message(f"Monitor: Could not get active sessions from media servers: {e}", level="ERROR")
             return
 
-        ghost_hls_keys: Set[tuple[HLSKey, str]] = set()
-        # Refactor Note: Using an async context manager for the asyncio.Lock.
-        async with self.hls_manager.hls_process_lock:
-            for hls_key, data in self.hls_manager.hls_ffmpeg_processes.items():
+        ghost_video_keys: Set[tuple[VideoKey, str]] = set()
+        async with self.stream_manager.stream_process_lock:
+            for video_key, data in self.stream_manager.ffmpeg_processes.items():
                 if data['is_preview']:
                     continue
                 if data['is_long_term'] and data['logical_channel_id'] not in legitimately_active_lc_ids:
@@ -132,14 +131,13 @@ class GhostSessionMonitor:
             self.config.log_message("Monitor: No ghost sessions found.", level="DEBUG")
             return
 
-        self.config.log_message(f"Monitor: Found {len(ghost_hls_keys)} ghost session(s) to terminate: {', '.join(g[0] for g in ghost_hls_keys)}", level="WARN")
+        self.config.log_message(f"Monitor: Found {len(ghost_video_keys)} ghost session(s) to terminate: {', '.join(g[0] for g in ghost_video_keys)}", level="WARN")
         
         # Refactor Note: Use asyncio.gather to stop all ghost streams concurrently.
         stop_tasks = []
-        for hls_key, logical_channel_name in ghost_hls_keys:
-            self.config.log_message(f"Monitor: Terminating ghost stream for '{logical_channel_name}' [{hls_key}]...", level="INFO")
-            # Refactor Note: Awaiting the async method from the refactored HLSStreamManager.
-            stop_tasks.append(self.hls_manager.stop_hls_ffmpeg_process(hls_key, logical_channel_name))
+        for video_key, logical_channel_name in ghost_video_keys:
+            self.config.log_message(f"Monitor: Terminating ghost stream for '{logical_channel_name}' [{video_key}]...", level="INFO")
+            stop_tasks.append(self.stream_manager.stop_ffmpeg_process(video_key, logical_channel_name))
         
         if stop_tasks:
             await asyncio.gather(*stop_tasks)
