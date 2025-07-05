@@ -119,15 +119,19 @@ class StreamManager:
     # Refactor Note: This method is now async to use the async lock.
     async def get_hls_segment_path(self, logical_channel_id: str, video_type: VideoType, segment_filename: str) -> Path | None:
         """Returns the path to a specific HLS segment file if the stream is active asynchronously."""
+        # This method now returns a copy, so we don't need to hold the lock while iterating.
         processes = await self.get_ffmpeg_processes_from_logical_id(logical_channel_id, video_type=video_type, long_term_only=True)
-        for video_key in processes:
-            async with self.stream_process_lock:
-                if video_key in self.ffmpeg_processes:
-                    channel_hls_dir = self.ffmpeg_processes[video_key]['channel_hls_dir']
-                    if not channel_hls_dir:
-                        self.config.log_message(f"Stream {video_key} has no HLS directory set.", level="ERROR")
-                        return None
-                    return channel_hls_dir / "playlist.m3u8"
+        if not processes:
+            return None
+        # Get the key of the first (and likely only) matching process
+        video_key = next(iter(processes))
+        async with self.stream_process_lock:
+            if video_key in self.ffmpeg_processes:
+                channel_hls_dir = self.ffmpeg_processes[video_key]['channel_hls_dir']
+                if not channel_hls_dir:
+                    self.config.log_message(f"Stream {video_key} has no HLS directory set.", level="ERROR")
+                    return None
+                return channel_hls_dir / segment_filename
         return None
 
     async def _video_cleanup_loop(self) -> NoReturn:
