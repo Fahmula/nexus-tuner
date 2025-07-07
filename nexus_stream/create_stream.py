@@ -358,7 +358,10 @@ class CreateStream:
 
             while loop.time() < end_time:
                 if await self._get_selected():
-                    raise asyncio.CancelledError("Stream selected elsewhere.")
+                    self.config.log_message(
+                        f"{video_name} {stream_info}: Halting validation because another stream was selected.", level="DEBUG")
+                    return None
+                
                 if process.returncode is not None:
                     raise ChildProcessError(f"exited prematurely with code {process.returncode}")
                 
@@ -380,15 +383,12 @@ class CreateStream:
             
             raise TimeoutError("timed out waiting for segments or process stability")
 
-        except (ChildProcessError, TimeoutError, asyncio.CancelledError) as e:
+        except (ChildProcessError, TimeoutError) as e:
             self.config.log_message(f"{video_name} {stream_info}: FFmpeg validation failed (PID: {process.pid if process else 'N/A'}): {e}. Cleaning up.", level="ERROR")
             if health_check_task and not health_check_task.done():
                 health_check_task.cancel()
             await self._remove_active_video_key(video_key)
             await self.stream_manager.stop_ffmpeg_process(video_key, video_name)
-            if stderr_log_file: await stderr_log_file.close()
-            if channel_hls_dir and await aiofiles.os.path.exists(channel_hls_dir):
-                await aioshutil.rmtree(channel_hls_dir, ignore_errors=True)
             return None
 
     async def _process_results(self) -> None:
