@@ -249,10 +249,8 @@ class StreamManager:
                 self.config.log_message(f"{name} [{video_key}]: Error closing FFmpeg log file: {e}", level="ERROR")
 
         if should_release_slot:
-            await self.handler.slots.get(provider).release_user_slot()
+            new_active_count = await self.handler.slots.get(provider).release_user_slot()
         
-        provider_streams = await self.handler.get_active_stream_status_for_logging(provider)
-
         try:
             if hls_dir and await aiofiles.os.path.exists(hls_dir):
                 await aioshutil.rmtree(hls_dir)
@@ -262,8 +260,7 @@ class StreamManager:
             
         await self.config.cleanup_ffmpeg_logs_by_age()
 
-        self.config.log_message(f"{name} [{video_key}]: Successfully stopped and cleaned up all resources {{{provider}:{provider_streams}}}", level="INFO")
-        self.config.log_message(f"{name} [{video_key}]: Successfully stopped and cleaned up all resources {{{provider}:{provider_streams}}}", level="INFO")
+        self.config.log_message(f"{name} [{video_key}]: Successfully stopped and cleaned up all resources {{{provider}:{new_active_count}}}", level="INFO")
 
     async def stop_ffmpeg_processes(self, video_keys: Iterable[VideoKey] | None = None) -> None:
         """Stops all (or a specified list of) active FFmpeg processes and cleans up resources asynchronously."""

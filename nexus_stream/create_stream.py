@@ -277,8 +277,7 @@ class CreateStream:
                 await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
                 continue
 
-            log_status_string = f"{new_active_count}/{provider_slots.get_total_slots()}"
-            created_video_key = await self._create_stream(video_key, provider_alias, source, log_status_string)
+            created_video_key = await self._create_stream(video_key, provider_alias, source, new_active_count)
             if created_video_key:
                 if not await self._set_result(created_video_key, source):
                     # Another stream was selected while this one was starting; clean up.
@@ -306,7 +305,7 @@ class CreateStream:
         self.config.log_message(f"{video_name} {stream_info}: Error reading from FFmpeg MPEG-TS stream: {error}", level="error")
         is_healthy[0] = False
 
-    async def _create_stream(self, video_key: VideoKey, provider_alias: ProviderName, source: dict[str, Any], log_status_string: str) -> VideoKey | None:
+    async def _create_stream(self, video_key: VideoKey, provider_alias: ProviderName, source: dict[str, Any], new_active_count: str) -> VideoKey | None:
         """Creates a stream using FFmpeg via an asynchronous subprocess."""
         video_name = create_video_name(self.logical_channel_name, source["source_service_id"], self.video_type)
         self._video_names[video_key] = video_name
@@ -346,7 +345,7 @@ class CreateStream:
                     'stderr_log_file_obj': stderr_log_file
                 }
             
-            self.config.log_message(f"{video_name} {stream_info}: Claimed a '{provider_alias}' slot and started FFmpeg (PID: {process.pid}) {{{provider_alias}:{log_status_string}}}.", level="INFO")
+            self.config.log_message(f"{video_name} {stream_info}: Claimed a '{provider_alias}' slot and started FFmpeg (PID: {process.pid}) {{{provider_alias}:{new_active_count}}}.", level="INFO")
 
             is_healthy: list[bool | None] = [None]
             health_check_task = None
