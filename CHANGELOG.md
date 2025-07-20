@@ -1,3 +1,18 @@
+# [2.0.0](https://github.com/Fahmula/nexus-stream/compare/v1.11.0...v2.0.0) (2025-07-20)
+
+
+### Bug Fixes
+
+* **mpegts:** update last_access on connection close ([#36](https://github.com/Fahmula/nexus-stream/issues/36)) ([5ad8bfa](https://github.com/Fahmula/nexus-stream/commit/5ad8bfadd70c06a66f847e38b0f589184b067f56))
+
+
+### Features
+
+* **ci:** enable manual release workflow ([#24](https://github.com/Fahmula/nexus-stream/issues/24)) ([ba3115e](https://github.com/Fahmula/nexus-stream/commit/ba3115e88f39eebd1f93cc8d0982acfa2f9eaf00))
+* **ci:** Enhance release workflow with dynamic config and dry run ([#33](https://github.com/Fahmula/nexus-stream/issues/33)) ([8cbffd7](https://github.com/Fahmula/nexus-stream/commit/8cbffd756196e7b01a2add09e2c00a7ba8256a98))
+* **hdhomerun:** add hdhomerun server support ([#34](https://github.com/Fahmula/nexus-stream/issues/34)) ([8eee656](https://github.com/Fahmula/nexus-stream/commit/8eee656cfb36622c9bbbfd28ec9a157f11dd2f1e))
+* **quality_monitor:** automatically probe stream if metrics ([#26](https://github.com/Fahmula/nexus-stream/issues/26)) ([e2bfea5](https://github.com/Fahmula/nexus-stream/commit/e2bfea57204cefaf1c6d35ae8151f7bfb8e2415e))
+
 # [2.0.0-rc.2](https://github.com/Fahmula/nexus-stream/compare/v2.0.0-rc.1...v2.0.0-rc.2) (2025-06-28)
 
 
