@@ -71,7 +71,7 @@ jobs:
   build-and-push:
     needs: release
     if: needs.release.outputs.new_release_published == 'true' && github.event.inputs.dry_run == 'false'
-
+    
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -79,9 +79,6 @@ jobs:
     steps:
       - name: Set up repository
         uses: actions/checkout@v4
-        with:
-          ref: v${{ needs.release.outputs.new_release_version }}
-
       - name: Convert GITHUB_REPOSITORY to lowercase
         run: echo "IMAGE_NAME=$(echo $GITHUB_REPOSITORY | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
@@ -94,20 +91,16 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-          
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ env.IMAGE_NAME }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=raw,value=latest,enable=${{ !contains(needs.release.outputs.new_release_version, '-') }}
-
       - name: Build and push Docker image
+        id: build-and-push
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            ghcr.io/${{ env.IMAGE_NAME }}:${{ needs.release.outputs.new_release_version }}
+            ${{ !contains(needs.release.outputs.new_release_version, '-') && format('ghcr.io/{0}:latest', env.IMAGE_NAME) || '' }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ needs.release.outputs.new_release_version }}
+            org.opencontainers.image.revision=${{ github.sha }}
