@@ -17,10 +17,8 @@ import math
 import os
 import sys
 from collections import deque
-from copy import deepcopy
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import Any, AsyncGenerator, NewType
+from typing import Any, AsyncGenerator
 
 # Refactor Note: Replaced Flask with Quart for native asyncio support.
 from quart import (Quart, Response, abort, flash, redirect, render_template,
@@ -41,10 +39,6 @@ from nexus_stream.stream import StreamManager
 PLAYLIST_POLL_INTERVAL = 0.2  # Seconds to wait between checking for a new playlist
 UI_SEARCH_MIN_CHARS = 3       # Minimum characters for a UI search
 UI_SEARCH_MAX_RESULTS = 50    # Max results to return in a UI search
-
-# --- Type Hinting ---
-VideoKey = NewType("VideoKey", str)
-VideoName = NewType("VideoName", str)
 
 # --- App Initialization ---
 # Refactor Note: Switched from Flask to Quart.
@@ -554,6 +548,69 @@ async def ui_provider_delete(alias: str) -> tuple[str, int]:
 async def ui_provider_status() -> str:
     active, max_total = await handler.get_total_stream_status_for_ui()
     return await render_template("_provider_status_bar.html", active_streams=active, max_total_streams=max_total)
+
+@app.route("/ui/channels/populate-from-suggestion")
+async def ui_channel_populate_from_suggestion():
+    """
+    Called when a user clicks a channel suggestion.
+    Returns multiple OOB fragments to:
+    1. Populate the channel details form.
+    2. Populate the service mapping card with pre-filtered results.
+    3. Clear the suggestion dropdown.
+    """
+    prefilled_data = {
+        'display_name': request.args.get('title', ''),
+        'channel_num': request.args.get('num', ''),
+        'group_title': request.args.get('group', 'Uncategorized'),
+        'tvg_logo': ''
+    }
+    # This becomes the main response, targeting #form-content-wrapper
+    form_html = await render_template("_logical_channel_form_fields.html", channel=prefilled_data)
+
+    # 2. Pre-filter services based on the suggested name
+    filter_query = prefilled_data['display_name'].strip().lower()
+    all_services = handler.get_all_discovered_source_services_for_ui()
+    services_mapped_elsewhere: set[str] = {mapping['source_service_id'] for mappings in handler.channel_mappings_data_from_json.values() for mapping in mappings}
+    unmapped_suggestions: list[dict[str, Any]] = []
+
+    search_query = prefilled_data['display_name']
+    for channel_list in handler.predefined_channel_list.values():
+        for pre_channel in channel_list:
+            if search_query == pre_channel.get('title'):  # Only need this check since we are populating this
+                search_query = " OR ".join(pre_channel.get('names', []))
+                break
+
+    if filter_query:
+        for service in all_services:
+            if handler.filter_sources(search_query, service):
+                unmapped_suggestions.append(service)
+
+    # 3. Paginate the pre-filtered results
+    page = 1
+    per_page = 100
+    total_unmapped_items = len(unmapped_suggestions)
+    total_pages = math.ceil(total_unmapped_items / per_page) if per_page > 0 else 1
+    unmapped_suggestions_for_page = unmapped_suggestions[:per_page]
+
+    # 4. OOB swap to update the entire service mapping card, now with data.
+    search_card_html = await render_template(
+        "_service_mapping_card.html",
+        search_query=search_query,
+        channel={},
+        unmapped_suggestions_for_page=unmapped_suggestions_for_page,
+        mapped_services=[], # New channel has no mapped services
+        services_mapped_elsewhere=services_mapped_elsewhere,
+        current_page=page,
+        total_pages=total_pages,
+        total_unmapped_items=total_unmapped_items,
+        filter_query=filter_query
+    )
+    oob_search_card = f'<div id="service-mapping-section" hx-swap-oob="innerHTML">{search_card_html}</div>'
+
+    # 5. OOB swap to clear the suggestion dropdown
+    clear_suggestions_html = '<div id="suggestion-box" hx-swap-oob="true"></div>'
+
+    return form_html + oob_search_card + clear_suggestions_html
 
 @app.route("/ui/channels/suggest", methods=["GET"])
 async def ui_channel_suggest() -> str:

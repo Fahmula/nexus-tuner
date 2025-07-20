@@ -23,7 +23,6 @@ CLEANUP_POLL_INTERVAL = 5     # seconds
 
 
 class StreamManager:
-class StreamManager:
     """
     Manages all FFmpeg subprocesses for all video stream types using asyncio.
 
@@ -75,8 +74,6 @@ class StreamManager:
         async with self.stream_process_lock:
             if long_term_only:
                 return {
-                    video_key: data for video_key, data in self.ffmpeg_processes.items()
-                    if data['logical_channel_id'] == logical_channel_id and data['video_type'] == video_type and data['is_long_term']
                     video_key: data for video_key, data in self.ffmpeg_processes.items()
                     if data['logical_channel_id'] == logical_channel_id and data['video_type'] == video_type and data['is_long_term']
                 }
@@ -172,16 +169,6 @@ class StreamManager:
                             logical_channel_name = data['logical_channel_name']
                             self.config.log_message(f"Cleanup: Stream '{logical_channel_name}' is not long-term and hasn't been cleaned up (PID: {data['process'].pid}).", level="INFO")
                             inactive_ids.add((video_key, logical_channel_name))
-                        inactive_ids.add((video_key, logical_channel_name))
-                    elif data['is_long_term']:
-                        if not data['is_mpegts_active'] and now - data['last_access'] > timedelta(seconds=timeout):
-                            logical_channel_name = data['logical_channel_name']
-                            self.config.log_message(f"Cleanup: Stream '{logical_channel_name}' timed out due to inactivity after {timeout}s (PID: {data['process'].pid}).", level="INFO")
-                            inactive_ids.add((video_key, logical_channel_name))
-                    else:
-                        if now - data['last_access'] > timedelta(seconds=CREATE_STREAM_DEADLINE + NEW_DEADLINE_NON_BEST + 5):
-                            logical_channel_name = data['logical_channel_name']
-                            self.config.log_message(f"Cleanup: Stream '{logical_channel_name}' is not long-term and hasn't been cleaned up (PID: {data['process'].pid}).", level="INFO")
                             inactive_ids.add((video_key, logical_channel_name))
             
             tasks = [self.stop_ffmpeg_process(video_key, name) for video_key, name in inactive_ids]

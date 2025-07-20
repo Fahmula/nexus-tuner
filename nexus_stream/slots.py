@@ -1,4 +1,7 @@
 import asyncio
+import threading
+import os
+import sys
 from typing import NewType, List
 
 ProviderName = NewType("ProviderName", str)
@@ -12,18 +15,28 @@ class CountingSemaphore(asyncio.Semaphore):
         super().__init__(value)
         self._total_slots = total_slots
 
-    async def acquire(self) -> int:
+    async def acquire(self) -> str:
         """Acquires the semaphore and returns the new number of active slots."""
         await super().acquire()
         # The internal `_value` is the number of available slots.
         # Active slots = Total - Available.
         active_slots = self._total_slots - self._value
+        if active_slots > self._total_slots:
+            if threading.current_thread() is threading.main_thread():
+                sys.exit(7)
+            else:
+                os._exit(7)
         return f"{active_slots}/{self._total_slots}"
 
-    def release(self) -> int:
+    def release(self) -> str:
         """Releases the semaphore and returns the new number of active slots."""
         super().release()
         active_slots = self._total_slots - self._value
+        if active_slots < 0:
+            if threading.current_thread() is threading.main_thread():
+                sys.exit(7)
+            else:
+                os._exit(7)
         return f"{active_slots}/{self._total_slots}"
 
 

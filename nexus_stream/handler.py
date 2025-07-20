@@ -41,7 +41,6 @@ class ChannelHandler:
         """
         self._startup = True
         self._loading = False
-        self._loading = False
         self.config = config
         # Refactor Note: Replaced threading.RLock with asyncio.Lock for use in async contexts.
         self._mutex = asyncio.Lock()
@@ -269,12 +268,11 @@ class ChannelHandler:
             if key in self.pending_streams:
                 return False
             self.pending_streams.add(key)
-            self.pending_streams.add(key)
             return True
 
     async def remove_pending_stream(self, logical_channel_id: str, video_type: VideoType) -> None:
         async with self._mutex:
-            self.pending_streams.discard(f"{video_type}_{logical_channel_id}")
+            self.pending_streams.remove(f"{video_type}_{logical_channel_id}")
 
     def generate_master_client_m3u(self) -> None:
         """Generates the master M3U content to be served to clients. (Sync - CPU-bound)"""

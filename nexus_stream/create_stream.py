@@ -7,7 +7,6 @@ from typing import Any, Coroutine
 # Refactor Note: Replaced threading and concurrent.futures with asyncio for native async concurrency.
 # Refactor Note: Replaced shutil with aioshutil for non-blocking file system operations.
 # Refactor Note: Imported aiofiles for async file I/O, especially for FFmpeg logs.
-import aioshutil
 import aiofiles
 import aiofiles.os
 
