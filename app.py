@@ -171,7 +171,7 @@ async def serve_mpegts_stream(logical_channel_id: str) -> Response:
                     yield chunk
             finally:  # Don't stop early incase the user reconnects, let the timeout handle it
                 config.log_message(f"Client disconnected from MPEGTS stream for '{logical_channel_name}' with key '{video_key}'.")
-                with stream_manager.stream_process_lock:
+                async with stream_manager.stream_process_lock:
                     process_info["last_access"] = datetime.now()
                     process_info["is_mpegts_active"] = False
 
