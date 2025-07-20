@@ -268,11 +268,10 @@ class StreamManager:
         async with self.stream_process_lock:
             if video_keys is None:
                 self.config.log_message("Stopping all active FFmpeg processes.", level="INFO")
-                processes_to_stop = self.ffmpeg_processes
-                self.ffmpeg_processes = {}
+                processes_to_stop = self.ffmpeg_processes.copy()
             else:
-                # Pop items to prevent the cleanup loop from trying to stop them again.
-                processes_to_stop = {key: self.ffmpeg_processes.pop(key) for key in video_keys if key in self.ffmpeg_processes}
+                async with self.stream_process_lock:
+                    processes_to_stop = {video_key: self.ffmpeg_processes[video_key] for video_key in video_keys if video_key in self.ffmpeg_processes}
                 
         tasks = [
             self.stop_ffmpeg_process(lc_id, data['logical_channel_name'])
