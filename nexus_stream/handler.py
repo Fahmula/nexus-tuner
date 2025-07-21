@@ -94,7 +94,6 @@ class ChannelHandler:
         Loads all data from JSON files and rebuilds the in-memory channel structures asynchronously.
         """
         self._loading = True
-        self._loading = True
         self.config.log_message("Loading/Reloading ChannelHandler configurations", level="INFO")
 
         if update_providers:
@@ -294,7 +293,6 @@ class ChannelHandler:
             if group := lc_data.get("group_title"): extinf_parts.append(f'group-title="{group}"')
             
             m3u_lines.append(f"#EXTINF:-1 {' '.join(extinf_parts)},{name}")
-            m3u_lines.append(f"{self.config.nexus_url}/{VideoType.HLS}/{lc_data['logical_channel_id']}/playlist.m3u8")
             m3u_lines.append(f"{self.config.nexus_url}/{VideoType.HLS}/{lc_data['logical_channel_id']}/playlist.m3u8")
         
         self.master_m3u_content = "\n".join(m3u_lines) + "\n"

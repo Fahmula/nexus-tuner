@@ -169,7 +169,6 @@ class StreamManager:
                             logical_channel_name = data['logical_channel_name']
                             self.config.log_message(f"Cleanup: Stream '{logical_channel_name}' is not long-term and hasn't been cleaned up (PID: {data['process'].pid}).", level="INFO")
                             inactive_ids.add((video_key, logical_channel_name))
-                            inactive_ids.add((video_key, logical_channel_name))
             
             tasks = [self.stop_ffmpeg_process(video_key, name) for video_key, name in inactive_ids]
             if tasks:
@@ -244,7 +243,6 @@ class StreamManager:
             if hls_dir and await aiofiles.os.path.exists(hls_dir):
                 await aioshutil.rmtree(hls_dir)
         except OSError as e:
-            self.config.log_message(f"{name} [{video_key}]: Failed to clean HLS directory {hls_dir}: {e}", level="ERROR")
             self.config.log_message(f"{name} [{video_key}]: Failed to clean HLS directory {hls_dir}: {e}", level="ERROR")
             
         await self.config.cleanup_ffmpeg_logs_by_age()
