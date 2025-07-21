@@ -40,7 +40,7 @@ def create_video_name(logical_channel_name: str, source_service_id: str, video_t
 # Refactor Note: This function is now async to perform non-blocking directory creation.
 async def create_hls_ffmpeg_command(stream_manager: StreamManager, config: Config, input_url: str, video_key: VideoKey) -> tuple[list[str], Path]:
     """Constructs the FFmpeg command list and creates the necessary HLS directory asynchronously."""
-    channel_hls_dir = stream_manager.hls_base_dir / config.get_fs_safe_alphanum(video_key)
+    channel_hls_dir = stream_manager.hls_base_dir / config.get_fs_safe_alphanum(f"{video_key}_{asyncio.get_running_loop().time()}")
     # Refactor Note: Replaced blocking Path.mkdir with aiofiles.os.makedirs for non-blocking I/O.
     await aiofiles.os.makedirs(channel_hls_dir, exist_ok=True)
     

@@ -148,7 +148,7 @@ class Config:
         Generates a safe file path for an FFmpeg log file.
         This is a pure function with no I/O, so it remains synchronous.
         """
-        log_filename = f"ffmpeg_{self.get_fs_safe_alphanum(f'{video_type}_{logical_channel_id}')}.log" 
+        log_filename = f"ffmpeg_{self.get_fs_safe_alphanum(f'{video_type}_{logical_channel_id}_{time.time()}')}.log" 
         return self.ffmpeg_logs_dir / log_filename
     
     async def cleanup_ffmpeg_logs_by_age(self) -> None:
