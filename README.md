@@ -7,14 +7,14 @@ NexusStream is a smart, self-hosted IPTV proxy that empowers you to aggregate mu
 
 ## Key Features
 
-*   **M3U Aggregation:** Combine multiple IPTV provider playlists into one unified and consistent channel lineup. Each provider can be configured with their maximum concurrent streams, which NexusStream will manage intelligently.
-*   **Web-Based UI:** A modern, user-friendly UI to manage providers, create logical channels, map sources, and view application logs. Mapping channels has never been easier with automatic suggestions and prefilled data to make the setup process frictionless.
-*   **In-Browser Previews:** Easily preview streams directly in your browser while configuring channels. No more guesswork and fiddling with external players to check stream region and language.
-*   **Automatic Quality Monitoring:** NexusStream continuously monitors the health of each source along with its resolution, bitrate, and framerate. No more endless tinkering to find the best source, just select them all and NexusStream automatically chooses the highest quality and reliable stream from your configured sources when a channel is requested.
-*   **Reliable & Fast Stream Startup:** When a channel is requested, NexusStream starts multiple mapped sources in parallel (up to the provider's limit). It then instantly selects the best healthy stream based on quality and priority, leading to faster, more reliable, and more consistent channel startup times.
-*   **HDHomeRun Server:** NexusStream can act as an HDHomeRun server, allowing you to use your IPTV channels with compatible clients that support HDHomeRun such as Plex.
-*   **On-the-Fly Remux:** All streams are processed via FFmpeg to produce an HLS or MPEGTS format, maximizing compatibility across a wide range of client devices and applications.
-*   **Ghost Session Cleanup:** Integrates with Emby and Jellyfin to detect and terminate "ghost" streams, FFmpeg processes that are still running after a client has disconnected improperly, freeing up valuable provider slots.
+*   **`M3U Aggregation:`** Combine multiple IPTV provider playlists into one unified and consistent channel lineup. Each provider can be configured with their maximum concurrent streams, which NexusStream will manage intelligently.
+*   **`Web-Based UI:`** A modern, user-friendly UI to manage providers, create logical channels, map sources, and view application logs. Mapping channels has never been easier with automatic suggestions and prefilled data to make the setup process frictionless.
+*   **`In-Browser Previews:`** Easily preview streams directly in your browser while configuring channels. No more guesswork and fiddling with external players to check stream region and language.
+*   **`Automatic Quality Monitoring:`** NexusStream continuously monitors the health of each source along with its resolution, bitrate, and framerate. No more endless tinkering to find the best source, just select them all and NexusStream automatically chooses the highest quality and most reliable stream from your configured sources when a channel is requested.
+*   **`Fast & Reliable Streams:`** When a channel is requested, NexusStream starts multiple mapped sources in parallel (up to the provider's limit). It then instantly selects the best healthy stream based on priority and quality, leading to faster, more reliable, and more consistent channel startup times. Additionally, it will automatically switch to another source if the current one fails, ensuring uninterrupted viewing.
+*   **`HDHomeRun Server:`** NexusStream can act as an HDHomeRun server, allowing you to use your IPTV channels with compatible clients that support HDHomeRun such as Plex.
+*   **`On-the-Fly Remux:`** All streams are processed via FFmpeg to produce an HLS or MPEGTS format, maximizing compatibility across a wide range of client devices and applications.
+*   **`Ghost Session Cleanup:`** Integrates with Emby and Jellyfin to detect and terminate "ghost" streams, FFmpeg processes that are still running after a client has disconnected improperly, freeing up valuable provider slots.
 
 ## Getting Started
 

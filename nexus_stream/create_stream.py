@@ -411,12 +411,12 @@ class CreateStream:
                 # 1. Select the winner.
                 video_key, source = min(self._results, key=lambda x: self._remaining_priorities[x[1]["source_service_id"]])
 
-                # 2. Make the result available to the client IMMEDIATELY.
+                # 2. Promote the winner to a long-term stream.
+                await self.stream_manager.set_ffmpeg_process_long_term(video_key, True)
+
+                # 3. Make the result available to the client IMMEDIATELY.
                 self._res = video_key
                 self._result_event.set()
-
-                # 3. Promote the winner to a long-term stream.
-                await self.stream_manager.set_ffmpeg_process_long_term(video_key, True)
 
                 # 4. Log the selection success.
                 self.config.log_message(
@@ -433,7 +433,7 @@ class CreateStream:
                         self.stream_manager.stop_ffmpeg_process(k, self._video_names.get(k, VideoName("Unknown")))
                         for k in keys_to_stop
                     ]
-                    asyncio.gather(*stop_tasks, return_exceptions=True)
+                    await asyncio.gather(*stop_tasks, return_exceptions=True)
 
         finally:
             # If the event wasn't set due to an early exit or error, ensure it's set now.

@@ -115,15 +115,19 @@ def inject_now() -> dict[str, datetime]:
 # --- Core Streaming and Playlist Endpoints ---
 
 @app.route(f'/{VideoType.MPEGTS}/<string:logical_channel_id>')
-async def serve_mpegts_stream(logical_channel_id: str) -> Response:
-    """Serves a channel stream using MPEG-TS format asynchronously."""
+async def serve_mpegts_stream(logical_channel_id: str, stream_response: bool = True, label: str | None = None) -> Response:
+    """Serves a channel stream using MPEG-TS format asynchronously.
+    If stream_response is True, it returns a generator that the client connects to, otherwise it simply creates the stream.
+    """
+    if label is None:
+        label = f"[{request.method} {request.path}]"
     added_pending_stream = False
     loop = asyncio.get_running_loop()
     end_time = loop.time() + CREATE_STREAM_DEADLINE
     try:
         while not await handler.add_pending_stream(logical_channel_id, VideoType.MPEGTS):
             if loop.time() > end_time:
-                msg = f"[{request.method} {request.path}] Exceeded timeout while waiting for earlier request for MPEGTS {logical_channel_id} to complete."
+                msg = f"{label} Exceeded timeout while waiting for earlier request for MPEGTS {logical_channel_id} to complete."
                 config.log_message(msg, level="ERROR")
                 abort(503, msg)
             await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
@@ -131,7 +135,7 @@ async def serve_mpegts_stream(logical_channel_id: str) -> Response:
 
         logical_channel = handler.get_logical_channel_by_id(logical_channel_id)
         if not logical_channel:
-            msg = f"[{request.method} {request.path}] Logical channel {logical_channel_id} not found for MPEGTS."
+            msg = f"{label} Logical channel {logical_channel_id} not found for MPEGTS."
             config.log_message(msg, level="ERROR")
             abort(404, msg)
         logical_channel_name = str(logical_channel['display_name'])
@@ -140,43 +144,64 @@ async def serve_mpegts_stream(logical_channel_id: str) -> Response:
         if len(lc_id_processes):
             video_key, p_info = lc_id_processes.popitem()
             if p_info['is_mpegts_active']:
-                msg = f"[{request.method} {request.path}] NexusStream does not currently support multiple concurrent MPEGTS streams for the same logical channel ID. Your media server should be reusing its existing request for logical channel '{logical_channel_name}' with key '{video_key}'."
+                msg = f"{label} NexusStream does not currently support multiple concurrent MPEGTS streams for the same logical channel ID. Your media server should be reusing its existing request for logical channel '{logical_channel_name}' with key '{video_key}'."
                 config.log_message(msg, level="ERROR")
                 abort(503, f"Another MPEGTS stream for logical channel '{logical_channel_name}' is already active. Please try again later.")
+            config.log_message(f"{label} Client reconnected to MPEGTS stream for '{logical_channel_name}' with key '{video_key}'.", level="INFO")
         else:
             create_stream_task = await CreateStream.create(config, handler, stream_manager, quality_monitor, logical_channel_id, logical_channel_name, VideoType.MPEGTS)
             res = await create_stream_task.result()
             if isinstance(res, tuple):
                 code, msg_text = res
-                msg = f"[{request.method} {request.path}] {msg_text}"
+                msg = f"{label} {msg_text}"
                 config.log_message(msg, level="ERROR")
                 abort(code, msg)
             video_key = res
 
+        if not stream_response:
+            config.log_message(f"{label} Recreated MPEGTS stream for logical channel '{logical_channel_name}' with key '{video_key}'.", level="INFO")
+            return Response(status=204)
+
         process_info = await stream_manager.get_ffmpeg_process_info(video_key)
         if not process_info:
-            msg = f"[{request.method} {request.path}] Internal error: MPEGTS FFmpeg process not found for logical channel '{logical_channel_name}' with key '{video_key}'."
+            msg = f"{label} Internal error: MPEGTS FFmpeg process not found for logical channel '{logical_channel_name}' with key '{video_key}'."
             config.log_message(msg, level="ERROR")
             abort(500, msg)
 
-        label = f"[{request.method} {request.path}]"
-        async def stream_generator() -> AsyncGenerator[bytes, None]:
-            process_info["is_mpegts_active"] = True
-            stdout = process_info["process"].stdout
+        async def stream_generator(process_info: dict[str, Any]) -> AsyncGenerator[bytes, None]:
             chunk_size = MPEGTS_PACKET_SIZE * MPEGTS_PACKETS_PER_CHUNK
             try:
                 while True:
-                    chunk = await stdout.read(chunk_size)
-                    if not chunk:
-                        break
-                    yield chunk
-            finally:  # Don't stop early incase the user reconnects, let the timeout handle it
+                    process_info["is_mpegts_active"] = True
+                    stdout = process_info["process"].stdout
+                    try:
+                        while True:
+                            chunk = await stdout.read(chunk_size)
+                            if not chunk:
+                                raise EOFError("End of stream reached")
+                            yield chunk
+                    except Exception as e:
+                        config.log_message(f"{label} Error reading from MPEGTS stream for '{logical_channel_name}' with key '{video_key}': {e}", level="ERROR")
+                        await stream_manager.stop_ffmpeg_processes_with_logical_channel_id(logical_channel_id, VideoType.MPEGTS)
+                        await serve_mpegts_stream(logical_channel_id, stream_response=False, label=label)
+                        process_info_res = await stream_manager.get_ffmpeg_process_info(video_key)
+                        if not process_info_res:
+                            msg = f"{label} Internal error: MPEGTS FFmpeg process not found for logical channel '{logical_channel_name}' with key '{video_key}'."
+                            config.log_message(msg, level="ERROR")
+                            abort(500, msg)
+                        process_info = process_info_res
+            except asyncio.CancelledError as e:
                 config.log_message(f"{label} Client disconnected from MPEGTS stream for '{logical_channel_name}' with key '{video_key}'.")
+                raise
+            except BaseException as e:
+                config.log_message(f"{label} Unexpected error in MPEGTS stream for '{logical_channel_name}' with key '{video_key}': {e}", level="ERROR")
+                raise
+            finally:  # Don't stop early incase the user reconnects, let the timeout handle it
                 async with stream_manager.stream_process_lock:
                     process_info["last_access"] = datetime.now()
                     process_info["is_mpegts_active"] = False
 
-        response = Response(stream_generator(), mimetype='video/mp2t')
+        response = Response(stream_generator(process_info), mimetype='video/mp2t')
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
