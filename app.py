@@ -258,12 +258,15 @@ async def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str 
 
         end_time = loop.time() + config.ffmpeg_start_timeout
         while loop.time() < end_time:
+            to_cleanup = False
             async with stream_manager.stream_process_lock:
                 if video_key not in stream_manager.ffmpeg_processes or stream_manager.ffmpeg_processes[video_key]['process'].returncode is not None:
-                    msg = f"[{request.method} {request.path}] HLS FFmpeg process for '{logical_channel_name}' with key '{video_key}' terminated unexpectedly."
-                    config.log_message(msg, level="ERROR")
-                    await stream_manager.stop_ffmpeg_process(video_key, logical_channel_name)
-                    abort(503, msg)
+                    to_cleanup = True
+            if to_cleanup:
+                msg = f"[{request.method} {request.path}] HLS FFmpeg process for '{logical_channel_name}' with key '{video_key}' terminated unexpectedly."
+                config.log_message(msg, level="ERROR")
+                await stream_manager.stop_ffmpeg_process(video_key, logical_channel_name)
+                abort(503, msg)
 
             if await aiofiles.os.path.exists(playlist_path) and (await aiofiles.os.stat(playlist_path)).st_size > 0:
                 try:
