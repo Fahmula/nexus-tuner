@@ -159,6 +159,7 @@ async def serve_mpegts_stream(logical_channel_id: str) -> Response:
             config.log_message(msg, level="ERROR")
             abort(500, msg)
 
+        label = f"[{request.method} {request.path}]"
         async def stream_generator() -> AsyncGenerator[bytes, None]:
             process_info["is_mpegts_active"] = True
             stdout = process_info["process"].stdout
@@ -170,7 +171,7 @@ async def serve_mpegts_stream(logical_channel_id: str) -> Response:
                         break
                     yield chunk
             finally:  # Don't stop early incase the user reconnects, let the timeout handle it
-                config.log_message(f"Client disconnected from MPEGTS stream for '{logical_channel_name}' with key '{video_key}'.")
+                config.log_message(f"{label} Client disconnected from MPEGTS stream for '{logical_channel_name}' with key '{video_key}'.")
                 async with stream_manager.stream_process_lock:
                     process_info["last_access"] = datetime.now()
                     process_info["is_mpegts_active"] = False
@@ -179,6 +180,7 @@ async def serve_mpegts_stream(logical_channel_id: str) -> Response:
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
+        response.timeout = None
         return response
     finally:
         if added_pending_stream:
