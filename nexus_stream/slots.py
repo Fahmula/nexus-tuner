@@ -34,12 +34,10 @@ class CountingSemaphore(asyncio.Semaphore):
         active_slots = self._total_slots - self._value
         if active_slots < 0:
             if threading.current_thread() is threading.main_thread():
-                sys.exit(7)
+                sys.exit(13)
             else:
-                os._exit(7)
+                os._exit(13)
         return f"{active_slots}/{self._total_slots}"
-
-
 
 
 class ProviderSlots:

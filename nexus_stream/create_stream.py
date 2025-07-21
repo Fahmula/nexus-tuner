@@ -433,7 +433,7 @@ class CreateStream:
                         self.stream_manager.stop_ffmpeg_process(k, self._video_names.get(k, VideoName("Unknown")))
                         for k in keys_to_stop
                     ]
-                    await asyncio.gather(*stop_tasks, return_exceptions=True)
+                    asyncio.gather(*stop_tasks, return_exceptions=True)
 
         finally:
             # If the event wasn't set due to an early exit or error, ensure it's set now.

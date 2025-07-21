@@ -219,18 +219,22 @@ class StreamManager:
         log_file: TextIOWrapper | None = data_to_cleanup.get('stderr_log_file_obj')
 
         if process.returncode is None:
-            process.terminate()
             try:
+                process.terminate()
+                if process.stdout:
+                    process.stdout._transport.close()
                 await asyncio.wait_for(process.wait(), timeout=FFMPEG_TERMINATE_TIMEOUT)
             except asyncio.TimeoutError:
                 self.config.log_message(f"{name} [{video_key}]: Killing unresponsive FFmpeg process.", level="WARN")
+                process.kill()
+            except Exception as e:
+                self.config.log_message(f"{name} [{video_key}]: Error terminating FFmpeg process: {e}", level="ERROR")
                 process.kill()
         
         if log_file:
             try:
                 await log_file.close()
             except Exception as e:
-                self.config.log_message(f"{name} [{video_key}]: Error closing FFmpeg log file: {e}", level="ERROR")
                 self.config.log_message(f"{name} [{video_key}]: Error closing FFmpeg log file: {e}", level="ERROR")
 
         if should_release_slot:
