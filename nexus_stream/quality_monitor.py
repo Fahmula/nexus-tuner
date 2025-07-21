@@ -1,7 +1,7 @@
 import asyncio
 import json
 from datetime import datetime
-from typing import NoReturn, Any
+from typing import NoReturn, Any, Self
 
 # Refactor Note: Replaced threading with asyncio for non-blocking concurrency.
 # The ChannelHandler and Config imports point to the async versions.
@@ -35,7 +35,7 @@ class QualityMonitor:
         # It will be launched as an asyncio.Task by the main application.
 
     @classmethod
-    async def create(cls, config: Config, handler: ChannelHandler) -> "QualityMonitor":
+    async def create(cls, config: Config, handler: ChannelHandler) -> Self:
         """Asynchronous factory for creating and initializing a QualityMonitor instance."""
         instance = cls(config, handler)
         # Refactor Note: Initial cache loading is now an async operation.

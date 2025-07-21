@@ -47,14 +47,14 @@ app.secret_key = os.urandom(24)
 
 # Refactor Note: Global variables are declared here and will be initialized
 # in the `startup` function, as async initialization cannot happen at the top level.
-config: Config | None = None
-handler: ChannelHandler | None = None
-stream_manager: StreamManager | None = None
-ghost_monitor: GhostSessionMonitor | None = None
-quality_monitor: QualityMonitor | None = None
+config: Config
+handler: ChannelHandler
+stream_manager: StreamManager
+ghost_monitor: GhostSessionMonitor
+quality_monitor: QualityMonitor
 
 @app.before_serving
-async def startup():
+async def startup() -> None:
     """
     Asynchronous startup function. Initializes all core components and starts background tasks.
     This is the standard Quart pattern for handling async setup.

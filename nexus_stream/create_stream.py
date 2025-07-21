@@ -2,7 +2,7 @@ import asyncio
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Coroutine
+from typing import Any, Coroutine, Self
 
 # Refactor Note: Replaced threading and concurrent.futures with asyncio for native async concurrency.
 # Refactor Note: Replaced shutil with aioshutil for non-blocking file system operations.
@@ -142,7 +142,7 @@ class CreateStream:
         self._supervisor_task: asyncio.Task | None = None
 
     @classmethod
-    async def create(cls, *args, **kwargs) -> "CreateStream":
+    async def create(cls, *args, **kwargs) -> Self:
         """
         Asynchronously creates and initializes the stream creation process.
         This factory pattern is idiomatic for async classes that need to perform

@@ -2,7 +2,7 @@ import re
 import html
 import hashlib
 import asyncio
-from typing import Any
+from typing import Any, Self
 
 # Refactor Note: Replaced requests with aiohttp for asynchronous HTTP requests.
 import aiohttp
@@ -61,7 +61,7 @@ class ChannelHandler:
         self.pending_streams: set[str] = set()
 
     @classmethod
-    async def create(cls, config: Config) -> "ChannelHandler":
+    async def create(cls, config: Config) -> Self:
         """Asynchronous factory for creating and initializing a ChannelHandler instance."""
         instance = cls(config)
         # Refactor Note: All initial data loading is now done asynchronously.

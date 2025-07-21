@@ -7,7 +7,7 @@ from enum import StrEnum
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from dotenv import load_dotenv
-from typing import Any, Callable, NewType
+from typing import Any, Callable, NewType, Self
 
 # Refactor Note: Replaced threading, shutil, and os with their async counterparts.
 import asyncio
@@ -98,7 +98,7 @@ class Config:
         self.file_lock = asyncio.Lock()
 
     @classmethod
-    async def create(cls) -> "Config":
+    async def create(cls) -> Self:
         """
         Asynchronous factory for creating and initializing a Config instance.
         This pattern is used because __init__ cannot be async.
