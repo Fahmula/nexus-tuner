@@ -219,8 +219,6 @@ class StreamManager:
         log_file: TextIOWrapper | None = data_to_cleanup.get('stderr_log_file_obj')
 
         if process.returncode is None:
-            if process.stdout:
-                process.stdout.close()
             process.terminate()
             try:
                 await asyncio.wait_for(process.wait(), timeout=FFMPEG_TERMINATE_TIMEOUT)
