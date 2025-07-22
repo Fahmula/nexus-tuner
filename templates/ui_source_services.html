@@ -63,7 +63,7 @@
                 <th>Original Group</th>
                 <th>Original TVG ID</th>
                 <th>Original Logo</th>
-                <!-- <th>Stream URL</th> -->
+                <th>Preview</th>
             </tr>
         </thead>
         <tbody>
@@ -83,6 +83,13 @@
                         {% else %}
                         -
                         {% endif %}
+                    </td>
+                    <td>
+                        <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#previewModal"
+                            hx-get="{{ url_for('ui_player_for_service', service_id=service.id) }}" hx-target="#preview-modal-body"
+                            hx-trigger="click" title="Preview Stream URL for {{ service.original_tvg_name }}">
+                            <i class="fas fa-play"></i>
+                        </button>
                     </td>
                 </tr>
                 {% endfor %}
@@ -120,5 +127,7 @@
     </ul>
 </nav>
 {% endif %}
+
+{% include '_video_preview_modal.html' %}
 
 {% endblock %}

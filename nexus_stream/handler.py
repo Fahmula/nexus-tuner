@@ -239,7 +239,7 @@ class ChannelHandler:
                         "actual_stream_url": discovered_service["actual_stream_url"],
                     })
                 else:
-                    self.config.log_message(f"Mapped source '{source_id}' for LC '{logical_channel_id}' not found in discovered services.", level="WARN")
+                    self.config.log_message(f"Mapped source '{source_id}' for '{lc_def.get('display_name', logical_channel_id)}'{f' ({lc_def['channel_num']})' if 'channel_num' in lc_def else ''} not found in discovered services.", level="WARN")
 
             if processed_sources:
                 self.client_facing_channels[logical_channel_id] = {

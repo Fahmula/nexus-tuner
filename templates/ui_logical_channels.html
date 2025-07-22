@@ -74,12 +74,12 @@
                     <span class="badge {% if discovered_percent == 100 %}bg-info
                                        {% elif discovered_percent > 75 %}bg-warning
                                        {% else %}bg-danger{% endif %}" data-bs-toggle="tooltip"
-                        title="Enabled / Discovered Mappings">
-                        {{ channel.enabled_mappings }}/{{ channel.discovered_mappings }}
+                        title="Discovered / Enabled Mappings">
+                        {{ channel.discovered_mappings }}/{{ channel.enabled_mappings }}
                     </span>
                     {% else %}
                     <span class="badge bg-secondary" data-bs-toggle="tooltip"
-                        title="Enabled / Discovered Mappings">0/0</span>
+                        title="Discovered / Enabled Mappings">0/0</span>
                     {% endif %}
                 </td>
 
