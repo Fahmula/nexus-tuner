@@ -17,7 +17,7 @@ import aioshutil
 
 VideoKey = NewType("VideoKey", str)
 VideoName = NewType("VideoName", str)
-NEXUS_STREAM_VERSION = "1.0.0"
+NEXUS_STREAM_VERSION = (Path(__file__).parent.parent / "VERSION").read_text().strip()
 NEXUS_STREAM_USER_AGENT = f"NexusStream/{NEXUS_STREAM_VERSION}"
 
 class VideoType(StrEnum):
