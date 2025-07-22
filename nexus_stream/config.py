@@ -143,12 +143,12 @@ class Config:
         """
         return re.sub(NOT_ALPHANUM_REGEX, '_', name)
 
-    def get_ffmpeg_log_path(self, logical_channel_id: str, video_type: VideoType) -> Path:
+    def get_ffmpeg_log_path(self, video_key: VideoKey) -> Path:
         """
         Generates a safe file path for an FFmpeg log file.
         This is a pure function with no I/O, so it remains synchronous.
         """
-        log_filename = f"ffmpeg_{self.get_fs_safe_alphanum(f'{video_type}_{logical_channel_id}_{time.time()}')}.log" 
+        log_filename = f"ffmpeg_{self.get_fs_safe_alphanum(f'{video_key}_{time.time()}')}.log" 
         return self.ffmpeg_logs_dir / log_filename
     
     async def cleanup_ffmpeg_logs_by_age(self) -> None:
