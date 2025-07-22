@@ -107,8 +107,8 @@ def calculate_channel_metrics(channel: dict[str, Any], mapped_services: list[dic
         channel['lowest_uptime'] = None
         channel['health_score'] = None
 
-    channel['alive_mappings'] = sum(1 for service in mapped_services if service['source_service_id'] in handler.discovered_source_services)
-    channel['total_mappings'] = len(mapped_services)
+    channel['enabled_mappings'] = len(mapped_services)
+    channel['discovered_mappings'] = sum(1 for service in mapped_services if service['source_service_id'] in handler.discovered_source_services)
 
 @app.context_processor
 def inject_global_vars() -> Dict[str, Any]:

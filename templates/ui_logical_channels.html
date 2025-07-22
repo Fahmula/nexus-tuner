@@ -54,10 +54,10 @@
         </thead>
         <tbody>
             {% for channel in channels %}
-            <tr class="{% if channel.alive_mappings is defined and channel.total_mappings is defined and channel.total_mappings > 0 %}
-                       {% set alive_percent = (channel.alive_mappings / channel.total_mappings * 100)|round %}
-                       {% if alive_percent <= 75 %}table-danger
-                       {% elif alive_percent < 100 %}table-warning{% endif %}
+            <tr class="{% if channel.discovered_mappings is defined and channel.enabled_mappings is defined and channel.enabled_mappings > 0 %}
+                       {% set discovered_percent = (channel.discovered_mappings / channel.enabled_mappings * 100)|round %}
+                       {% if discovered_percent <= 75 %}table-danger
+                       {% elif discovered_percent < 100 %}table-warning{% endif %}
                        {% endif %}">
                 <td class="align-middle" data-sort-value="{{ channel.display_name }}"><strong>{{ channel.display_name }}</strong></td>
                 <td class="align-middle" data-sort-value="{{ channel.channel_num|default(9999) }}">{{ channel.channel_num if
@@ -68,9 +68,19 @@
                     }}</td>
                 <td class="align-middle" data-sort-value="{{ channel.logical_channel_id }}"><small class="text-muted">{{
                         channel.logical_channel_id }}</small></td>
-                {% set mapping_count = handler.get_mappings_for_logical_channel(channel.logical_channel_id)|length %}
-                <td class="text-center align-middle" data-sort-value="{{ mapping_count }}">
-                    <span class="badge bg-info">{{ mapping_count }}</span>
+                <td class="text-center align-middle" data-sort-value="{{ channel.enabled_mappings }}">
+                    {% if channel.discovered_mappings is defined and channel.enabled_mappings is defined and channel.enabled_mappings > 0 %}
+                    {% set discovered_percent = (channel.discovered_mappings / channel.enabled_mappings * 100)|round %}
+                    <span class="badge {% if discovered_percent == 100 %}bg-info
+                                       {% elif discovered_percent > 75 %}bg-warning
+                                       {% else %}bg-danger{% endif %}" data-bs-toggle="tooltip"
+                        title="Enabled / Discovered Mappings">
+                        {{ channel.enabled_mappings }}/{{ channel.discovered_mappings }}
+                    </span>
+                    {% else %}
+                    <span class="badge bg-secondary" data-bs-toggle="tooltip"
+                        title="Enabled / Discovered Mappings">0/0</span>
+                    {% endif %}
                 </td>
 
                 <td class="text-center align-middle" data-sort-value="{{ channel.health_score|default(0) }}">

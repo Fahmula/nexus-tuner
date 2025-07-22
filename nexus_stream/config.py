@@ -301,8 +301,8 @@ class Config:
         for channel in data:
             channel.pop("lowest_uptime", None)
             channel.pop("health_score", None)
-            channel.pop("alive_mappings", None)
-            channel.pop("total_mappings", None)
+            channel.pop("enabled_mappings", None)
+            channel.pop("discovered_mappings", None)
         return await self._save_json_file(self.logical_channels_path, data)
 
     async def get_channel_mappings_config(self) -> dict[str, Any]:
