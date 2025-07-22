@@ -89,7 +89,7 @@ async def shutdown():
     if config:
         await config.clean_up_hls_segments()
 
-def calculate_channel_uptime(channel: dict[str, Any], mapped_services: list[dict[str, Any]], all_quality_scores: dict[str, dict[str, float]]) -> None:
+def calculate_channel_metrics(channel: dict[str, Any], mapped_services: list[dict[str, Any]], all_quality_scores: dict[str, dict[str, float]]) -> None:
     """Calculates uptime metrics for a channel. (Sync, CPU-bound logic)."""
     uptime_scores: list[float] = []
     if mapped_services:
@@ -106,6 +106,9 @@ def calculate_channel_uptime(channel: dict[str, Any], mapped_services: list[dict
     else:
         channel['lowest_uptime'] = None
         channel['health_score'] = None
+
+    channel['alive_mappings'] = sum(1 for service in mapped_services if service['source_service_id'] in handler.discovered_source_services)
+    channel['total_mappings'] = len(mapped_services)
 
 @app.context_processor
 def inject_global_vars() -> Dict[str, Any]:
@@ -379,7 +382,7 @@ async def ui_logical_channels_list() -> str:
     for channel in channels:
         mapped_services = handler.get_mappings_for_logical_channel(channel['logical_channel_id'])
         sort_sources(mapped_services, all_quality_scores, reverse=False)
-        calculate_channel_uptime(channel, mapped_services, all_quality_scores)
+        calculate_channel_metrics(channel, mapped_services, all_quality_scores)
 
     return await render_template("ui_logical_channels.html", channels=channels, handler=handler)
 
@@ -466,7 +469,7 @@ async def ui_logical_channel_form(logical_channel_id: str | None = None):
             raw_score = all_quality_scores.get(service_id, {}).get('uptime', None)
             service_details['uptime'] = int(raw_score * 100) if raw_score is not None else None
             mapped_services.append(service_details)
-    calculate_channel_uptime(channel, current_mappings, all_quality_scores)
+    calculate_channel_metrics(channel, current_mappings, all_quality_scores)
     
     unmapped_suggestions = []
     if filter_query:

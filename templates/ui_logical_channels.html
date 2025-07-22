@@ -54,7 +54,11 @@
         </thead>
         <tbody>
             {% for channel in channels %}
-            <tr>
+            <tr class="{% if channel.alive_mappings is defined and channel.total_mappings is defined and channel.total_mappings > 0 %}
+                       {% set alive_percent = (channel.alive_mappings / channel.total_mappings * 100)|round %}
+                       {% if alive_percent <= 75 %}table-danger
+                       {% elif alive_percent < 100 %}table-warning{% endif %}
+                       {% endif %}">
                 <td class="align-middle" data-sort-value="{{ channel.display_name }}"><strong>{{ channel.display_name }}</strong></td>
                 <td class="align-middle" data-sort-value="{{ channel.channel_num|default(9999) }}">{{ channel.channel_num if
                     channel.channel_num else '-' }}</td>
