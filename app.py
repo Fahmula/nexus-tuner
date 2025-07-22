@@ -241,7 +241,7 @@ async def serve_hls_preview(logical_channel_id: str) -> Response:
 @app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/playlist.m3u8')
 async def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str | None = None, sources: list[dict[str, Any]] | None = None) -> Response:
     """Serves the HLS playlist for a channel asynchronously."""
-    await stream_manager.record_video_access(logical_channel_id, VideoType.HLS)
+    asyncio.create_task(stream_manager.record_video_access(logical_channel_id, VideoType.HLS))
     added_pending_stream = False
     loop = asyncio.get_running_loop()
     end_time = loop.time() + CREATE_STREAM_DEADLINE
@@ -316,7 +316,7 @@ async def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str 
 @app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/<path:segment_filename>')
 async def serve_hls_segment(logical_channel_id: str, segment_filename: str) -> Response:
     """Serves an HLS video segment (.ts file) asynchronously."""
-    await stream_manager.record_video_access(logical_channel_id, VideoType.HLS)
+    asyncio.create_task(stream_manager.record_video_access(logical_channel_id, VideoType.HLS, segment_filename=segment_filename))
     if not segment_filename.endswith(".ts") or ".." in segment_filename:
         abort(400, f"Invalid segment filename: {segment_filename}")
     

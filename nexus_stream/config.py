@@ -81,6 +81,7 @@ class Config:
         # --- FFmpeg & HLS Configs ---
         self.hls_segment_duration: int = 1
         self.segment_prune_timeout: float = 3
+        self.latest_segment_timeout: float = 60
         self.hls_playlist_length: int = 30
         self.ffmpeg_start_timeout: float = 5
         self.ffmpeg_inactivity_timeout: int = int(os.getenv("NEXUS_FFMPEG_INACTIVITY_TIMEOUT", 900))
@@ -129,6 +130,14 @@ class Config:
         await aiofiles.os.makedirs(self.hls_base_segment_dir, exist_ok=True)
         
         await aiofiles.os.makedirs(self.ffmpeg_logs_dir, exist_ok=True)
+
+    def get_segment_format(self) -> str:
+        """Returns the format string for HLS segment files."""
+        return "segment_%05d.ts"
+
+    def get_segment_number(self, segment_filename: str) -> int:
+        """Extracts the segment number from the segment filename."""
+        return int(segment_filename.split('_')[1].split('.')[0])
 
     async def clean_up_hls_segments(self) -> None:
         """Cleans up old HLS segment files in the configured directory asynchronously."""

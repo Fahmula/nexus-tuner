@@ -16,8 +16,9 @@ import aiofiles.os
 from nexus_stream.config import CREATE_STREAM_DEADLINE, NEW_DEADLINE_NON_BEST, Config, VideoKey, VideoName, VideoType
 from nexus_stream.quality_monitor import QualityMonitor
 from nexus_stream.slots import ProviderName, ProviderSlots
+from nexus_stream.handler import ChannelHandler
 # Feature Add: Renamed HLSStreamManager to the more generic StreamManager.
-from nexus_stream.stream import ChannelHandler, StreamManager
+from nexus_stream.stream import StreamManager
 
 
 CREATE_STREAM_POLL_INTERVAL = 0.01
@@ -39,15 +40,16 @@ def create_video_name(logical_channel_name: str, source_service_id: str, video_t
 
 
 # Refactor Note: This function is now async to perform non-blocking directory creation.
-async def create_hls_ffmpeg_command(stream_manager: StreamManager, config: Config, input_url: str, video_key: VideoKey) -> tuple[list[str], Path]:
+async def create_hls_ffmpeg_command(stream_manager: StreamManager, config: Config, input_url: str, video_key: VideoKey, logical_channel_id: str) -> tuple[list[str], Path]:
     """Constructs the FFmpeg command list and creates the necessary HLS directory asynchronously."""
     channel_hls_dir = stream_manager.hls_base_dir / config.get_fs_safe_alphanum(f"{video_key}_{time.time()}")
     # Refactor Note: Replaced blocking Path.mkdir with aiofiles.os.makedirs for non-blocking I/O.
     await aiofiles.os.makedirs(channel_hls_dir, exist_ok=True)
     
     playlist_path = channel_hls_dir / "playlist.m3u8"
-    segment_filename = channel_hls_dir / "segment_%05d.ts"
-    
+    segment_filename = channel_hls_dir / config.get_segment_format()
+    latest_segment = await stream_manager.get_hls_latest_segment(logical_channel_id)
+
     command = [
         config.ffmpeg_path,
         "-hide_banner", "-loglevel", "info",
@@ -62,6 +64,7 @@ async def create_hls_ffmpeg_command(stream_manager: StreamManager, config: Confi
         "-hls_list_size", str(config.hls_playlist_length),
         "-hls_flags", "delete_segments+omit_endlist+program_date_time",
         "-hls_segment_filename", str(segment_filename),
+        "-start_number", str(latest_segment[0] if latest_segment else 0),
         str(playlist_path)
     ]
     return command, channel_hls_dir
@@ -320,7 +323,7 @@ class CreateStream:
         try:
             # Feature Add: Conditional command creation based on video type.
             if self.video_type == VideoType.HLS:
-                command, channel_hls_dir = await create_hls_ffmpeg_command(self.stream_manager, self.config, source["actual_stream_url"], video_key)
+                command, channel_hls_dir = await create_hls_ffmpeg_command(self.stream_manager, self.config, source["actual_stream_url"], video_key, self.logical_channel_id)
             elif self.video_type == VideoType.MPEGTS:
                 command = create_mpegts_ffmpeg_command(self.config, source["actual_stream_url"])
             else:

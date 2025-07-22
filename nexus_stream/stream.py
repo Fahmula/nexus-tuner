@@ -39,6 +39,7 @@ class StreamManager:
         self.config = config
         self.handler = handler
         self.ffmpeg_processes: dict[VideoKey, dict[str, Any]] = {}
+        self.hls_latest_segments: dict[str, tuple[int, datetime]] = {}
         # Refactor Note: Replaced threading.RLock with asyncio.Lock for coroutine-safe access.
         self.stream_process_lock = asyncio.Lock()
 
@@ -82,17 +83,14 @@ class StreamManager:
                 if data['logical_channel_id'] == logical_channel_id and data['video_type'] == video_type
             }
 
-    async def _record_video_access(self, logical_channel_id: str, video_type: VideoType) -> None:
+    async def record_video_access(self, logical_channel_id: str, video_type: VideoType, *, segment_filename: str | None = None) -> None:
         """Updates the last access time for the stream associated with the given logical channel ID and video type."""
         processes = await self.get_ffmpeg_processes_from_logical_id(logical_channel_id, video_type=video_type, long_term_only=False)
         async with self.stream_process_lock:
-            for video_key in processes:
-                if video_key in self.ffmpeg_processes: # Check again in case it was removed
-                    self.ffmpeg_processes[video_key]['last_access'] = datetime.now()
-
-    async def record_video_access(self, logical_channel_id: str, video_type: VideoType) -> None:
-        """Records access to a stream by updating the last access time asynchronously."""
-        await self._record_video_access(logical_channel_id, video_type)
+            for data in processes.values():
+                data['last_access'] = datetime.now()
+            if segment_filename:
+                self.hls_latest_segments[logical_channel_id] = (self.config.get_segment_number(segment_filename), datetime.now())
 
     # Refactor Note: This method is now async to use the async lock.
     async def get_hls_playlist_path(self, video_key: VideoKey) -> Path | None:
@@ -131,12 +129,22 @@ class StreamManager:
                 return channel_hls_dir / segment_filename
         return None
 
+    async def get_hls_latest_segment(self, logical_channel_id: str) -> tuple[int, datetime] | None:
+        """Returns the latest segment number and its timestamp for the given logical channel ID asynchronously."""
+        async with self.stream_process_lock:
+            return self.hls_latest_segments.get(logical_channel_id)
+
     async def _video_cleanup_loop(self) -> NoReturn:
         """Background task loop to find and stop inactive or dead streams."""
         while True:
             await asyncio.sleep(CLEANUP_POLL_INTERVAL)
             inactive_ids: set[tuple[VideoKey, str]] = set()
             async with self.stream_process_lock:
+                segment_lc_ids_to_cleanup = [(lc_id, data) for lc_id, data in self.hls_latest_segments.items() if data[1] < datetime.now() - timedelta(seconds=self.config.latest_segment_timeout)]
+                for lc_id, data in segment_lc_ids_to_cleanup:
+                    self.config.log_message(f"Cleanup: Removing latest HLS segment number cache ({data[0]}) for logical channel ID '{lc_id}'.", level="DEBUG")
+                    self.hls_latest_segments.pop(lc_id, None)    
+                
                 providers_to_kill = await self.handler.reset_kill_provider_streams()
                 
                 current_processes = list(self.ffmpeg_processes.items())
