@@ -26,10 +26,16 @@ const config = {
       }
     ],
     [
+      '@semantic-release/exec',
+      {
+        prepareCmd: 'echo ${nextRelease.version} > VERSION'
+      }
+    ],
+    [
       '@semantic-release/git',
       {
-        assets: ['CHANGELOG.md'],
-        message: 'chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}',
+        assets: ['CHANGELOG.md', 'VERSION'],
+        message: 'v${nextRelease.version}',
       }
     ],
   ],
