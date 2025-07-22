@@ -54,7 +54,14 @@ jobs:
           node-version: 'lts/*'
 
       - name: Install Semantic Release plugins
-        run: npm install semantic-release @semantic-release/commit-analyzer @semantic-release/release-notes-generator @semantic-release/changelog @semantic-release/github @semantic-release/git
+        run: |
+          npm install semantic-release \
+            @semantic-release/commit-analyzer \
+            @semantic-release/release-notes-generator \
+            @semantic-release/changelog \
+            @semantic-release/github \
+            @semantic-release/git \
+            @semantic-release/exec
 
       - name: Semantic Release
         id: semantic
