@@ -17,6 +17,8 @@ import aioshutil
 
 VideoKey = NewType("VideoKey", str)
 VideoName = NewType("VideoName", str)
+NEXUS_STREAM_VERSION = "1.0.0"
+NEXUS_STREAM_USER_AGENT = f"NexusStream/{NEXUS_STREAM_VERSION}"
 
 class VideoType(StrEnum):
     HLS = "hls"
@@ -113,6 +115,7 @@ class Config:
         """
         Performs all asynchronous I/O operations required for initialization.
         """
+        self.log_message(f"NexusStream Version: {NEXUS_STREAM_VERSION}", level="INFO")
         # Refactor Note: Use aiofiles.os.makedirs for non-blocking directory creation.
         await aiofiles.os.makedirs(self.logs_dir, exist_ok=True)
         await aiofiles.os.makedirs(self.config_dir, exist_ok=True)

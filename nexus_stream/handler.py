@@ -8,13 +8,12 @@ from typing import Any, Self
 import aiohttp
 # Refactor Note: Replaced threading with asyncio for non-blocking concurrency control.
 # The RLock is replaced with a non-reentrant asyncio.Lock, which is sufficient here.
-from nexus_stream.config import Config, VideoType
+from nexus_stream.config import Config, VideoType, NEXUS_STREAM_USER_AGENT
 from nexus_stream.slots import ProviderName, ProviderSlots
 
 # --- Constants ---
 DEFAULT_PRIORITY = 5
 PROVIDER_FETCH_TIMEOUT = 20
-NEXUS_USER_AGENT = 'NexusStream/1.0'
 TVG_NAME_REGEX = re.compile(r'tvg-name="([^"]*)"', re.IGNORECASE)
 TVG_ID_REGEX = re.compile(r'tvg-id="([^"]*)"', re.IGNORECASE)
 TVG_LOGO_REGEX = re.compile(r'tvg-logo="([^"]*)"', re.IGNORECASE)
@@ -157,7 +156,7 @@ class ChannelHandler:
         """Fetches and parses a single provider's M3U asynchronously."""
         try:
             # Refactor Note: Using async with for the aiohttp request context.
-            async with session.get(m3u_url, timeout=PROVIDER_FETCH_TIMEOUT, headers={'User-Agent': NEXUS_USER_AGENT}) as response:
+            async with session.get(m3u_url, timeout=PROVIDER_FETCH_TIMEOUT, headers={'User-Agent': NEXUS_STREAM_USER_AGENT}) as response:
                 response.raise_for_status()
                 # Refactor Fix: Removed the explicit `encoding` parameter.
                 # The previous code `response.text(encoding=response.get_encoding())` caused an error

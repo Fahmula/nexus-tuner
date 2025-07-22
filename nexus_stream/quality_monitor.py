@@ -5,7 +5,7 @@ from typing import NoReturn, Any, Self
 
 # Refactor Note: Replaced threading with asyncio for non-blocking concurrency.
 # The ChannelHandler and Config imports point to the async versions.
-from nexus_stream.config import Config
+from nexus_stream.config import Config, NEXUS_STREAM_USER_AGENT
 from nexus_stream.handler import ChannelHandler
 from nexus_stream.slots import ProviderName
 
@@ -70,7 +70,10 @@ class QualityMonitor:
         """
         duration = QUALITY_MONITOR_TIMEOUT
         cmd = [
-            "ffprobe", "-v", "error", "-select_streams", "v:0",
+            "ffprobe",
+            "-v", "error",
+            "-user_agent", NEXUS_STREAM_USER_AGENT,
+            "-select_streams", "v:0",
             "-show_entries", "stream=width,height,r_frame_rate",
             "-show_entries", "packet=pts_time,size",
             "-read_intervals", f"%+{duration}",

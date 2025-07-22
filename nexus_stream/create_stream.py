@@ -13,7 +13,7 @@ import aiofiles.os
 
 # Refactor Note: All dependent modules are now the async versions.
 # Feature Add: Imported new generalized types and constants.
-from nexus_stream.config import CREATE_STREAM_DEADLINE, NEW_DEADLINE_NON_BEST, Config, VideoKey, VideoName, VideoType
+from nexus_stream.config import CREATE_STREAM_DEADLINE, NEW_DEADLINE_NON_BEST, Config, VideoKey, VideoName, VideoType, NEXUS_STREAM_USER_AGENT
 from nexus_stream.quality_monitor import QualityMonitor
 from nexus_stream.slots import ProviderName, ProviderSlots
 from nexus_stream.handler import ChannelHandler
@@ -55,7 +55,7 @@ async def create_hls_ffmpeg_command(stream_manager: StreamManager, config: Confi
         "-hide_banner", "-loglevel", "info",
         "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "4",
         "-reconnect_on_network_error", "1", "-reconnect_on_http_error", "5xx",
-        "-user_agent", "NexusStream/1.0 (FFMPEG-HLS)",
+        "-user_agent", NEXUS_STREAM_USER_AGENT,
         "-i", input_url,
         "-codec", "copy",
         "-map", "0:v:0?", "-map", "0:a:0?",
@@ -77,7 +77,7 @@ def create_mpegts_ffmpeg_command(config: Config, input_url: str) -> list[str]:
         "-hide_banner", "-loglevel", "info",
         "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "4",
         "-reconnect_on_network_error", "1", "-reconnect_on_http_error", "5xx",
-        "-user_agent", "NexusStream/1.0 (FFMPEG-MPEGTS)",
+        "-user_agent", NEXUS_STREAM_USER_AGENT,
         "-i", input_url,
         "-c:v", "copy",
         "-c:a", "libmp3lame",

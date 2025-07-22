@@ -18,14 +18,14 @@ import os
 import sys
 from collections import deque
 from datetime import UTC, datetime
-from typing import Any, AsyncGenerator
+from typing import Any, AsyncGenerator, Dict
 
 # Refactor Note: Replaced Flask with Quart for native asyncio support.
 from quart import (Quart, Response, abort, flash, redirect, render_template,
                    request, send_from_directory, url_for)
 
 # Refactor Note: Importing the newly created async versions of the core modules.
-from nexus_stream.config import Config
+from nexus_stream.config import Config, NEXUS_STREAM_VERSION
 # Refactor Note: Importing generic StreamManager and CreateStream components.
 from nexus_stream.create_stream import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL, 
                                         MPEGTS_PACKET_SIZE, MPEGTS_PACKETS_PER_CHUNK, 
@@ -108,9 +108,12 @@ def calculate_channel_uptime(channel: dict[str, Any], mapped_services: list[dict
         channel['health_score'] = None
 
 @app.context_processor
-def inject_now() -> dict[str, datetime]:
-    """Injects the current UTC time into all templates."""
-    return {'now': datetime.now(UTC)}
+def inject_global_vars() -> Dict[str, Any]:
+    """Injects global variables into the context of all templates."""
+    return {
+        'now': datetime.now(UTC),
+        'app_version': NEXUS_STREAM_VERSION
+    }
 
 # --- Core Streaming and Playlist Endpoints ---
 
