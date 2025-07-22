@@ -27,6 +27,7 @@ COPY app.py /app
 COPY nexus_stream /app/nexus_stream
 COPY templates /app/templates
 COPY entrypoint.sh /app
+COPY VERSION /app
 
 ENV NEXUS_CONFIG_DIR=/config
 ENV NEXUS_PORT=4040
