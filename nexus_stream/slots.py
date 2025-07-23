@@ -8,8 +8,6 @@ ProviderName = NewType("ProviderName", str)
 
 GRACE_PERIOD = 3
 
-# Refactor Note: This custom semaphore now returns the new active count upon acquisition.
-# This makes the acquisition and state-checking an atomic operation for logging purposes.
 class CountingSemaphore(asyncio.Semaphore):
     def __init__(self, value: int, total_slots: int) -> None:
         super().__init__(value)
@@ -18,8 +16,6 @@ class CountingSemaphore(asyncio.Semaphore):
     async def acquire(self) -> str:
         """Acquires the semaphore and returns the new number of active slots."""
         await super().acquire()
-        # The internal `_value` is the number of available slots.
-        # Active slots = Total - Available.
         active_slots = self._total_slots - self._value
         if active_slots > self._total_slots:
             if threading.current_thread() is threading.main_thread():
@@ -95,14 +91,11 @@ class ProviderSlots:
                 try:
                     await asyncio.wait_for(asyncio.shield(task_to_preempt), timeout=GRACE_PERIOD)
                 except asyncio.TimeoutError:
-                    # This sends CancelledError into the background task,
-                    # triggering its 'finally' block for cleanup.
                     task_to_preempt.cancel()
                 except asyncio.CancelledError:
                     pass
 
             try:
-                # The cancelled background task's finally block will release the semaphore.
                 return await asyncio.wait_for(self._semaphore.acquire(), timeout=3.0)
             except asyncio.TimeoutError:
                 raise asyncio.TimeoutError(f"Could not acquire preempted slot for {self._name}.")
@@ -121,7 +114,7 @@ class ProviderSlots:
                 await asyncio.wait_for(self._semaphore.acquire(), timeout=0.01)
                 self._active_background_tasks.append(task)
             except asyncio.TimeoutError:
-                raise # Re-raise for the caller to handle.
+                raise
 
     async def release_background_slot(self, task: asyncio.Task) -> None:
         """ Releases a slot for background tasks and de-registers the task. """
@@ -130,8 +123,6 @@ class ProviderSlots:
             if task in self._active_background_tasks:
                 self._active_background_tasks.remove(task)
 
-    # Note: The async context manager (`async with`) does not return the count.
-    # For accurate logging, direct `await .acquire()` should be used.
     async def __aenter__(self) -> "ProviderSlots":
         """Acquires a slot for use in an 'async with' block."""
         await self.acquire()

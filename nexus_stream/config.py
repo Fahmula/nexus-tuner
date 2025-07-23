@@ -9,7 +9,6 @@ from pathlib import Path
 from dotenv import load_dotenv
 from typing import Any, Callable, NewType, Self
 
-# Refactor Note: Replaced threading, shutil, and os with their async counterparts.
 import asyncio
 import aiofiles
 import aiofiles.os
@@ -37,9 +36,6 @@ class Config:
     Loads settings from environment variables and provides async methods for
     accessing and persisting data to JSON files in a non-blocking, safe manner.
     """
-    # Refactor Note: The __init__ method cannot be async. To handle async setup
-    # operations, we use a factory pattern. The constructor is kept lightweight
-    # and a separate async `create` classmethod handles the I/O-bound initialization.
     def __init__(self) -> None:
         """
         Initializes the configuration object.
@@ -54,7 +50,7 @@ class Config:
             raise ValueError("NEXUS_CONFIG_DIR environment variable is not set on docker container or system.")
         self.config_dir = Path(config_dir_str)
         env_file = self.config_dir / ".env"
-        if env_file.exists(): # This initial check is sync, but acceptable at startup.
+        if env_file.exists():
             load_dotenv(env_file)
         
         nexus_url = os.getenv("NEXUS_URL")
@@ -97,7 +93,6 @@ class Config:
         self.jellyfin_api_key: str | None = os.getenv("NEXUS_JELLYFIN_API_KEY")
         self.ghost_check_interval: int = int(os.getenv("NEXUS_GHOST_SESSION_CHECK_INTERVAL", 60))
 
-        # Refactor Note: Replaced threading.Lock with asyncio.Lock for use in async contexts.
         self.file_lock = asyncio.Lock()
 
     @classmethod
@@ -116,19 +111,15 @@ class Config:
         Performs all asynchronous I/O operations required for initialization.
         """
         self.log_message(f"NexusStream v{NEXUS_STREAM_VERSION}", level="INFO")
-        # Refactor Note: Use aiofiles.os.makedirs for non-blocking directory creation.
         await aiofiles.os.makedirs(self.logs_dir, exist_ok=True)
         await aiofiles.os.makedirs(self.config_dir, exist_ok=True)
         
-        # Refactor Note: Use aiofiles.os.path.exists for a non-blocking file check.
         if not await aiofiles.os.path.exists(self.channel_list_path):
             self.log_message(f"Creating default channel list at {self.channel_list_path}", level="DEBUG")
-            # Refactor Note: Use aioshutil.copy for non-blocking file copy.
             default_list_path = Path(__file__).parent / "channel_list.json.default"
             await aioshutil.copy(default_list_path, self.channel_list_path)
         
         self.log_message(f"Cleaning HLS directory at startup: {self.hls_base_segment_dir}", level="DEBUG")
-        # Refactor Note: Use aioshutil.rmtree for non-blocking recursive directory removal.
         await aioshutil.rmtree(self.hls_base_segment_dir, ignore_errors=True)
         await aiofiles.os.makedirs(self.hls_base_segment_dir, exist_ok=True)
         
@@ -145,7 +136,6 @@ class Config:
     async def clean_up_hls_segments(self) -> None:
         """Cleans up old HLS segment files in the configured directory asynchronously."""
         self.log_message(f"Cleaning up HLS segments in {self.hls_base_segment_dir}", level="INFO")
-        # Refactor Note: Replaced shutil.rmtree with aioshutil.rmtree for non-blocking I/O.
         await aioshutil.rmtree(self.hls_base_segment_dir, ignore_errors=True)
 
     def get_fs_safe_alphanum(self, name: str) -> str:
@@ -167,7 +157,6 @@ class Config:
         """
         Deletes FFmpeg log files older than a configured number of seconds asynchronously.
         """
-        # Refactor Note: Replaced sync os.path.exists with async aiofiles.os.path.exists.
         if not await aiofiles.os.path.exists(self.ffmpeg_logs_dir):
             self.log_message(f"No FFmpeg logs directory at {self.ffmpeg_logs_dir}. Skipping cleanup.", level="DEBUG")
             return
@@ -175,7 +164,6 @@ class Config:
         cutoff_time = time.time() - self.ffmpeg_logs_retention_seconds
         files_cleaned_up = False
         
-        # Refactor Note: Replaced sync os.listdir/glob with async aiofiles.os.listdir to avoid blocking.
         try:
             log_files = await aiofiles.os.listdir(self.ffmpeg_logs_dir)
         except OSError as e:
@@ -188,10 +176,8 @@ class Config:
             
             log_file = self.ffmpeg_logs_dir / filename
             try:
-                # Refactor Note: Replaced sync stat().st_mtime with async aiofiles.os.stat.
                 stat_result = await aiofiles.os.stat(log_file)
                 if stat_result.st_mtime < cutoff_time:
-                    # Refactor Note: Replaced sync unlink() with async aiofiles.os.remove.
                     await aiofiles.os.remove(log_file)
                     files_cleaned_up = True
             except OSError as e:
@@ -204,18 +190,15 @@ class Config:
         """
         Loads data from a JSON file asynchronously and in a coroutine-safe manner.
         """
-        # Refactor Note: Use an async context manager for the asyncio.Lock.
         async with self.file_lock:
             try:
                 if not await aiofiles.os.path.exists(file_path):
                     self.log_message(f"{file_path} not found. Creating with default content.", level="DEBUG")
                     default_content = default_content_factory()
-                    # Refactor Note: Use aiofiles.open for non-blocking file writing.
                     async with aiofiles.open(file_path, "w") as f:
                         await f.write(json.dumps(default_content, indent=2))
                     return default_content
                 
-                # Refactor Note: Use aiofiles.open for non-blocking file reading.
                 async with aiofiles.open(file_path, "r") as f:
                     content = await f.read()
                     if not content.strip():
@@ -224,7 +207,6 @@ class Config:
                          async with aiofiles.open(file_path, "w") as wf:
                             await wf.write(json.dumps(default_content, indent=2))
                          return default_content
-                    # json.loads is CPU-bound, not I/O-bound, so it remains synchronous.
                     return json.loads(content)
             except (json.JSONDecodeError, OSError) as e:
                 self.log_message(f"Could not load or parse {file_path}: {e}. Returning default.", level="ERROR")
@@ -234,14 +216,11 @@ class Config:
         """
         Saves data to a JSON file atomically and asynchronously.
         """
-        # Refactor Note: Use an async context manager for the asyncio.Lock.
         async with self.file_lock:
             try:
                 temp_file_path = file_path.with_suffix(file_path.suffix + '.tmp')
                 async with aiofiles.open(temp_file_path, "w") as f:
-                    # json.dumps is CPU-bound, so it remains synchronous.
                     await f.write(json.dumps(data, indent=2))
-                # Refactor Note: Replaced sync os.replace with async aiofiles.os.replace for an atomic, non-blocking move.
                 await aiofiles.os.replace(temp_file_path, file_path)
                 return True
             except (IOError, OSError) as e:
@@ -249,14 +228,7 @@ class Config:
                 return False
             
     def log_message(self, message: str, log_filename: str = "app.log", level: str = "INFO") -> None:
-        """
-        Logs a message to a specified file and the console.
-
-        Refactor Note: The standard logging library's file handlers can be blocking.
-        For most applications, this is acceptable. For extremely high-throughput
-        logging, a dedicated async logging library might be considered. This
-        method is kept synchronous for simplicity and compatibility.
-        """
+        """Logs a message to a specified file and the console."""
         log_level_map = {
             "DEBUG": logging.DEBUG, "INFO": logging.INFO,
             "WARN": logging.WARNING, "WARNING": logging.WARNING,
@@ -282,7 +254,6 @@ class Config:
 
         self._loggers[log_filename].log(log_level_const, message)
 
-    # Refactor Note: All public API methods that perform I/O are now async.
     async def get_providers_config(self) -> dict[str, dict[str, dict[str, Any]]]:
         """Loads the providers configuration from providers.json asynchronously."""
         return await self._load_json_file(self.providers_path, lambda: {"source_m3u_providers": {}})
@@ -297,7 +268,6 @@ class Config:
 
     async def save_logical_channels_config(self, data: list[dict[str, Any]]) -> bool:
         """Saves the logical channels configuration to logical_channels.json asynchronously."""
-        # Remove transient runtime keys before saving.
         for channel in data:
             channel.pop("lowest_uptime", None)
             channel.pop("health_score", None)

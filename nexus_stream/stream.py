@@ -1,18 +1,14 @@
 import asyncio
-# Refactor Note: Replaced shutil with aioshutil for non-blocking file system operations.
 import aiofiles
 import aioshutil
 from pathlib import Path
 from datetime import datetime, timedelta
-# Refactor Note: TYPE_CHECKING imports are updated to point to the async versions of the classes.
 from typing import Any, Iterable, NoReturn
 
 from nexus_stream.config import CREATE_STREAM_DEADLINE, NEW_DEADLINE_NON_BEST, Config, VideoKey, VideoType
 from nexus_stream.handler import ChannelHandler
 from nexus_stream.slots import ProviderName
 
-# Refactor Note: The process object is now expected to be an asyncio.subprocess.Process.
-# This provides awaitable methods like .wait(), which is essential for non-blocking code.
 from asyncio.subprocess import Process
 from _io import TextIOWrapper
 
@@ -40,13 +36,11 @@ class StreamManager:
         self.handler = handler
         self.ffmpeg_processes: dict[VideoKey, dict[str, Any]] = {}
         self.hls_latest_segments: dict[str, tuple[int, datetime]] = {}
-        # Refactor Note: Replaced threading.RLock with asyncio.Lock for coroutine-safe access.
         self.stream_process_lock = asyncio.Lock()
 
         self.hls_base_dir: Path = self.config.hls_base_segment_dir
         self.config.log_message(f"HLS segments will be stored in: {self.hls_base_dir}", level="DEBUG")
         
-        # Refactor Note: The cleanup thread is replaced by an asyncio.Task.
         self.cleanup_task: asyncio.Task | None = None
 
     def start_cleanup_task(self) -> None:
@@ -60,14 +54,12 @@ class StreamManager:
         async with self.stream_process_lock:
             return self.ffmpeg_processes.get(video_key)
 
-    # Refactor Note: This method is now async to use the async lock.
     async def set_ffmpeg_process_long_term(self, video_key: VideoKey, long_term: bool) -> None:
         """Sets if an FFmpeg process is long term for a given Video key asynchronously."""
         async with self.stream_process_lock:
             if video_key in self.ffmpeg_processes:
                 self.ffmpeg_processes[video_key]['is_long_term'] = long_term
 
-    # Refactor Note: This method is now async to use the async lock.
     async def get_ffmpeg_processes_from_logical_id(self, logical_channel_id: str, *, video_type: VideoType, long_term_only: bool) -> dict[VideoKey, dict[str, Any]]:
         """
         Returns a dictionary of all FFmpeg processes associated with the given logical channel ID and video type asynchronously.
@@ -92,7 +84,6 @@ class StreamManager:
             if segment_filename:
                 self.hls_latest_segments[logical_channel_id] = (self.config.get_segment_number(segment_filename), datetime.now())
 
-    # Refactor Note: This method is now async to use the async lock.
     async def get_hls_playlist_path(self, video_key: VideoKey) -> Path | None:
         """Returns the path to the HLS playlist if the stream is active asynchronously."""
         async with self.stream_process_lock:
@@ -111,14 +102,11 @@ class StreamManager:
                 return data['channel_hls_dir'] / "playlist.m3u8"
         return None
         
-    # Refactor Note: This method is now async to use the async lock.
     async def get_hls_segment_path(self, logical_channel_id: str, video_type: VideoType, segment_filename: str) -> Path | None:
         """Returns the path to a specific HLS segment file if the stream is active asynchronously."""
-        # This method now returns a copy, so we don't need to hold the lock while iterating.
         processes = await self.get_ffmpeg_processes_from_logical_id(logical_channel_id, video_type=video_type, long_term_only=True)
         if not processes:
             return None
-        # Get the key of the first (and likely only) matching process
         video_key = next(iter(processes))
         async with self.stream_process_lock:
             if video_key in self.ffmpeg_processes:

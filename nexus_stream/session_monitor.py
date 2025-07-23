@@ -1,9 +1,7 @@
 import asyncio
-# Refactor Note: Replaced requests with aiohttp for asynchronous HTTP requests.
 import aiohttp
 from typing import NoReturn, Set, Any
 
-# Refactor Note: Imports are updated to point to the async versions of the classes.
 from nexus_stream.config import Config
 from nexus_stream.handler import ChannelHandler
 from nexus_stream.stream import StreamManager
@@ -31,8 +29,6 @@ class GhostSessionMonitor:
         self.handler = handler
         self.stream_manager = stream_manager
         
-        # Refactor Note: The threading.Thread is removed. The monitor is now a plain object
-        # whose `run` coroutine will be executed as an asyncio.Task by the application's main event loop.
         self.display_name_to_lc_id_map: dict[str, str] = {}
 
         if self.config.emby_url or self.config.jellyfin_url:
@@ -54,8 +50,6 @@ class GhostSessionMonitor:
         self.display_name_to_lc_id_map = name_map
         self.config.log_message(f"Monitor: Built map with {len(self.display_name_to_lc_id_map)} entries.", level="DEBUG")
 
-    # Refactor Note: This method is now async and uses aiohttp for non-blocking network I/O.
-    # It accepts a ClientSession to reuse connections, which is a best practice.
     async def _fetch_sessions_from_server(self, session: aiohttp.ClientSession, base_url: str | None, api_key: str | None, server_type: str) -> list[Any]:
         """Fetches active session data from a single media server asynchronously."""
         if not base_url or not api_key:
@@ -65,17 +59,13 @@ class GhostSessionMonitor:
         params = {"api_key": api_key, "ActiveWithinSeconds": self.config.ghost_check_interval + SESSION_ACTIVE_BUFFER_SECONDS}
         
         try:
-            # Refactor Note: Using async with for the aiohttp request context.
             async with session.get(url, params=params, timeout=MEDIA_SERVER_API_TIMEOUT) as response:
                 response.raise_for_status()
-                # Refactor Note: Awaiting the .json() coroutine to parse the response body.
                 return await response.json()
-        # Refactor Note: Catching aiohttp and asyncio specific exceptions.
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             self.config.log_message(f"Monitor: Could not connect to {server_type} at {base_url}: {e}", level="ERROR")
             return []
 
-    # Refactor Note: This method is now async to await the network calls.
     async def _get_legitimate_stream_ids(self) -> Set[str]:
         """
         Fetches sessions from all configured servers concurrently and returns a set of
@@ -83,9 +73,7 @@ class GhostSessionMonitor:
         """
         active_lc_ids: Set[str] = set()
         
-        # Refactor Note: Using an async context manager for the aiohttp ClientSession.
         async with aiohttp.ClientSession() as session:
-            # Refactor Note: asyncio.gather runs all fetch tasks concurrently for efficiency.
             tasks = [
                 self._fetch_sessions_from_server(session, self.config.emby_url, self.config.emby_api_key, "Emby"),
                 self._fetch_sessions_from_server(session, self.config.jellyfin_url, self.config.jellyfin_api_key, "Jellyfin")
@@ -105,14 +93,12 @@ class GhostSessionMonitor:
         
         return active_lc_ids
 
-    # Refactor Note: This method is now async to use the async lock and await other coroutines.
     async def _check_for_ghost_sessions(self) -> None:
         """The main logic loop to find and terminate ghost streams asynchronously."""
         self.config.log_message("Monitor: Running check for ghost sessions...", level="DEBUG")
         self._build_name_to_id_map()
 
         try:
-            # Refactor Note: Awaiting the async helper method.
             legitimately_active_lc_ids = await self._get_legitimate_stream_ids()
             self.config.log_message(f"Monitor: Found {len(legitimately_active_lc_ids)} legitimate sessions: {legitimately_active_lc_ids or 'None'}", level="DEBUG")
         except Exception as e:
@@ -133,7 +119,6 @@ class GhostSessionMonitor:
 
         self.config.log_message(f"Monitor: Found {len(ghost_video_keys)} ghost session(s) to terminate: {', '.join(g[0] for g in ghost_video_keys)}", level="WARN")
         
-        # Refactor Note: Use asyncio.gather to stop all ghost streams concurrently.
         stop_tasks = []
         for video_key, logical_channel_name in ghost_video_keys:
             self.config.log_message(f"Monitor: Terminating ghost stream for '{logical_channel_name}' [{video_key}]...", level="INFO")
@@ -142,7 +127,6 @@ class GhostSessionMonitor:
         if stop_tasks:
             await asyncio.gather(*stop_tasks)
 
-    # Refactor Note: The main loop is now an async method, intended to be run as a background task.
     async def run(self) -> NoReturn:
         """The main execution loop for the monitor task."""
         if not self.config.emby_url and not self.config.jellyfin_url:
@@ -150,7 +134,6 @@ class GhostSessionMonitor:
             return
 
         self.config.log_message("Ghost Session Monitor task started.", level="INFO")
-        # Refactor Note: Replaced time.sleep with await asyncio.sleep for a non-blocking initial delay.
         await asyncio.sleep(15)
         
         while True:
@@ -159,5 +142,4 @@ class GhostSessionMonitor:
             except Exception as e:
                 self.config.log_message(f"Monitor: Unhandled exception in main check loop: {e}", level="CRITICAL")
             
-            # Refactor Note: Replaced time.sleep with await asyncio.sleep for the main non-blocking wait interval.
             await asyncio.sleep(self.config.ghost_check_interval)

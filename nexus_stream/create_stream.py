@@ -5,29 +5,20 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Coroutine, Self
 
-# Refactor Note: Replaced threading and concurrent.futures with asyncio for native async concurrency.
-# Refactor Note: Replaced shutil with aioshutil for non-blocking file system operations.
-# Refactor Note: Imported aiofiles for async file I/O, especially for FFmpeg logs.
 import aiofiles
 import aiofiles.os
 
-# Refactor Note: All dependent modules are now the async versions.
-# Feature Add: Imported new generalized types and constants.
 from nexus_stream.config import CREATE_STREAM_DEADLINE, NEW_DEADLINE_NON_BEST, Config, VideoKey, VideoName, VideoType, NEXUS_STREAM_USER_AGENT
 from nexus_stream.quality_monitor import QualityMonitor
 from nexus_stream.slots import ProviderName, ProviderSlots
 from nexus_stream.handler import ChannelHandler
-# Feature Add: Renamed HLSStreamManager to the more generic StreamManager.
 from nexus_stream.stream import StreamManager
 
 
 CREATE_STREAM_POLL_INTERVAL = 0.01
-# Feature Add: Constants for MPEG-TS stream validation.
 MPEGTS_PACKET_SIZE = 188       # Size of a single MPEG-TS packet in bytes
 MPEGTS_PACKETS_PER_CHUNK = 21  # Number of packets to read at once in the MPEG-TS stream
 
-
-# --- Helper functions (remain synchronous as they are pure CPU-BOUND) ---
 
 def create_video_key(logical_channel_id: str, source_service_id: str, video_type: VideoType) -> VideoKey:
     """Generates a unique key for the stream."""
@@ -39,11 +30,9 @@ def create_video_name(logical_channel_name: str, source_service_id: str, video_t
     return VideoName(f"[{video_type}] {logical_channel_name} - {source_service_id}")
 
 
-# Refactor Note: This function is now async to perform non-blocking directory creation.
 async def create_hls_ffmpeg_command(stream_manager: StreamManager, config: Config, input_url: str, video_key: VideoKey, logical_channel_id: str) -> tuple[list[str], Path]:
     """Constructs the FFmpeg command list and creates the necessary HLS directory asynchronously."""
     channel_hls_dir = stream_manager.hls_base_dir / config.get_fs_safe_alphanum(f"{video_key}_{time.time()}")
-    # Refactor Note: Replaced blocking Path.mkdir with aiofiles.os.makedirs for non-blocking I/O.
     await aiofiles.os.makedirs(channel_hls_dir, exist_ok=True)
     
     playlist_path = channel_hls_dir / "playlist.m3u8"
@@ -113,8 +102,6 @@ class CreateStream:
     The original threaded logic is preserved using asyncio tasks and synchronization primitives.
     """
     def __init__(self, config: Config, handler: ChannelHandler, stream_manager: StreamManager, quality_monitor: QualityMonitor, logical_channel_id: str, logical_channel_name: str, video_type: VideoType, input_sources: list[dict[str, Any]] | None = None) -> None:
-        # Refactor Note: The __init__ method is now lightweight and synchronous.
-        # All async operations and task creation are moved to the `_initialize_and_start` method.
         self.config = config
         self.handler = handler
         self.stream_manager = stream_manager
@@ -124,9 +111,7 @@ class CreateStream:
         self.video_type = video_type
         
         self._res: VideoKey | tuple[int, str] = (500, f"[{video_type}] Stream not created yet")
-        # Refactor Note: Replaced threading.Lock with asyncio.Lock for coroutine-safe state management.
         self._mutex = asyncio.Lock()
-        # Refactor Note: Replaced a blocking mutex on result() with an asyncio.Event.
         # This allows `result()` to `await` completion without blocking the event loop.
         self._result_event = asyncio.Event()
 
@@ -141,7 +126,6 @@ class CreateStream:
         self._source_quality_messages: dict[str, str] = {}
         self._video_names: dict[VideoKey, VideoName] = {}
         self._deadline: float = 0.0 
-        # Refactor Note: Separate lists for supervisor and worker tasks.
         self._worker_tasks: list[asyncio.Task] = []
         self._supervisor_task: asyncio.Task | None = None
 
@@ -173,7 +157,6 @@ class CreateStream:
         for source in self._sources:
             all_provider_sources.setdefault(ProviderName(source["provider_alias"]), []).append(source)
 
-        # Refactor Note: Replaced threading.Thread with asyncio.create_task to run background coroutines.
         self._supervisor_task = asyncio.create_task(self._process_results())
 
         for provider_alias, provider_sources in all_provider_sources.items():
@@ -186,7 +169,6 @@ class CreateStream:
         await self._result_event.wait()
         return self._res
 
-    # Refactor Note: All internal state accessors are now async to use the asyncio.Lock.
     async def _get_deadline(self) -> float:
         async with self._mutex:
             return self._deadline
@@ -201,7 +183,6 @@ class CreateStream:
             if self._remaining_priorities[source["source_service_id"]] <= min(self._remaining_priorities.values()):
                 new_deadline = loop.time()
             else:
-                # Feature Add: Use configured deadline constant.
                 new_deadline = loop.time() + NEW_DEADLINE_NON_BEST
             self._deadline = min(self._deadline, new_deadline)
 
@@ -235,8 +216,6 @@ class CreateStream:
         status = await self.handler.get_provider_stream_status()
         max_streams = status[provider_alias]["max"]
         
-        # Refactor Note: Replaced ThreadPoolExecutor with a list of asyncio.Tasks and asyncio.gather.
-        # This achieves the same goal of running a fixed number of concurrent workers non-blockingly.
         worker_tasks = [
             asyncio.create_task(self._provider_worker_task(provider_alias, provider_slots, provider_sources))
             for _ in range(max_streams)
@@ -256,11 +235,9 @@ class CreateStream:
             if await self._get_selected():
                 return
 
-            # Refactor Note: The original logic of checking for an existing stream is preserved using an async lock.
             async with self.stream_manager.stream_process_lock:
                 if video_key in self.stream_manager.ffmpeg_processes and self.stream_manager.ffmpeg_processes[video_key]["process"].returncode is None:
                     if not self.stream_manager.ffmpeg_processes[video_key]["is_long_term"]:
-                        # Release lock and sleep to allow other tasks to run
                         await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
                         continue
 
@@ -283,13 +260,11 @@ class CreateStream:
             created_video_key = await self._create_stream(video_key, provider_alias, source, new_active_count)
             if created_video_key:
                 if not await self._set_result(created_video_key, source):
-                    # Another stream was selected while this one was starting; clean up.
                     await self.stream_manager.stop_ffmpeg_process(created_video_key, self._video_names[created_video_key])
                 else:
                     await self._set_deadline(source)
-                return # Worker's job is done, either successfully or because another stream was chosen.
+                return
 
-            # If stream creation failed, get the next source and loop again.
             source = await self._pop_source(provider_sources, source)
             if not source:
                 return
@@ -299,7 +274,6 @@ class CreateStream:
         """Tries to read from stdout, blocks until data is available or the stream ends."""
         error: Exception | str = "no data received or timed out"
         try:
-            # Read the first packet to confirm the stream is flowing.
             if await stdout_reader.read(MPEGTS_PACKET_SIZE):
                 is_healthy[0] = True
                 return
@@ -321,7 +295,6 @@ class CreateStream:
         stderr_log_file = None
         process = None
         try:
-            # Feature Add: Conditional command creation based on video type.
             if self.video_type == VideoType.HLS:
                 command, channel_hls_dir = await create_hls_ffmpeg_command(self.stream_manager, self.config, source["actual_stream_url"], video_key, self.logical_channel_id)
             elif self.video_type == VideoType.MPEGTS:
@@ -412,25 +385,16 @@ class CreateStream:
                     self._res = (503, f"[{self.video_type}] {self.logical_channel_name}: Failed to start {self.video_type} stream from any source.")
                     return
 
-                # 1. Select the winner.
                 video_key, source = min(self._results, key=lambda x: self._remaining_priorities[x[1]["source_service_id"]])
-
-                # 2. Promote the winner to a long-term stream.
                 await self.stream_manager.set_ffmpeg_process_long_term(video_key, True)
-
-                # 3. Make the result available to the client IMMEDIATELY.
                 self._res = video_key
                 self._result_event.set()
-
-                # 4. Log the selection success.
                 self.config.log_message(
                     f"{self._video_names[video_key]} {self._source_quality_messages[video_key]}: "
                     f"Selected as the best stream from {len(self._results)} tested and healthy sources "
                     f"(Total: {len(self._sources)} sources)",
                     level="INFO"
                 )
-
-                # 5. Identify losers and wait for their cleanup to complete.
                 keys_to_stop = [k for k in self._active_video_keys if k != video_key]
                 if keys_to_stop:
                     stop_tasks: list[Coroutine] = [
@@ -440,6 +404,5 @@ class CreateStream:
                     await asyncio.gather(*stop_tasks, return_exceptions=True)
 
         finally:
-            # If the event wasn't set due to an early exit or error, ensure it's set now.
             if not self._result_event.is_set():
                 self._result_event.set()

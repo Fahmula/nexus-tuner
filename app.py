@@ -20,13 +20,10 @@ from collections import deque
 from datetime import UTC, datetime
 from typing import Any, AsyncGenerator, Dict
 
-# Refactor Note: Replaced Flask with Quart for native asyncio support.
 from quart import (Quart, Response, abort, flash, redirect, render_template,
                    request, send_from_directory, url_for)
 
-# Refactor Note: Importing the newly created async versions of the core modules.
 from nexus_stream.config import Config, NEXUS_STREAM_VERSION
-# Refactor Note: Importing generic StreamManager and CreateStream components.
 from nexus_stream.create_stream import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL, 
                                         MPEGTS_PACKET_SIZE, MPEGTS_PACKETS_PER_CHUNK, 
                                         CreateStream, VideoType, sort_sources)
@@ -41,12 +38,9 @@ UI_SEARCH_MIN_CHARS = 3       # Minimum characters for a UI search
 UI_SEARCH_MAX_RESULTS = 50    # Max results to return in a UI search
 
 # --- App Initialization ---
-# Refactor Note: Switched from Flask to Quart.
 app = Quart(__name__)
 app.secret_key = os.urandom(24)
 
-# Refactor Note: Global variables are declared here and will be initialized
-# in the `startup` function, as async initialization cannot happen at the top level.
 config: Config
 handler: ChannelHandler
 stream_manager: StreamManager
@@ -61,30 +55,24 @@ async def startup() -> None:
     """
     global config, handler, stream_manager, ghost_monitor, quality_monitor
     try:
-        # Refactor Note: Using the async `create` factory methods for initialization.
         config = await Config.create()
         handler = await ChannelHandler.create(config)
-        # Refactor Note: Using the generic StreamManager.
         stream_manager = StreamManager(config, handler)
         ghost_monitor = GhostSessionMonitor(config, handler, stream_manager)
         quality_monitor = await QualityMonitor.create(config, handler)
 
-        # Refactor Note: Replaced background threads with asyncio tasks.
         stream_manager.start_cleanup_task()
         asyncio.create_task(ghost_monitor.run())
         asyncio.create_task(quality_monitor.run())
 
     except (ValueError, Exception) as e:
-        # A fatal error during startup should be logged and cause an exit
         print(f"FATAL: Could not initialize application: {e}", file=sys.stderr)
-        # In a real production environment, a more robust exit strategy might be needed.
         sys.exit(1)
 
 @app.after_serving
 async def shutdown():
     """Handles graceful shutdown of the application."""
     if stream_manager:
-        # Refactor Note: Awaiting the async shutdown method for all stream types.
         await stream_manager.stop_ffmpeg_processes()
     if config:
         await config.clean_up_hls_segments()
@@ -622,13 +610,13 @@ async def ui_channel_populate_from_suggestion():
     2. Populate the service mapping card with pre-filtered results.
     3. Clear the suggestion dropdown.
     """
+    # 1. Populate the channel details form with pre-filled data
     prefilled_data = {
         'display_name': request.args.get('title', ''),
         'channel_num': request.args.get('num', ''),
         'group_title': request.args.get('group', 'Uncategorized'),
         'tvg_logo': ''
     }
-    # This becomes the main response, targeting #form-content-wrapper
     form_html = await render_template("_logical_channel_form_fields.html", channel=prefilled_data)
 
     # 2. Pre-filter services based on the suggested name
@@ -777,5 +765,4 @@ async def hdhomerun_lineup() -> Response:
 
 
 if __name__ == "__main__":
-    # The startup logic will run via the `before_serving` hook when the app starts.
     app.run(host="0.0.0.0", port=os.getenv("NEXUS_PORT", 4040), use_reloader=False)

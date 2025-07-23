@@ -3,8 +3,6 @@ import json
 from datetime import datetime
 from typing import NoReturn, Any, Self
 
-# Refactor Note: Replaced threading with asyncio for non-blocking concurrency.
-# The ChannelHandler and Config imports point to the async versions.
 from nexus_stream.config import Config, NEXUS_STREAM_USER_AGENT
 from nexus_stream.handler import ChannelHandler
 from nexus_stream.slots import ProviderName
@@ -28,17 +26,13 @@ class QualityMonitor:
     def __init__(self, config: Config, handler: ChannelHandler) -> None:
         self.config = config
         self.handler = handler
-        # Refactor Note: Replaced threading.Lock with asyncio.Lock for use in async contexts.
         self._mutex = asyncio.Lock()
         self._quality_scores: dict[str, dict[str, float]] = {}
-        # Refactor Note: The background task is no longer a thread started in __init__.
-        # It will be launched as an asyncio.Task by the main application.
 
     @classmethod
     async def create(cls, config: Config, handler: ChannelHandler) -> Self:
         """Asynchronous factory for creating and initializing a QualityMonitor instance."""
         instance = cls(config, handler)
-        # Refactor Note: Initial cache loading is now an async operation.
         initial_cache = await config.get_service_quality_cache()
         await instance._build_quality_scores(initial_cache)
         return instance
@@ -58,21 +52,17 @@ class QualityMonitor:
                 del quality_cache[service_id]
                 await self.config.save_service_quality_cache(quality_cache)
 
-    # Refactor Note: Renamed from _run to run and made async. This is the main entry point for the background task.
     async def run(self) -> NoReturn:
         """The main execution loop for the monitor, run as an asyncio task."""
         self.config.log_message("Quality Monitor task started.", level="INFO")
         while True:
-            # Refactor Note: Replaced time.sleep with await asyncio.sleep for non-blocking delay.
             await asyncio.sleep(QUALITY_MONITOR_INTERVAL)
             try:
-                # Refactor Note: The main analysis logic is now an awaitable coroutine.
                 await self._analyze_mapped_services()
             except Exception as e:
                 self.config.log_message(f"Quality Monitor: Unhandled exception in main check loop: {e}", level="CRITICAL")
             self.config.log_message(f"Quality Monitor: Cycle complete. Sleeping for {QUALITY_MONITOR_INTERVAL} seconds.", level="INFO")
 
-    # Refactor Note: This method is now async and uses asyncio.create_subprocess_exec.
     async def _get_stream_info(self, service_url: str) -> dict[str, Any] | None:
         """
         Extracts stream information using ffprobe, ensuring the subprocess is
@@ -111,7 +101,6 @@ class QualityMonitor:
             return None
         except asyncio.CancelledError:
             self.config.log_message(f"ffprobe task for {service_url} was cancelled.", level="WARN")
-            # Re-raise the exception
             raise
         except (json.JSONDecodeError, IndexError) as e:
             self.config.log_message(f"Failed to parse ffprobe output for {service_url}: {e}", level="ERROR")
@@ -120,12 +109,9 @@ class QualityMonitor:
             if proc and proc.returncode is None:
                 self.config.log_message(f"Ensuring ffprobe process {proc.pid} is terminated...", level="DEBUG")
                 try:
-                    # Use kill() for forceful termination on cancellation or timeout.
                     proc.kill()
-                    # Wait for the process to avoid leaving zombies.
                     await proc.wait()
                 except ProcessLookupError:
-                    # The process already terminated, which is fine.
                     pass
 
         stream = info.get('streams', [{}])[0]
@@ -147,7 +133,6 @@ class QualityMonitor:
 
         return {"status": "online", "width": width, "height": height, "bitrate": bitrate, "framerate": frame_rate}
 
-    # Refactor Note: This method is now async.
     async def _run_single_probe(self, service_id: str, service_url: str, provider_alias: ProviderName) -> tuple[str, dict[str, str | float | int]]:
         """
         Probes a single stream, persistently trying to acquire a slot, and ensures
@@ -162,8 +147,6 @@ class QualityMonitor:
         
         try:
             while True:
-                # First, check if there are pending user streams. If so, wait.
-                # This is a "back-off" strategy to prioritize users.
                 if await self.handler.get_pending_stream_count() > 0:
                     self.config.log_message(f"Probe for {service_id} pausing for user streams...", level="DEBUG")
                     await asyncio.sleep(3)
@@ -173,14 +156,11 @@ class QualityMonitor:
                     await provider_slots.acquire_background_slot(current_task)
                     slot_acquired = True
                     self.config.log_message(f"Slot acquired for {service_id}", level="DEBUG")
-                    break # Exit the acquisition loop on success
+                    break
                 except asyncio.TimeoutError:
-                    # Slot was not available immediately. Wait a bit before retrying.
                     self.config.log_message(f"Probe for {service_id} waiting for an available slot...", level="DEBUG")
                     await asyncio.sleep(1)
 
-            # If this task is cancelled by ProviderSlots, the CancelledError is raised here.
-            # It will propagate into _get_stream_info, which will kill its ffprobe process.
             stream_info = await self._get_stream_info(service_url)
             
             if not stream_info:
@@ -188,22 +168,16 @@ class QualityMonitor:
             return service_id, stream_info
 
         except asyncio.CancelledError:
-            # This is caught if ProviderSlots preempts us at any `await` point.
-            # This can happen either during the acquisition loop or during the probe itself.
             self.config.log_message(f"Probe task for {service_id} was cancelled by slot manager.", level="INFO")
-            # Re-raise to signal that cancellation was successful.
             raise
         except Exception as e:
-            # This will catch any unexpected error *not* related to cancellation.
             self.config.log_message(f"Unexpected error during probe for {service_id}: {e}", level="ERROR")
             return service_id, {"status": "offline", "reason": f"Probe failed: {e}"}
         finally:
-            # This block ensures that if we successfully acquired a slot, we ALWAYS release it.
             if slot_acquired:
                 await provider_slots.release_background_slot(current_task)
                 self.config.log_message(f"Slot released for {service_id}", level="DEBUG")
     
-    # Refactor Note: This method is now fully async.
     async def _analyze_mapped_services(self) -> None:
         """Finds and probes all mapped services concurrently using asyncio.gather."""
         self.config.log_message("Quality Monitor: Starting stream quality analysis cycle.", level="INFO")
@@ -226,7 +200,6 @@ class QualityMonitor:
                     continue
                 
                 seen_tasks.add(service_id)
-                # Refactor Note: Create a coroutine object for each probe task.
                 tasks.append(
                     self._run_single_probe(
                         service_id, 
@@ -239,8 +212,6 @@ class QualityMonitor:
             self.config.log_message("Quality Monitor: No valid services found to probe.", level="INFO")
             return
 
-        # Refactor Note: Replaced ThreadPoolExecutor with asyncio.gather for non-blocking concurrency.
-        # This runs all probe tasks concurrently on the single event loop.
         all_results = await asyncio.gather(*tasks)
 
         self.config.log_message(f"Quality Monitor: {len(all_results)} probes complete. Processing results.", level="DEBUG")
@@ -257,14 +228,13 @@ class QualityMonitor:
                 if result['status'] == 'online':
                     service_entry["statuses"].append("online")
                     for key in ["widths", "heights", "bitrates", "framerates"]:
-                        metric_key = key[:-1] # e.g., "widths" -> "width"
+                        metric_key = key[:-1]
                         if value := result.get(metric_key):
                             service_entry[key].append(value)
                 else:
                     self.config.log_message(f"Quality Monitor: Service {service_id} is offline: {result.get('reason', 'Unknown')}", level="WARN")
                     service_entry["statuses"].append("offline")
 
-                # Prune history for all metrics
                 for key in ["statuses", "widths", "heights", "bitrates", "framerates"]:
                     if len(service_entry[key]) > MAX_HISTORY_PER_SERVICE:
                         service_entry[key] = service_entry[key][-MAX_HISTORY_PER_SERVICE:]
@@ -278,7 +248,6 @@ class QualityMonitor:
         
         quality_scores: dict[str, dict[str, float]] = {}
         for service_id, cache_entry in quality_cache.items():
-            # This logic is CPU-bound and remains unchanged.
             avg_width = sum(cache_entry.get("widths", [])) / len(cache_entry["widths"]) if cache_entry.get("widths") else 0.0
             avg_height = sum(cache_entry.get("heights", [])) / len(cache_entry["heights"]) if cache_entry.get("heights") else 0.0
             avg_bitrate = sum(cache_entry.get("bitrates", [])) / len(cache_entry["bitrates"]) if cache_entry.get("bitrates") else 0.0
