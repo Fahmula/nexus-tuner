@@ -1,13 +1,12 @@
 <div class="card">
     <div class="card-header">
         Map Source Services to "<span id="channel-name-header">{{ channel.display_name or 'New Channel' }}</span>"
-        {% if channel.discovered_mappings is defined and channel.enabled_mappings is defined and channel.enabled_mappings > 0 %}
-        {% set discovered_percent = (channel.discovered_mappings / channel.enabled_mappings * 100)|round %}
-            <span class="badge float-end {% if discovered_percent == 100 %}bg-info
-                {% elif discovered_percent > 75 %}bg-warning
-                {% else %}bg-danger{% endif %}" data-bs-toggle="tooltip" title="Discovered / Enabled Mappings">
-                Discovered / Enabled Mappings: {{ channel.discovered_mappings }}/{{ channel.enabled_mappings }}
-            </span>
+        {% if channel.discovered_mappings != channel.enabled_mappings %}
+            <button class="btn btn-sm btn-danger ms-2 float-end"
+                hx-delete="{{ url_for('ui_remove_dead_mappings', logical_channel_id=channel.logical_channel_id) }}"
+                hx-target="#service-list-container">
+                <i class="fas fa-trash-alt"></i> Remove Dead Mappings ({{ channel.enabled_mappings - channel.discovered_mappings }})
+            </button>
         {% endif %}
     </div>
     <div class="card-body">

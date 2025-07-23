@@ -496,6 +496,34 @@ async def ui_logical_channel_form(logical_channel_id: str | None = None):
         search_query=search_query, filter_query=filter_query,
     )
 
+@app.route("/ui/remove-dead-mappings/<string:logical_channel_id>", methods=["DELETE"])
+async def ui_remove_dead_mappings(logical_channel_id: str) -> Response:
+    """Removes dead mappings from logical channels asynchronously."""
+    channel = handler.get_logical_channel_by_id(logical_channel_id)
+    if not channel:
+        await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
+        return Response("", 404)
+    discovered: list[dict[str, Any]] = []
+    removed_count = 0
+    for service in handler.get_mappings_for_logical_channel(logical_channel_id):
+        if service['source_service_id'] in handler.discovered_source_services:
+            discovered.append(service)
+        else:
+            await quality_monitor.remove_source_service(service['source_service_id'])
+            removed_count += 1
+    await handler.update_mappings_for_logical_channel(logical_channel_id, discovered)
+
+    channel_log = f"'{channel.get('display_name', 'Unknown Channel')}'{f' ({channel['channel_num']})' if 'channel_num' in channel else ''}"
+    if removed_count > 0:
+        await flash(f"Removed {removed_count} dead mapping(s) from {channel_log}.", "success")
+    else:
+        await flash(f"No dead mappings found to remove from {channel_log}.", "info")
+
+    response = Response("", 200)
+    response.headers["HX-Refresh"] = "true"
+    response.headers["HX-Trigger"] = "flashMessagesUpdated"
+    return response
+
 @app.route("/ui/source-services")
 async def ui_source_services_list() -> str:
     per_page = request.args.get('per_page', 100, type=int)

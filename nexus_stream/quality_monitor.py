@@ -48,6 +48,16 @@ class QualityMonitor:
         async with self._mutex:
             return self._quality_scores.copy()
 
+    async def remove_source_service(self, service_id: str) -> None:
+        """Removes a source service from the quality scores and cache."""
+        async with self._mutex:
+            if service_id in self._quality_scores:
+                del self._quality_scores[service_id]
+            quality_cache = await self.config.get_service_quality_cache()
+            if service_id in quality_cache:
+                del quality_cache[service_id]
+                await self.config.save_service_quality_cache(quality_cache)
+
     # Refactor Note: Renamed from _run to run and made async. This is the main entry point for the background task.
     async def run(self) -> NoReturn:
         """The main execution loop for the monitor, run as an asyncio task."""
@@ -234,36 +244,34 @@ class QualityMonitor:
         all_results = await asyncio.gather(*tasks)
 
         self.config.log_message(f"Quality Monitor: {len(all_results)} probes complete. Processing results.", level="DEBUG")
+        async with self._mutex:
+            quality_cache = await self.config.get_service_quality_cache()
 
-        # Refactor Note: Awaiting the async config methods.
-        quality_cache = await self.config.get_service_quality_cache()
+            for service_id, result in all_results:
+                service_entry = quality_cache.setdefault(service_id, {
+                    "updated_at": datetime.now().isoformat(), "statuses": [], "widths": [],
+                    "heights": [], "bitrates": [], "framerates": []
+                })
 
-        for service_id, result in all_results:
-            service_entry = quality_cache.setdefault(service_id, {
-                "updated_at": datetime.now().isoformat(), "statuses": [], "widths": [],
-                "heights": [], "bitrates": [], "framerates": []
-            })
+                service_entry["updated_at"] = datetime.now().isoformat()
+                if result['status'] == 'online':
+                    service_entry["statuses"].append("online")
+                    for key in ["widths", "heights", "bitrates", "framerates"]:
+                        metric_key = key[:-1] # e.g., "widths" -> "width"
+                        if value := result.get(metric_key):
+                            service_entry[key].append(value)
+                else:
+                    self.config.log_message(f"Quality Monitor: Service {service_id} is offline: {result.get('reason', 'Unknown')}", level="WARN")
+                    service_entry["statuses"].append("offline")
 
-            service_entry["updated_at"] = datetime.now().isoformat()
-            if result['status'] == 'online':
-                service_entry["statuses"].append("online")
-                for key in ["widths", "heights", "bitrates", "framerates"]:
-                    metric_key = key[:-1] # e.g., "widths" -> "width"
-                    if value := result.get(metric_key):
-                        service_entry[key].append(value)
-            else:
-                self.config.log_message(f"Quality Monitor: Service {service_id} is offline: {result.get('reason', 'Unknown')}", level="WARN")
-                service_entry["statuses"].append("offline")
+                # Prune history for all metrics
+                for key in ["statuses", "widths", "heights", "bitrates", "framerates"]:
+                    if len(service_entry[key]) > MAX_HISTORY_PER_SERVICE:
+                        service_entry[key] = service_entry[key][-MAX_HISTORY_PER_SERVICE:]
 
-            # Prune history for all metrics
-            for key in ["statuses", "widths", "heights", "bitrates", "framerates"]:
-                if len(service_entry[key]) > MAX_HISTORY_PER_SERVICE:
-                    service_entry[key] = service_entry[key][-MAX_HISTORY_PER_SERVICE:]
+            await self.config.save_service_quality_cache(quality_cache)
+            await self._build_quality_scores(quality_cache)
 
-        await self.config.save_service_quality_cache(quality_cache)
-        await self._build_quality_scores(quality_cache)
-
-    # Refactor Note: This method is now async to use the async lock.
     async def _build_quality_scores(self, quality_cache: dict[str, dict[str, list]]) -> None:
         """Calculates quality scores asynchronously and updates the internal state."""
         self.config.log_message("Quality Monitor: Building quality scores from cache.", level="DEBUG")
@@ -291,7 +299,5 @@ class QualityMonitor:
                 "total_score": height_score + bitrate_score + framerate_score + uptime_score,
             }
 
-        # Refactor Note: Using an async context manager for the asyncio.Lock.
-        async with self._mutex:
-            self._quality_scores = quality_scores
+        self._quality_scores = quality_scores
         self.config.log_message("Quality Monitor: Quality scores built successfully.", level="DEBUG")
