@@ -168,11 +168,14 @@
             integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL"
             crossorigin="anonymous"></script>
     <script>
-        document.body.addEventListener('htmx:afterSwap', function(event) {
-            // Re-initialize Bootstrap tooltips after an HTMX swap
-            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-            tooltipTriggerList.map(function (tooltipTriggerEl) {
-              return new bootstrap.Tooltip(tooltipTriggerEl);
+        document.body.addEventListener('htmx:afterSwap', function (event) {
+            document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (tooltipEl) {
+                if (!tooltipEl.hasAttribute('data-tooltip-initialized')) {
+                    new bootstrap.Tooltip(tooltipEl, {
+                        trigger: 'hover focus'
+                    });
+                    tooltipEl.setAttribute('data-tooltip-initialized', 'true');
+                }
             });
         });
 
