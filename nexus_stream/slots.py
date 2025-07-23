@@ -73,7 +73,7 @@ class ProviderSlots:
     def get_active_slots(self) -> int:
         return self._total_slots - self._semaphore._value
 
-    async def acquire_user_slot(self) -> int:
+    async def acquire_user_slot(self) -> str:
         """
         Acquires a user slot, preempting a background task if necessary.
         """

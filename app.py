@@ -170,7 +170,7 @@ async def serve_mpegts_stream(logical_channel_id: str, stream_response: bool = T
                     stdout = process_info["process"].stdout
                     try:
                         while True:
-                            chunk = await stdout.read(chunk_size)
+                            chunk = await stdout.readexactly(chunk_size)
                             if not chunk:
                                 raise EOFError("End of stream reached")
                             yield chunk

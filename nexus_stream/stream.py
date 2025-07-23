@@ -211,7 +211,7 @@ class StreamManager:
         process: Process = data_to_cleanup['process']
         provider = ProviderName(data_to_cleanup['provider_alias'])
         hls_dir: Path | None = data_to_cleanup['channel_hls_dir']
-        log_file: TextIOWrapper | None = data_to_cleanup.get('stderr_log_file_obj')
+        log_file: aiofiles.threadpool.text.AsyncTextIOWrapper | None = data_to_cleanup.get('stderr_log_file_obj')
 
         if process.returncode is None:
             try:
