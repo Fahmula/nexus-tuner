@@ -667,7 +667,7 @@ async def ui_logical_channel_delete(logical_channel_id: str) -> Response:
     return redirect(url_for('ui_logical_channels_list'))
 
 @app.route("/ui/logs/modal")
-async def ui_logs_modal():
+async def ui_logs_modal() -> str:
     log_lines = []
     log_file_path = config.logs_dir / 'app.log'
     try:
@@ -698,9 +698,9 @@ async def hdhomerun_discover() -> Response:
     response_dict: dict[str, str | int] = {
         "FriendlyName": "NexusStream",
         "DeviceAuth": "nexus-stream",
-        "ModelNumber": "2.0.0",
-        "FirmwareName": "nexus-stream_2.0.0",
-        "FirmwareVersion": "2.0.0",
+        "ModelNumber": NEXUS_STREAM_VERSION,
+        "FirmwareName": f"nexus-stream_{NEXUS_STREAM_VERSION}",
+        "FirmwareVersion": NEXUS_STREAM_VERSION,
         "DeviceID": "12345678",
         "Manufacturer": "nexus-stream",
         "BaseURL": f"{config.nexus_url}",
