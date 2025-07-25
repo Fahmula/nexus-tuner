@@ -208,6 +208,7 @@ class StreamManager:
         else:
             should_release_slot = False
 
+        name = f"[{data_to_cleanup['video_type']}] {name}" if not name.startswith(f"[{data_to_cleanup['video_type']}]") else name
         process: Process = data_to_cleanup['process']
         provider = ProviderName(data_to_cleanup['provider_alias'])
         hls_dir: Path | None = data_to_cleanup['channel_hls_dir']
@@ -232,8 +233,15 @@ class StreamManager:
             except Exception as e:
                 self.config.log_message(f"{name} [{video_key}]: Error closing FFmpeg log file: {e}", level="ERROR")
 
-        if should_release_slot:
-            new_active_count = await self.handler.slots.get(provider).release_user_slot()
+        provider_slots = self.handler.slots.get(provider)
+        if provider_slots:
+            if should_release_slot:
+                new_active_count = await provider_slots.release_user_slot()
+            else:
+                new_active_count = f"0/{provider_slots.get_total_slots()}"
+        else:
+            self.config.log_message(f"{name} [{video_key}]: No slots found for provider '{provider}'.", level="ERROR")
+            new_active_count = "N/A"
         
         try:
             if hls_dir and await aiofiles.os.path.exists(hls_dir):

@@ -2,7 +2,7 @@ import asyncio
 import threading
 import os
 import sys
-from typing import NewType, List
+from typing import Any, NewType, List
 
 ProviderName = NewType("ProviderName", str)
 
@@ -48,7 +48,7 @@ class ProviderSlots:
         self._name = name
         self._m3u_url = m3u_url
         self._total_slots = total_slots
-        self._active_background_tasks: List[asyncio.Task] = []
+        self._active_background_tasks: List[asyncio.Task[Any]] = []
         self._lock = asyncio.Lock()
         self._semaphore = CountingSemaphore(total_slots, total_slots)
 
@@ -101,13 +101,13 @@ class ProviderSlots:
                 raise asyncio.TimeoutError(f"Could not acquire preempted slot for {self._name}.")
 
 
-    async def release_user_slot(self) -> None:
+    async def release_user_slot(self) -> str:
         """Releases a slot for a user."""
         async with self._lock:
             new_active_count = self._semaphore.release()
             return new_active_count
 
-    async def acquire_background_slot(self, task: asyncio.Task) -> None:
+    async def acquire_background_slot(self, task: asyncio.Task[Any]) -> None:
         """ Acquires a slot for a background task and registers the task. """
         async with self._lock:
             try:
@@ -116,18 +116,9 @@ class ProviderSlots:
             except asyncio.TimeoutError:
                 raise
 
-    async def release_background_slot(self, task: asyncio.Task) -> None:
+    async def release_background_slot(self, task: asyncio.Task[Any]) -> None:
         """ Releases a slot for background tasks and de-registers the task. """
         async with self._lock:
             self._semaphore.release()
             if task in self._active_background_tasks:
                 self._active_background_tasks.remove(task)
-
-    async def __aenter__(self) -> "ProviderSlots":
-        """Acquires a slot for use in an 'async with' block."""
-        await self.acquire()
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Ensures a slot is released when exiting an 'async with' block."""
-        await self.release()

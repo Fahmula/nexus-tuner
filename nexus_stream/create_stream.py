@@ -3,7 +3,7 @@ import time
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Coroutine, Self
+from typing import Any, Self
 
 import aiofiles
 import aiofiles.os
@@ -18,7 +18,6 @@ from nexus_stream.stream import FFMPEG_TERMINATE_TIMEOUT, StreamManager
 
 CREATE_STREAM_POLL_INTERVAL = 0.01
 MPEGTS_PACKET_SIZE = 188       # Size of a single MPEG-TS packet in bytes
-MPEGTS_PACKETS_PER_CHUNK = 21  # Number of packets to read at once in the MPEG-TS stream
 
 
 def create_video_key(logical_channel_id: str, source_service_id: str, video_type: VideoType) -> VideoKey:
@@ -276,7 +275,8 @@ class CreateStream:
                 return
         except Exception as e:
             error = e
-        self.config.log_message(f"{video_name} {stream_info}: Error reading from FFmpeg MPEG-TS stream: {error}", level="error")
+        if not await self._get_selected():
+            self.config.log_message(f"{video_name} {stream_info}: Error reading from FFmpeg MPEG-TS stream: {error}", level="error")
         is_healthy[0] = False
 
     async def _cleanup_pre_stream_failure(self, video_name: VideoName, stream_info: str, channel_hls_dir: Path | None, stderr_log_file: aiofiles.threadpool.text.AsyncTextIOWrapper | None) -> None:
@@ -359,15 +359,13 @@ class CreateStream:
         self.config.log_message(f"{video_name} {stream_info}: Claimed a '{provider_alias}' slot and started FFmpeg (PID: {process.pid}) {{{provider_alias}:{new_active_count}}}.", level="INFO")
 
         try:
-            health_check_task: asyncio.Task[None] | None = None
             is_healthy: list[bool | None] = [None]
             if self.video_type == VideoType.MPEGTS:
-                health_check_task = asyncio.create_task(self._check_mpegts_ffmpeg_health_async(video_name, stream_info, process.stdout, is_healthy))
+                asyncio.create_task(self._check_mpegts_ffmpeg_health_async(video_name, stream_info, process.stdout, is_healthy))
             loop = asyncio.get_running_loop()
             end_time = loop.time() + self.config.ffmpeg_start_timeout
             while loop.time() < end_time:
                 if await self._get_selected():
-                    self.config.log_message(f"{video_name} {stream_info}: Halting validation because another stream was selected.", level="DEBUG")
                     return
                 if process.returncode is not None:
                     raise ChildProcessError(f"exited prematurely with code {process.returncode}")
@@ -388,8 +386,6 @@ class CreateStream:
             raise TimeoutError("timed out waiting for segments or process stability")
         except BaseException as e:
             self.config.log_message(f"{video_name} {stream_info}: FFmpeg validation failed (PID: {process.pid if process else 'N/A'}): {e}. Cleaning up.", level="ERROR")
-            if health_check_task and not health_check_task.done():
-                health_check_task.cancel()
             await self._remove_active_video_key(video_key)
             await self.stream_manager.stop_ffmpeg_process(video_key, video_name)
             if isinstance(e, Exception):

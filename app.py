@@ -25,9 +25,9 @@ from quart import (Quart, Response, abort, flash, redirect, render_template,
 
 from nexus_stream.config import Config, NEXUS_STREAM_VERSION
 from nexus_stream.create_stream import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL, 
-                                        MPEGTS_PACKET_SIZE, MPEGTS_PACKETS_PER_CHUNK, 
                                         CreateStream, VideoType, sort_sources)
 from nexus_stream.handler import ChannelHandler, DEFAULT_PRIORITY
+from nexus_stream.mpegts import MPEGTSStream
 from nexus_stream.quality_monitor import QualityMonitor
 from nexus_stream.session_monitor import GhostSessionMonitor
 from nexus_stream.stream import StreamManager
@@ -138,10 +138,9 @@ async def serve_mpegts_stream(logical_channel_id: str, stream_response: bool = T
         if len(lc_id_processes):
             video_key, p_info = lc_id_processes.popitem()
             if p_info['is_mpegts_active']:
-                msg = f"{label} NexusStream does not currently support multiple concurrent MPEGTS streams for the same logical channel ID. Your media server should be reusing its existing request for logical channel '{logical_channel_name}' with key '{video_key}'."
-                config.log_message(msg, level="ERROR")
-                abort(503, f"Another MPEGTS stream for logical channel '{logical_channel_name}' is already active. Please try again later.")
-            config.log_message(f"{label} Client reconnected to MPEGTS stream for '{logical_channel_name}' with key '{video_key}'.", level="INFO")
+                config.log_message(f"{label} Client connecting to shared MPEGTS stream for '{logical_channel_name}' with key '{video_key}'.", level="INFO")
+            else:
+                config.log_message(f"{label} Client reconnected to MPEGTS stream for '{logical_channel_name}' with key '{video_key}'.", level="INFO")
         else:
             create_stream_task = await CreateStream.create(config, handler, stream_manager, quality_monitor, logical_channel_id, logical_channel_name, VideoType.MPEGTS)
             res = await create_stream_task.result()
@@ -156,46 +155,29 @@ async def serve_mpegts_stream(logical_channel_id: str, stream_response: bool = T
             config.log_message(f"{label} Recreated MPEGTS stream for logical channel '{logical_channel_name}' with key '{video_key}'.", level="INFO")
             return Response(status=204)
 
-        process_info = await stream_manager.get_ffmpeg_process_info(video_key)
-        if not process_info:
-            msg = f"{label} Internal error: MPEGTS FFmpeg process not found for logical channel '{logical_channel_name}' with key '{video_key}'."
-            config.log_message(msg, level="ERROR")
-            abort(500, msg)
+        async def stream_generator() -> AsyncGenerator[bytes, None]:
+            async def recreate_stream() -> None:
+                await serve_mpegts_stream(logical_channel_id, stream_response=False, label=label)
+            try:
+                mpegts_stream, reader_id = await MPEGTSStream.register(config, stream_manager, video_key, recreate_stream=recreate_stream)
+            except Exception as e:
+                msg = f"{label} {e}"
+                config.log_message(msg, level="ERROR")
+                abort(500, msg)
 
-        async def stream_generator(process_info: dict[str, Any]) -> AsyncGenerator[bytes, None]:
-            chunk_size = MPEGTS_PACKET_SIZE * MPEGTS_PACKETS_PER_CHUNK
             try:
                 while True:
-                    process_info["is_mpegts_active"] = True
-                    stdout = process_info["process"].stdout
-                    try:
-                        while True:
-                            chunk = await stdout.readexactly(chunk_size)
-                            if not chunk:
-                                raise EOFError("End of stream reached")
-                            yield chunk
-                    except Exception as e:
-                        config.log_message(f"{label} Error reading from MPEGTS stream for '{logical_channel_name}' with key '{video_key}': {e}", level="ERROR")
-                        await stream_manager.stop_ffmpeg_processes_with_logical_channel_id(logical_channel_id, VideoType.MPEGTS)
-                        await serve_mpegts_stream(logical_channel_id, stream_response=False, label=label)
-                        process_info_res = await stream_manager.get_ffmpeg_process_info(video_key)
-                        if not process_info_res:
-                            msg = f"{label} Internal error: MPEGTS FFmpeg process not found for logical channel '{logical_channel_name}' with key '{video_key}'."
-                            config.log_message(msg, level="ERROR")
-                            abort(500, msg)
-                        process_info = process_info_res
+                    yield await mpegts_stream.read(reader_id)
             except asyncio.CancelledError as e:
                 config.log_message(f"{label} Client disconnected from MPEGTS stream for '{logical_channel_name}' with key '{video_key}'.")
                 raise
             except BaseException as e:
                 config.log_message(f"{label} Unexpected error in MPEGTS stream for '{logical_channel_name}' with key '{video_key}': {e}", level="ERROR")
                 raise
-            finally:  # Don't stop early incase the user reconnects, let the timeout handle it
-                async with stream_manager.stream_process_lock:
-                    process_info["last_access"] = datetime.now()
-                    process_info["is_mpegts_active"] = False
+            finally:
+                await mpegts_stream.unregister(reader_id)
 
-        response = Response(stream_generator(process_info), mimetype='video/mp2t')
+        response = Response(stream_generator(), mimetype='video/mp2t')
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"

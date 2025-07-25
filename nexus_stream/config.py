@@ -94,6 +94,7 @@ class Config:
         self.ghost_check_interval: int = int(os.getenv("NEXUS_GHOST_SESSION_CHECK_INTERVAL", 60))
 
         self.file_lock = asyncio.Lock()
+        self._cleaning_up_ffmpeg_logs = False
 
     @classmethod
     async def create(cls) -> Self:
@@ -157,34 +158,40 @@ class Config:
         """
         Deletes FFmpeg log files older than a configured number of seconds asynchronously.
         """
-        if not await aiofiles.os.path.exists(self.ffmpeg_logs_dir):
-            self.log_message(f"No FFmpeg logs directory at {self.ffmpeg_logs_dir}. Skipping cleanup.", level="DEBUG")
+        if self._cleaning_up_ffmpeg_logs:
             return
-
-        cutoff_time = time.time() - self.ffmpeg_logs_retention_seconds
-        files_cleaned_up = False
-        
         try:
-            log_files = await aiofiles.os.listdir(self.ffmpeg_logs_dir)
-        except OSError as e:
-            self.log_message(f"Error listing files in {self.ffmpeg_logs_dir}: {e}", level="ERROR")
-            return
+            self._cleaning_up_ffmpeg_logs = True
+            if not await aiofiles.os.path.exists(self.ffmpeg_logs_dir):
+                self.log_message(f"No FFmpeg logs directory at {self.ffmpeg_logs_dir}. Skipping cleanup.", level="DEBUG")
+                return
 
-        for filename in log_files:
-            if not filename.startswith("ffmpeg_") or not filename.endswith(".log"):
-                continue
+            cutoff_time = time.time() - self.ffmpeg_logs_retention_seconds
+            files_cleaned_up = False
             
-            log_file = self.ffmpeg_logs_dir / filename
             try:
-                stat_result = await aiofiles.os.stat(log_file)
-                if stat_result.st_mtime < cutoff_time:
-                    await aiofiles.os.remove(log_file)
-                    files_cleaned_up = True
+                log_files = await aiofiles.os.listdir(self.ffmpeg_logs_dir)
             except OSError as e:
-                self.log_message(f"Error deleting old log file {log_file}: {e}", level="ERROR")
-        
-        if files_cleaned_up:
-            self.log_message(f"Cleaned up FFmpeg log files older than {self.ffmpeg_logs_retention_seconds} seconds.", level="DEBUG")
+                self.log_message(f"Error listing files in {self.ffmpeg_logs_dir}: {e}", level="ERROR")
+                return
+
+            for filename in log_files:
+                if not filename.startswith("ffmpeg_") or not filename.endswith(".log"):
+                    continue
+                
+                log_file = self.ffmpeg_logs_dir / filename
+                try:
+                    stat_result = await aiofiles.os.stat(log_file)
+                    if stat_result.st_mtime < cutoff_time:
+                        await aiofiles.os.remove(log_file)
+                        files_cleaned_up = True
+                except OSError as e:
+                    self.log_message(f"Error deleting old log file {log_file}: {e}", level="ERROR")
+            
+            if files_cleaned_up:
+                self.log_message(f"Cleaned up FFmpeg log files older than {self.ffmpeg_logs_retention_seconds} seconds.", level="DEBUG")
+        finally:
+            self._cleaning_up_ffmpeg_logs = False
 
     async def _load_json_file(self, file_path: Path, default_content_factory: Callable[[], Any]) -> Any:
         """
