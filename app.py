@@ -567,6 +567,8 @@ async def ui_provider_edit(alias: str) -> str:
     if not provider: return ""
 
     if request.method == "GET":
+        if request.args.get('cancel') == 'true':
+            return await render_template("_provider_row.html", provider=provider)
         return await render_template("_provider_edit_form.html", provider=provider)
     
     elif request.method == "PUT":
