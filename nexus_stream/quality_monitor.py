@@ -200,7 +200,7 @@ class QualityMonitor:
             valid_mappings.append((input_lc_id, [service["source_service_id"] for service in services], "0001-01-01"))
         else:
             self.config.log_message("Quality Monitor: Starting stream quality analysis cycle.", level="INFO")
-            all_mappings = self.handler.channel_mappings_data_from_json
+            all_mappings = self.handler.channel_mappings_data
             if not all_mappings:
                 self.config.log_message("Quality Monitor: No mapped services to analyze.", level="WARN")
                 return

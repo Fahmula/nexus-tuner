@@ -70,8 +70,8 @@ class Config:
         self.providers_path: Path = self.config_dir / "providers.json"
         self.logical_channels_path: Path = self.config_dir / "logical_channels.json"
         self.channel_mappings_path: Path = self.config_dir / "channel_mappings.json"
-        self.service_quality_cache_path: Path = self.config_dir / "service_quality_cache.json"
         self.channel_list_path: Path = self.config_dir / "channel_list.json"
+        self.service_quality_cache_path: Path = self.config_dir / "service_quality_cache.json"
         
         # --- HLS Segment Directory ---
         self.hls_base_segment_dir: Path = self.config_dir / "hls_segments"

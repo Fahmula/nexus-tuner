@@ -197,7 +197,7 @@ async def serve_hls_preview(logical_channel_id: str) -> Response:
         abort(404, msg)
 
     priority = DEFAULT_PRIORITY
-    for channels in handler.channel_mappings_data_from_json.values():
+    for channels in handler.channel_mappings_data.values():
         for channel in channels:
             if channel['source_service_id'] == source_service_id:
                 priority = channel['priority']
@@ -337,9 +337,9 @@ async def ui_flash_messages() -> str:
 async def ui_main_dashboard() -> str:
     """Renders the main dashboard page."""
     return await render_template("ui_dashboard.html",
-                           provider_count=len(handler.providers_data_from_json),
+                           provider_count=len(handler.providers_data),
                            discovered_services_count=len(handler.discovered_source_services),
-                           logical_channels_count=len(handler.logical_channels_data_from_json))
+                           logical_channels_count=len(handler.logical_channels_data))
 
 @app.route("/ui/logical-channels")
 async def ui_logical_channels_list() -> str:
@@ -421,7 +421,7 @@ async def ui_logical_channel_form(logical_channel_id: str | None = None):
     all_services = handler.get_all_discovered_source_services_for_ui()
     all_quality_scores = await quality_monitor.get_quality_scores()
     
-    other_mappings:dict[str, list[dict[str, Any]]] = handler.channel_mappings_data_from_json.copy()
+    other_mappings:dict[str, list[dict[str, Any]]] = handler.channel_mappings_data.copy()
     current_mappings = other_mappings.pop(logical_channel_id, []) if logical_channel_id else []
     sort_sources(current_mappings, all_quality_scores, reverse=False)
     services_mapped_elsewhere: set[str] = {mapping['source_service_id'] for mappings in other_mappings.values() for mapping in mappings}
@@ -623,11 +623,11 @@ async def ui_channel_populate_from_suggestion():
     # 2. Pre-filter services based on the suggested name
     filter_query = prefilled_data['display_name'].strip().lower()
     all_services = handler.get_all_discovered_source_services_for_ui()
-    services_mapped_elsewhere: set[str] = {mapping['source_service_id'] for mappings in handler.channel_mappings_data_from_json.values() for mapping in mappings}
+    services_mapped_elsewhere: set[str] = {mapping['source_service_id'] for mappings in handler.channel_mappings_data.values() for mapping in mappings}
     unmapped_suggestions: list[dict[str, Any]] = []
 
     search_query = prefilled_data['display_name']
-    for channel_list in handler.predefined_channel_list.values():
+    for channel_list in handler.channel_list_data.values():
         for pre_channel in channel_list:
             if search_query == pre_channel.get('title'):  # Only need this check since we are populating this
                 search_query = " OR ".join(pre_channel.get('names', []))
@@ -746,12 +746,12 @@ async def hdhomerun_lineup() -> Response:
     """Returns the channel lineup in HDHomeRun format."""
     lineup: list[dict[str, str | int]] = []
     quality_scores = await quality_monitor.get_quality_scores()
-    for channel in handler.logical_channels_data_from_json:
+    for channel in handler.logical_channels_data:
         channel_number = channel.get('channel_num', '')
         if not channel_number:
             continue
         is_hd = 1
-        for mapping in handler.channel_mappings_data_from_json.get(channel['logical_channel_id'], []):
+        for mapping in handler.channel_mappings_data.get(channel['logical_channel_id'], []):
             if quality_scores.get(mapping['source_service_id'], {}).get('height', 0) >= 720:
                 break
         else:

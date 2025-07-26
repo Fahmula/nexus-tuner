@@ -38,16 +38,17 @@ class ChannelHandler:
         self._mutex = asyncio.Lock()
 
         # Data loaded from configuration files
-        self.providers_data_from_json: dict[str, dict[str, dict[str, Any]]] = {}
-        self.logical_channels_data_from_json: list[dict[str, str]] = []
-        self.channel_mappings_data_from_json: dict[str, list[dict[str, Any]]] = {}
-        self.predefined_channel_list: dict[str, list[dict[str, str]]] = {}
-        
+        self.providers_data: dict[str, dict[str, dict[str, Any]]] = {}
+        self.logical_channels_data: list[dict[str, str]] = []
+        self.channel_mappings_data: dict[str, list[dict[str, Any]]] = {}
+        self.channel_list_data: dict[str, list[dict[str, str]]] = {}
+
         # In-memory processed data
         self.discovered_source_services: dict[str, dict[str, Any]] = {}
         self.client_facing_channels: dict[str, dict[str, Any]] = {}
         self.master_m3u_content: str = "#EXTM3U\n"
 
+        # Slots management
         self.slots: dict[ProviderName, ProviderSlots] = {}
         self._kill_provider_streams: set[str] = set()
         self.pending_streams: set[str] = set()
@@ -87,12 +88,12 @@ class ChannelHandler:
 
         if update_providers:
             providers_config = await self.config.get_providers_config()
-            self.providers_data_from_json = providers_config.get("source_m3u_providers", {})
+            self.providers_data = providers_config.get("source_m3u_providers", {})
             await self._update_providers_slots()
 
-        self.logical_channels_data_from_json = await self.config.get_logical_channels_config()
-        self.channel_mappings_data_from_json = await self.config.get_channel_mappings_config()
-        self.predefined_channel_list = await self.config.get_channel_list_config()
+        self.logical_channels_data = await self.config.get_logical_channels_config()
+        self.channel_mappings_data = await self.config.get_channel_mappings_config()
+        self.channel_list_data = await self.config.get_channel_list_config()
 
         self.discovered_source_services.clear()
         self.client_facing_channels.clear()
@@ -170,7 +171,7 @@ class ChannelHandler:
         async with aiohttp.ClientSession() as session:
             tasks = [
                 self._fetch_and_parse_provider(session, alias, details.get("url"))
-                for alias, details in self.providers_data_from_json.items() if details.get("url")
+                for alias, details in self.providers_data.items() if details.get("url")
             ]
             if not tasks:
                 self.config.log_message("No providers with URLs configured to parse.", level="DEBUG")
@@ -178,7 +179,7 @@ class ChannelHandler:
 
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            provider_aliases = [alias for alias, details in self.providers_data_from_json.items() if details.get("url")]
+            provider_aliases = [alias for alias, details in self.providers_data.items() if details.get("url")]
             for result, alias in zip(results, provider_aliases):
                 if isinstance(result, Exception):
                     self.config.log_message(f"A background task for provider '{alias}' failed: {result}", level="ERROR")
@@ -190,7 +191,7 @@ class ChannelHandler:
         self.config.log_message("Building client-facing channels...", level="INFO")
         self.client_facing_channels.clear()
 
-        for lc_def in self.logical_channels_data_from_json:
+        for lc_def in self.logical_channels_data:
             logical_channel_id = lc_def.get("logical_channel_id")
             if not logical_channel_id:
                 self.config.log_message(f"Skipping logical channel with missing ID: {lc_def.get('display_name', 'N/A')}", level="WARN")
@@ -277,13 +278,13 @@ class ChannelHandler:
         async with self._mutex:
             providers_to_delete: set[ProviderName] = set()
             for alias, curr_details in self.slots.items():
-                if alias not in self.providers_data_from_json:
+                if alias not in self.providers_data:
                     self.config.log_message(f"Removing slots for provider '{alias}' as it no longer exists in configuration.", level="INFO")
                     providers_to_delete.add(alias)
                     self._kill_provider_streams.add(alias)
                     continue
-                m3u_url = self.providers_data_from_json[alias].get("url", "")
-                max_streams = self.providers_data_from_json[alias].get("max_concurrent_streams", 1)
+                m3u_url = self.providers_data[alias].get("url", "")
+                max_streams = self.providers_data[alias].get("max_concurrent_streams", 1)
                 if curr_details.get_m3u_url() == m3u_url and curr_details.get_total_slots() == max_streams:
                     continue
                 self.config.log_message(f"Updating slots for provider '{alias}' with new URL or max streams.", level="INFO")
@@ -295,7 +296,7 @@ class ChannelHandler:
                 self._kill_provider_streams.add(alias)
             for alias in providers_to_delete:
                 del self.slots[alias]
-            for alias, details in self.providers_data_from_json.items():
+            for alias, details in self.providers_data.items():
                 if alias in self.slots:
                     continue
                 name = ProviderName(alias)
@@ -341,7 +342,7 @@ class ChannelHandler:
         query = raw_query.strip().lower()
         matches: list[dict[str, Any]] = []
         found_with: dict[str, str] = {}
-        for group, channels in self.predefined_channel_list.items():
+        for group, channels in self.channel_list_data.items():
             for channel in channels:
                 title = channel.get('title', '').lower()
                 words = query.split()
@@ -360,7 +361,7 @@ class ChannelHandler:
 
     def find_matching_predefined_channel(self, channel_name: str, channel_num: str) -> dict[str, Any]:
         """Finds a matching predefined channel. (Sync - CPU-bound)"""
-        predefined_channel_lists = list(self.predefined_channel_list.values())
+        predefined_channel_lists = list(self.channel_list_data.values())
         for channel_list in predefined_channel_lists:
             for pre_channel in channel_list:
                 if channel_name == pre_channel.get('title'): return pre_channel
@@ -392,13 +393,13 @@ class ChannelHandler:
 
     def _generate_next_logical_channel_id(self) -> str:
         """Generates the next available ID. (Sync - CPU-bound)"""
-        existing_id_strings = [lc['logical_channel_id'] for lc in self.logical_channels_data_from_json if lc.get('logical_channel_id')]
+        existing_id_strings = [lc['logical_channel_id'] for lc in self.logical_channels_data if lc.get('logical_channel_id')]
         if not existing_id_strings: return '1000'
         numeric_ids = [int(id_str) for id_str in existing_id_strings]
         return str(max(numeric_ids) + 1)
 
     async def get_all_providers_for_ui(self) -> list[dict[str, Any]]:
-        all_providers = self.providers_data_from_json
+        all_providers = self.providers_data
         provider_status = await self.get_provider_stream_status()
         providers_display: list[dict[str, Any]] = [
             {
@@ -425,15 +426,15 @@ class ChannelHandler:
         if not alias: raise ValueError("Provider alias cannot be empty.")
         if not url: raise ValueError("Provider URL cannot be empty.")
         if max_streams < 1: raise ValueError("Max concurrent streams must be at least 1.")
-        if alias.lower() in {a.lower() for a in self.providers_data_from_json.keys()}:
+        if alias.lower() in {a.lower() for a in self.providers_data.keys()}:
             raise ValueError(f"Provider with alias '{alias}' already exists.")
 
-        self.providers_data_from_json[alias] = {"url": url, "max_concurrent_streams": max_streams}
-        save_data = {"source_m3u_providers": self.providers_data_from_json}
+        self.providers_data[alias] = {"url": url, "max_concurrent_streams": max_streams}
+        save_data = {"source_m3u_providers": self.providers_data}
         if await self._save_providers_for_ui(save_data):
             return {"alias": alias, "url": url, "max_concurrent_streams": max_streams, "active_streams": 0}
         else:
-            del self.providers_data_from_json[alias]
+            del self.providers_data[alias]
             return None
 
     async def update_provider(self, alias: str, url: str, max_streams: int) -> bool:
@@ -442,76 +443,76 @@ class ChannelHandler:
         if not alias: raise ValueError("Provider alias cannot be empty.")
         if not url: raise ValueError("Provider URL cannot be empty.")
         if max_streams < 1: raise ValueError("Max concurrent streams must be at least 1.")
-        if alias not in self.providers_data_from_json: raise ValueError(f"Provider with alias '{alias}' not found.")
+        if alias not in self.providers_data: raise ValueError(f"Provider with alias '{alias}' not found.")
 
-        original_data = self.providers_data_from_json[alias].copy()
-        self.providers_data_from_json[alias]["url"] = url
-        self.providers_data_from_json[alias]["max_concurrent_streams"] = max_streams
-        save_data = {"source_m3u_providers": self.providers_data_from_json}
+        original_data = self.providers_data[alias].copy()
+        self.providers_data[alias]["url"] = url
+        self.providers_data[alias]["max_concurrent_streams"] = max_streams
+        save_data = {"source_m3u_providers": self.providers_data}
         if await self._save_providers_for_ui(save_data):
             return True
         else:
-            self.providers_data_from_json[alias] = original_data
+            self.providers_data[alias] = original_data
             return False
 
     async def delete_provider(self, alias: str) -> bool:
         """Deletes a provider from the configuration asynchronously."""
         alias = alias.strip()
         if not alias: raise ValueError("Provider alias cannot be empty.")
-        if alias not in self.providers_data_from_json: raise ValueError(f"Provider with alias '{alias}' not found.")
+        if alias not in self.providers_data: raise ValueError(f"Provider with alias '{alias}' not found.")
         
-        provider_to_delete = self.providers_data_from_json.pop(alias)
-        save_data = {"source_m3u_providers": self.providers_data_from_json}
+        provider_to_delete = self.providers_data.pop(alias)
+        save_data = {"source_m3u_providers": self.providers_data}
         if await self._save_providers_for_ui(save_data):
             return True
         else:
-            self.providers_data_from_json[alias] = provider_to_delete
+            self.providers_data[alias] = provider_to_delete
             return False
 
     def get_all_logical_channels_for_ui(self) -> list[dict[str, Any]]:
         """Gets a list of all logical channels. (Sync - in-memory lookup)"""
-        return sorted(self.logical_channels_data_from_json, key=lambda x: x.get("display_name","").lower())
+        return sorted(self.logical_channels_data, key=lambda x: x.get("display_name","").lower())
 
     def get_logical_channel_by_id(self, logical_channel_id: str) -> dict[str, Any] | None:
         """Gets a logical channel by its ID. (Sync - in-memory lookup)"""
-        return next((lc for lc in self.logical_channels_data_from_json if lc.get("logical_channel_id") == logical_channel_id), None)
+        return next((lc for lc in self.logical_channels_data if lc.get("logical_channel_id") == logical_channel_id), None)
 
     async def add_logical_channel(self, lc_data: dict[str, Any]) -> str:
         """Adds a new logical channel to the configuration asynchronously."""
         new_id = self._generate_next_logical_channel_id()
         lc_data['logical_channel_id'] = new_id
-        self.logical_channels_data_from_json.append(lc_data)
-        await self.config.save_logical_channels_config(self.logical_channels_data_from_json)
+        self.logical_channels_data.append(lc_data)
+        await self.config.save_logical_channels_config(self.logical_channels_data)
         return new_id
 
     async def update_logical_channel(self, logical_channel_id: str, updated_lc_data: dict[str, Any]) -> bool:
         """Updates a logical channel in the configuration asynchronously."""
-        for i, lc in enumerate(self.logical_channels_data_from_json):
+        for i, lc in enumerate(self.logical_channels_data):
             if lc.get("logical_channel_id") == logical_channel_id:
                 updated_lc_data["logical_channel_id"] = logical_channel_id 
-                self.logical_channels_data_from_json[i] = updated_lc_data
-                return await self.config.save_logical_channels_config(self.logical_channels_data_from_json)
+                self.logical_channels_data[i] = updated_lc_data
+                return await self.config.save_logical_channels_config(self.logical_channels_data)
         return False
 
     async def delete_logical_channel(self, logical_channel_id: str) -> bool:
         """Deletes a logical channel from the configuration asynchronously."""
-        original_len = len(self.logical_channels_data_from_json)
-        self.logical_channels_data_from_json = [lc for lc in self.logical_channels_data_from_json if lc.get("logical_channel_id") != logical_channel_id]
+        original_len = len(self.logical_channels_data)
+        self.logical_channels_data = [lc for lc in self.logical_channels_data if lc.get("logical_channel_id") != logical_channel_id]
         
-        if logical_channel_id in self.channel_mappings_data_from_json:
-            del self.channel_mappings_data_from_json[logical_channel_id]
-            await self.config.save_channel_mappings_config(self.channel_mappings_data_from_json)
+        if logical_channel_id in self.channel_mappings_data:
+            del self.channel_mappings_data[logical_channel_id]
+            await self.config.save_channel_mappings_config(self.channel_mappings_data)
         
-        return len(self.logical_channels_data_from_json) < original_len and await self.config.save_logical_channels_config(self.logical_channels_data_from_json)
+        return len(self.logical_channels_data) < original_len and await self.config.save_logical_channels_config(self.logical_channels_data)
 
     def get_mappings_for_logical_channel(self, logical_channel_id: str) -> list[dict[str, Any]]:
         """Retrieves mappings for a logical channel. (Sync - in-memory lookup)"""
-        return self.channel_mappings_data_from_json.get(logical_channel_id, [])
+        return self.channel_mappings_data.get(logical_channel_id, [])
 
     async def update_mappings_for_logical_channel(self, logical_channel_id: str, new_mappings_list: list[dict[str, Any]]) -> bool:
         """Updates mappings for a logical channel asynchronously."""
-        self.channel_mappings_data_from_json[logical_channel_id] = new_mappings_list
-        return await self.config.save_channel_mappings_config(self.channel_mappings_data_from_json)
+        self.channel_mappings_data[logical_channel_id] = new_mappings_list
+        return await self.config.save_channel_mappings_config(self.channel_mappings_data)
 
     def get_all_discovered_source_services_for_ui(self) -> list[dict[str, Any]]:
         """Gets a list of discovered services. (Sync - in-memory lookup)"""
