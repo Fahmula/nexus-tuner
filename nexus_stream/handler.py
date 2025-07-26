@@ -84,7 +84,7 @@ class ChannelHandler:
         Loads all data from JSON files and rebuilds the in-memory channel structures asynchronously.
         """
         self._loading = True
-        self.config.log_message("Loading/Reloading ChannelHandler configurations", level="INFO")
+        self.config.log_message("Reloading ChannelHandler configurations", level="INFO")
 
         self.discovered_source_services_data = await self.config.get_discovered_source_services_config()
         self.logical_channels_data = await self.config.get_logical_channels_config()

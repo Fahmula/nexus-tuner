@@ -314,10 +314,14 @@ async def serve_master_playlist() -> Response:
 @app.route("/reload", methods=["POST"])
 async def reload_configuration() -> Response:
     """Triggers a full async reload of all configurations and channel data."""
-    config.log_message("Received request to reload configuration via UI.", level="INFO")
+    form_data = await request.form
+    update_providers = form_data.get("update_providers", "false").lower() == "true"
+    force_discover_sources = form_data.get("force_discover_sources", "false").lower() == "true"
+
+    config.log_message(f"Received request to reload configuration via UI with params={{update_providers={update_providers}, force_discover_sources={force_discover_sources}}}", level="INFO")
     try:
-        await handler.reload_handler_config(update_providers=True, force_discover_sources=True)
-        await flash("Configuration and source services reloaded successfully!", "success")
+        await handler.reload_handler_config(update_providers=update_providers, force_discover_sources=force_discover_sources)
+        await flash("Configuration reloaded successfully!", "success")
     except Exception as e:
         config.log_message(f"An error occurred during manual reload: {e}", level="ERROR")
         await flash(f"An error occurred during reload: {e}", "error")

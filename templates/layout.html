@@ -142,6 +142,7 @@
                           hx-post="{{ url_for('reload_configuration') }}"
                           hx-target="#flash-messages-container"
                           hx-swap="innerHTML"
+                          hx-vals='{"update_providers": "true", "force_discover_sources": "false"}'
                           hx-indicator="#reload-indicator">
                         <button class="btn btn-outline-light" type="submit">
                             <i class="fas fa-sync-alt"></i> Reload Config

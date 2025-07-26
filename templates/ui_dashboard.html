@@ -48,6 +48,7 @@
                 hx-post="{{ url_for('reload_configuration') }}"
                 hx-target="#flash-messages-container"
                 hx-swap="afterbegin"
+                hx-vals='{"update_providers": "true", "force_discover_sources": "true"}'
                 data-bs-toggle="tooltip" data-bs-placement="top" title="Reloads provider M3Us, re-parses services, and rebuilds the client M3U."
                 hx-indicator="#dashboard-reload-indicator">
             <i class="fas fa-sync-alt"></i> Full Reload (Providers & M3U)
@@ -56,7 +57,7 @@
     </p>
     <p class="text-muted small">
         Use the "Reload Config" button in the top navigation for a quicker reload of JSON configurations and M3U generation without re-parsing all provider M3Us (if only logical channel definitions or mappings changed).
-        The button above performs a more thorough refresh including fetching all provider M3Us.
+        The button above performs a more thorough refresh including fetching all provider M3Us and re-discovering all services.
     </p>
 </div>
 
