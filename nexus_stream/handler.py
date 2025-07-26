@@ -38,13 +38,13 @@ class ChannelHandler:
         self._mutex = asyncio.Lock()
 
         # Data loaded from configuration files
-        self.providers_data_from_json: dict[str, Any] = {}
-        self.logical_channels_data_from_json: list[dict[str, Any]] = []
-        self.channel_mappings_data_from_json: dict[str, Any] = {}
-        self.predefined_channel_list: dict[str, Any] = {}
+        self.providers_data_from_json: dict[str, dict[str, dict[str, Any]]] = {}
+        self.logical_channels_data_from_json: list[dict[str, str]] = []
+        self.channel_mappings_data_from_json: dict[str, list[dict[str, Any]]] = {}
+        self.predefined_channel_list: dict[str, list[dict[str, str]]] = {}
         
         # In-memory processed data
-        self.discovered_source_services: dict[str, dict[str, Any]] = {} 
+        self.discovered_source_services: dict[str, dict[str, Any]] = {}
         self.client_facing_channels: dict[str, dict[str, Any]] = {}
         self.master_m3u_content: str = "#EXTM3U\n"
 
@@ -196,7 +196,7 @@ class ChannelHandler:
                 self.config.log_message(f"Skipping logical channel with missing ID: {lc_def.get('display_name', 'N/A')}", level="WARN")
                 continue
 
-            mapped_sources_for_lc = self.channel_mappings_data_from_json.get(logical_channel_id, [])
+            mapped_sources_for_lc = self.get_mappings_for_logical_channel(logical_channel_id)
             processed_sources: list[dict[str, Any]] = []
             for mapping in sorted(mapped_sources_for_lc, key=lambda x: x.get("priority", DEFAULT_PRIORITY)):
                 source_id = mapping.get("source_service_id")

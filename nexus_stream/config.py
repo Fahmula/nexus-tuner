@@ -224,16 +224,21 @@ class Config:
         Saves data to a JSON file atomically and asynchronously.
         """
         async with self.file_lock:
+            temp_file_path = file_path.with_suffix(file_path.suffix + '.tmp')
             try:
-                temp_file_path = file_path.with_suffix(file_path.suffix + '.tmp')
                 async with aiofiles.open(temp_file_path, "w") as f:
                     await f.write(json.dumps(data, indent=2))
                 await aiofiles.os.replace(temp_file_path, file_path)
                 return True
-            except (IOError, OSError) as e:
+            except Exception as e:
                 self.log_message(f"Could not write to {file_path}: {e}", level="ERROR")
+                if await aiofiles.os.path.exists(temp_file_path):
+                    try:
+                        await aiofiles.os.remove(temp_file_path)
+                    except Exception as remove_error:
+                        self.log_message(f"Error removing temporary file {temp_file_path}: {remove_error}", level="ERROR")
                 return False
-            
+
     def log_message(self, message: str, log_filename: str = "app.log", level: str = "INFO") -> None:
         """Logs a message to a specified file and the console."""
         log_level_map = {
