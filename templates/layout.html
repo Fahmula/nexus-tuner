@@ -62,6 +62,16 @@
         [data-bs-theme="dark"] #theme-toggle-button .fa-sun { display: inline-block; }
         [data-bs-theme="dark"] #theme-toggle-button .fa-moon { display: none; }
 
+        /* Hide the button during HTMX requests */
+        #analyze-button-container.htmx-request #analyze-button {
+        display: none;
+        }
+        /* Position the spinner where the button was */
+        #analyze-button-container.htmx-request #spinner {
+            display: inline-block;
+            padding: 8px 16px;
+        }
+
         /* --- Custom Dark Mode Overrides --- */
         /* Style for the "Quick Actions" box */
         [data-bs-theme="dark"] .bg-white {
