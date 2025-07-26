@@ -1,3 +1,4 @@
+from datetime import datetime
 import os
 import json
 import re
@@ -67,13 +68,27 @@ class Config:
         self.ffmpeg_logs_retention_seconds = int(os.getenv("NEXUS_FFMPEG_LOGS_RETENTION_SECONDS", 86400))
 
         # --- JSON Data Paths ---
-        self.providers_path: Path = self.config_dir / "providers.json"
-        self.discovered_source_services_path: Path = self.config_dir / "discovered_source_services.json"
-        self.logical_channels_path: Path = self.config_dir / "logical_channels.json"
-        self.channel_mappings_path: Path = self.config_dir / "channel_mappings.json"
-        self.channel_list_path: Path = self.config_dir / "channel_list.json"
-        self.service_quality_cache_path: Path = self.config_dir / "service_quality_cache.json"
+        self.providers_name: str = "providers.json"
+        self.providers_path: Path = self.config_dir / self.providers_name
         
+        self.discovered_source_services_name: str = "discovered_source_services.json"
+        self.discovered_source_services_path: Path = self.config_dir / self.discovered_source_services_name
+        
+        self.logical_channels_name: str = "logical_channels.json"
+        self.logical_channels_path: Path = self.config_dir / self.logical_channels_name
+        
+        self.channel_mappings_name: str = "channel_mappings.json"
+        self.channel_mappings_path: Path = self.config_dir / self.channel_mappings_name
+        
+        self.channel_list_name: str = "channel_list.json"
+        self.channel_list_path: Path = self.config_dir / self.channel_list_name
+        
+        self.service_quality_cache_name: str = "service_quality_cache.json"
+        self.service_quality_cache_path: Path = self.config_dir / self.service_quality_cache_name
+
+        # --- Backup Config ---
+        self.backups_path: Path = self.config_dir / "backups"
+
         # --- HLS Segment Directory ---
         self.hls_base_segment_dir: Path = self.config_dir / "hls_segments"
         
@@ -115,7 +130,8 @@ class Config:
         self.log_message(f"NexusStream v{NEXUS_STREAM_VERSION}", level="INFO")
         await aiofiles.os.makedirs(self.logs_dir, exist_ok=True)
         await aiofiles.os.makedirs(self.config_dir, exist_ok=True)
-        
+        await aiofiles.os.makedirs(self.backups_path, exist_ok=True)
+
         if not await aiofiles.os.path.exists(self.channel_list_path):
             self.log_message(f"Creating default channel list at {self.channel_list_path}", level="DEBUG")
             default_list_path = Path(__file__).parent / "channel_list.json.default"
@@ -316,6 +332,24 @@ class Config:
         """Saves the service quality cache to service_quality_cache.json asynchronously."""
         return await self._save_json_file(self.service_quality_cache_path, data)
 
-    async def reload_all_configs(self) -> None:
-        """Logs a message indicating that configs should be reloaded by handlers."""
-        self.log_message("Signalling reload of all JSON configurations.", level="INFO")
+    async def backup_config(self, scheduled: bool) -> Path | None:
+        """Creates a zip backup of the current configuration files."""
+        try:
+            sub_folder = "scheduled" if scheduled else "manual"
+            backup_folder = self.backups_path / sub_folder / f"nexus_stream_backup_{datetime.now().isoformat(timespec='seconds').replace(':', '-')}"
+            await aiofiles.os.makedirs(backup_folder, exist_ok=True)
+            backup_path = backup_folder.with_name(f"{backup_folder.name}.zip")
+            self.log_message(f"Creating backup at {backup_path}", level="INFO")
+            async with self.file_lock:
+                await aioshutil.copy2(self.providers_path, backup_folder / self.providers_name)
+                await aioshutil.copy2(self.discovered_source_services_path, backup_folder / self.discovered_source_services_name)
+                await aioshutil.copy2(self.logical_channels_path, backup_folder / self.logical_channels_name)
+                await aioshutil.copy2(self.channel_mappings_path, backup_folder / self.channel_mappings_name)
+                await aioshutil.copy2(self.channel_list_path, backup_folder / self.channel_list_name)
+                await aioshutil.copy2(self.service_quality_cache_path, backup_folder / self.service_quality_cache_name)
+                await aioshutil.make_archive(str(backup_path), 'zip', backup_folder)
+                await aioshutil.rmtree(backup_folder, ignore_errors=True)
+            return backup_path
+        except Exception as e:
+            self.log_message(f"Failed to create backup: {e}", level="ERROR")
+            return

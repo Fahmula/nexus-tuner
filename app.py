@@ -326,7 +326,24 @@ async def reload_configuration() -> Response:
         config.log_message(f"An error occurred during manual reload: {e}", level="ERROR")
         await flash(f"An error occurred during reload: {e}", "error")
     
-    response = Response(await render_template("_flash_messages.html"))
+    response = Response("")
+    response.headers["HX-Trigger"] = "flashMessagesUpdated"
+    return response
+
+@app.route("/backup", methods=["POST"])
+async def backup_configuration() -> Response:
+    """Triggers an async backup of the current configuration files."""
+    try:
+        backup_path = await config.backup_config(scheduled=False)
+        if backup_path:
+            await flash(f"Backup created successfully at {backup_path}", "success")
+        else:
+            await flash("Failed to create backup.", "error")
+    except Exception as e:
+        config.log_message(f"An error occurred during backup: {e}", level="ERROR")
+        await flash(f"An error occurred during backup: {e}", "error")
+
+    response = Response("")
     response.headers["HX-Trigger"] = "flashMessagesUpdated"
     return response
 
@@ -709,6 +726,7 @@ async def ui_player_for_service(service_id: str) -> str:
     source_service = handler.discovered_source_services_data.get(service_id)
     if not source_service:
         await flash(f"Error: source service ID not found.", "error")
+        abort(404, f"Source service ID '{service_id}' not found.")
     service_name = source_service.get('original_display_name_extinf', source_service.get('original_tvg_name', 'Preview'))
     logical_channel_id = f"preview_{service_id}"
     playlist_url = url_for('serve_hls_preview', logical_channel_id=logical_channel_id)

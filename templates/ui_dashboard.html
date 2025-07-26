@@ -54,6 +54,15 @@
             <i class="fas fa-sync-alt"></i> Full Reload (Providers & M3U)
             <span id="dashboard-reload-indicator" class="htmx-indicator spinner-border spinner-border-sm ms-1" role="status" aria-hidden="true"></span>
         </button>
+        <button class="btn btn-secondary ms-2"
+                hx-post="{{ url_for('backup_configuration') }}"
+                hx-target="#flash-messages-container"
+                hx-swap="afterbegin"
+                data-bs-toggle="tooltip" data-bs-placement="top" title="Creates a backup of your current configuration."
+                hx-indicator="#dashboard-backup-indicator">
+            <i class="fas fa-save"></i> Backup Config
+            <span id="dashboard-backup-indicator" class="htmx-indicator spinner-border spinner-border-sm ms-1" role="status" aria-hidden="true"></span>
+        </button>
     </p>
     <p class="text-muted small">
         Use the "Reload Config" button in the top navigation for a quicker reload of JSON configurations and M3U generation without re-parsing all provider M3Us (if only logical channel definitions or mappings changed).
