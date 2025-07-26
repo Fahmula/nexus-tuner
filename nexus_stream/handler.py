@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 import re
 import html
 import hashlib
@@ -11,6 +12,7 @@ from nexus_stream.slots import ProviderName, ProviderSlots
 # --- Constants ---
 DEFAULT_PRIORITY = 5
 PROVIDER_FETCH_TIMEOUT = 20
+DISCOVER_SOURCES_INTERVAL = 60 * 60 * 24
 TVG_NAME_REGEX = re.compile(r'tvg-name="([^"]*)"', re.IGNORECASE)
 TVG_ID_REGEX = re.compile(r'tvg-id="([^"]*)"', re.IGNORECASE)
 TVG_LOGO_REGEX = re.compile(r'tvg-logo="([^"]*)"', re.IGNORECASE)
@@ -32,19 +34,18 @@ class ChannelHandler:
         """
         Initializes the ChannelHandler. NOTE: This is now a lightweight, synchronous constructor.
         """
-        self._startup = True
         self._loading = False
         self.config = config
         self._mutex = asyncio.Lock()
 
         # Data loaded from configuration files
-        self.providers_data: dict[str, dict[str, dict[str, Any]]] = {}
+        self.providers_data: dict[str, dict[str, Any]] = {}
+        self.discovered_source_services_data: dict[str, dict[str, Any]] = {}
         self.logical_channels_data: list[dict[str, str]] = []
         self.channel_mappings_data: dict[str, list[dict[str, Any]]] = {}
         self.channel_list_data: dict[str, list[dict[str, str]]] = {}
 
         # In-memory processed data
-        self.discovered_source_services: dict[str, dict[str, Any]] = {}
         self.client_facing_channels: dict[str, dict[str, Any]] = {}
         self.master_m3u_content: str = "#EXTM3U\n"
 
@@ -57,8 +58,7 @@ class ChannelHandler:
     async def create(cls, config: Config) -> Self:
         """Asynchronous factory for creating and initializing a ChannelHandler instance."""
         instance = cls(config)
-        await instance._load_and_process_configurations(update_providers=True)
-        instance._startup = False
+        await instance._load_and_process_configurations(update_providers=True, force_discover_sources=False)
         return instance
 
     def is_loading(self) -> bool:
@@ -79,32 +79,39 @@ class ChannelHandler:
         id_material = f"{provider_alias}:{actual_stream_url}"
         return f"{provider_alias}:{hashlib.md5(id_material.encode('utf-8')).hexdigest()}"
 
-    async def _load_and_process_configurations(self, *, update_providers: bool) -> None:
+    async def _load_and_process_configurations(self, *, update_providers: bool, force_discover_sources: bool) -> None:
         """
         Loads all data from JSON files and rebuilds the in-memory channel structures asynchronously.
         """
         self._loading = True
         self.config.log_message("Loading/Reloading ChannelHandler configurations", level="INFO")
 
+        self.discovered_source_services_data = await self.config.get_discovered_source_services_config()
+        self.logical_channels_data = await self.config.get_logical_channels_config()
+        self.channel_mappings_data = await self.config.get_channel_mappings_config()
+        self.channel_list_data = await self.config.get_channel_list_config()
+
         if update_providers:
             providers_config = await self.config.get_providers_config()
             self.providers_data = providers_config.get("source_m3u_providers", {})
             await self._update_providers_slots()
 
-        self.logical_channels_data = await self.config.get_logical_channels_config()
-        self.channel_mappings_data = await self.config.get_channel_mappings_config()
-        self.channel_list_data = await self.config.get_channel_list_config()
+        min_updated_at = min([p_data.get("updated_at") or "0001-01-01" for p_data in self.providers_data.values()], default="0001-01-01")
+        now = datetime.now()
+        if force_discover_sources or datetime.fromisoformat(min_updated_at) < now - timedelta(seconds=DISCOVER_SOURCES_INTERVAL):
+            await self._parse_all_provider_m3us_and_populate_discovered_services()
+            await self.config.save_discovered_source_services_config(self.discovered_source_services_data)
+            for alias in self.providers_data:
+                self.providers_data[alias]["updated_at"] = now.isoformat()
+            await self._save_providers_for_ui({"source_m3u_providers": self.providers_data}, update_slots=False)
 
-        self.discovered_source_services.clear()
-        self.client_facing_channels.clear()
-
-        await self._parse_all_provider_m3us_and_populate_discovered_services()
+        # Build in-memory data
         self._build_client_facing_channels()
         self.generate_master_client_m3u()
         
         self._loading = False
         self.config.log_message(
-            f"ChannelHandler ready. Discovered: {len(self.discovered_source_services)}, "
+            f"ChannelHandler ready. Discovered: {len(self.discovered_source_services_data)}, "
             f"Client-Facing: {len(self.client_facing_channels)}",
             level="INFO"
         )
@@ -150,7 +157,7 @@ class ChannelHandler:
                 async with self._mutex:
                     for p_channel in parsed_channels:
                         service_id = self._generate_source_service_id(provider_alias, p_channel["actual_stream_url"])
-                        self.discovered_source_services[service_id] = {
+                        self.discovered_source_services_data[service_id] = {
                             "id": service_id,
                             "provider_alias": provider_alias,
                             **p_channel
@@ -166,7 +173,7 @@ class ChannelHandler:
     async def _parse_all_provider_m3us_and_populate_discovered_services(self) -> None:
         """Uses asyncio.gather to fetch and parse all configured provider M3Us concurrently."""
         self.config.log_message("Starting to parse all provider M3Us...", level="INFO")
-        self.discovered_source_services.clear()
+        self.discovered_source_services_data.clear()
 
         async with aiohttp.ClientSession() as session:
             tasks = [
@@ -184,7 +191,7 @@ class ChannelHandler:
                 if isinstance(result, Exception):
                     self.config.log_message(f"A background task for provider '{alias}' failed: {result}", level="ERROR")
         
-        self.config.log_message(f"Finished parsing. Total discovered source services: {len(self.discovered_source_services)}", level="INFO")
+        self.config.log_message(f"Finished parsing. Total discovered source services: {len(self.discovered_source_services_data)}", level="INFO")
 
     def _build_client_facing_channels(self) -> None:
         """Builds the final list of channels exposed to clients. (Sync - CPU-bound)"""
@@ -202,7 +209,7 @@ class ChannelHandler:
             for mapping in sorted(mapped_sources_for_lc, key=lambda x: x.get("priority", DEFAULT_PRIORITY)):
                 source_id = mapping.get("source_service_id")
                 priority = mapping.get("priority", DEFAULT_PRIORITY)
-                discovered_service = self.discovered_source_services.get(source_id)
+                discovered_service = self.discovered_source_services_data.get(source_id)
                 if discovered_service:
                     processed_sources.append({
                         "source_service_id": source_id,
@@ -308,9 +315,9 @@ class ChannelHandler:
                 )
                 self.config.log_message(f"Initialized slots for provider '{alias}' with capacity {max_streams}", level="INFO")
         
-    async def reload_handler_config(self, *, update_providers: bool) -> None:
+    async def reload_handler_config(self, *, update_providers: bool = False, force_discover_sources: bool = False) -> None:
         """Public method to trigger a full async reload of the handler's configuration."""
-        await self._load_and_process_configurations(update_providers=update_providers)
+        await self._load_and_process_configurations(update_providers=update_providers, force_discover_sources=force_discover_sources)
 
     async def get_provider_stream_status(self) -> dict[str, dict[str, int]]:
         """Calculates current stream usage for each provider asynchronously."""
@@ -411,12 +418,12 @@ class ChannelHandler:
         ]
         return providers_display
 
-    async def _save_providers_for_ui(self, new_providers_data: dict[str, Any]) -> bool:
+    async def _save_providers_for_ui(self, new_providers_data: dict[str, Any], *, update_slots: bool) -> bool:
         """Saves the provider configuration and updates internal state asynchronously."""
         if "source_m3u_providers" not in new_providers_data:
             return False 
         save_successful = await self.config.save_providers_config(new_providers_data)
-        if save_successful:
+        if save_successful and update_slots:
             await self._update_providers_slots()
         return save_successful
     
@@ -429,9 +436,9 @@ class ChannelHandler:
         if alias.lower() in {a.lower() for a in self.providers_data.keys()}:
             raise ValueError(f"Provider with alias '{alias}' already exists.")
 
-        self.providers_data[alias] = {"url": url, "max_concurrent_streams": max_streams}
+        self.providers_data[alias] = {"url": url, "max_concurrent_streams": max_streams, "updated_at": None}
         save_data = {"source_m3u_providers": self.providers_data}
-        if await self._save_providers_for_ui(save_data):
+        if await self._save_providers_for_ui(save_data, update_slots=True):
             return {"alias": alias, "url": url, "max_concurrent_streams": max_streams, "active_streams": 0}
         else:
             del self.providers_data[alias]
@@ -449,7 +456,7 @@ class ChannelHandler:
         self.providers_data[alias]["url"] = url
         self.providers_data[alias]["max_concurrent_streams"] = max_streams
         save_data = {"source_m3u_providers": self.providers_data}
-        if await self._save_providers_for_ui(save_data):
+        if await self._save_providers_for_ui(save_data, update_slots=True):
             return True
         else:
             self.providers_data[alias] = original_data
@@ -463,7 +470,7 @@ class ChannelHandler:
         
         provider_to_delete = self.providers_data.pop(alias)
         save_data = {"source_m3u_providers": self.providers_data}
-        if await self._save_providers_for_ui(save_data):
+        if await self._save_providers_for_ui(save_data, update_slots=True):
             return True
         else:
             self.providers_data[alias] = provider_to_delete
@@ -516,6 +523,6 @@ class ChannelHandler:
 
     def get_all_discovered_source_services_for_ui(self) -> list[dict[str, Any]]:
         """Gets a list of discovered services. (Sync - in-memory lookup)"""
-        all_services = list(self.discovered_source_services.values())
+        all_services = list(self.discovered_source_services_data.values())
         self.config.log_message(f"Returning {len(all_services)} services for UI.", level="DEBUG")
         return sorted(all_services, key=lambda x: (x["provider_alias"], (x.get("original_tvg_name","") or x.get("original_display_name_extinf","")).lower()))

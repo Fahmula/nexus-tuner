@@ -96,7 +96,7 @@ def calculate_channel_metrics(channel: dict[str, Any], mapped_services: list[dic
         channel['health_score'] = None
 
     channel['enabled_mappings'] = len(mapped_services)
-    channel['discovered_mappings'] = sum(1 for service in mapped_services if service['source_service_id'] in handler.discovered_source_services)
+    channel['discovered_mappings'] = sum(1 for service in mapped_services if service['source_service_id'] in handler.discovered_source_services_data)
 
 @app.context_processor
 def inject_global_vars() -> Dict[str, Any]:
@@ -189,7 +189,7 @@ async def serve_mpegts_stream(logical_channel_id: str, stream_response: bool = T
 async def serve_hls_preview(logical_channel_id: str) -> Response:
     """Serves a preview HLS playlist for a channel asynchronously."""
     source_service_id = logical_channel_id.replace("preview_", "")
-    source_service = handler.discovered_source_services.get(source_service_id, None)
+    source_service = handler.discovered_source_services_data.get(source_service_id, None)
     
     if not source_service:
         msg = f"[{VideoType.HLS}] Preview requested for non-existent source service ID {source_service}."
@@ -316,7 +316,7 @@ async def reload_configuration() -> Response:
     """Triggers a full async reload of all configurations and channel data."""
     config.log_message("Received request to reload configuration via UI.", level="INFO")
     try:
-        await handler.reload_handler_config(update_providers=True)
+        await handler.reload_handler_config(update_providers=True, force_discover_sources=True)
         await flash("Configuration and source services reloaded successfully!", "success")
     except Exception as e:
         config.log_message(f"An error occurred during manual reload: {e}", level="ERROR")
@@ -338,7 +338,7 @@ async def ui_main_dashboard() -> str:
     """Renders the main dashboard page."""
     return await render_template("ui_dashboard.html",
                            provider_count=len(handler.providers_data),
-                           discovered_services_count=len(handler.discovered_source_services),
+                           discovered_services_count=len(handler.discovered_source_services_data),
                            logical_channels_count=len(handler.logical_channels_data))
 
 @app.route("/ui/logical-channels")
@@ -389,7 +389,7 @@ async def ui_logical_channel_form(logical_channel_id: str | None = None):
             await handler.update_logical_channel(submitted_id, lc_data)
             await handler.update_mappings_for_logical_channel(submitted_id, mappings_to_save)
             await flash(f"Channel '{lc_data['display_name']}' updated.", "success")
-            await handler.reload_handler_config(update_providers=False)
+            await handler.reload_handler_config()
             return redirect(url_for('ui_logical_channel_form', logical_channel_id=submitted_id))
         else:
             new_id = await handler.add_logical_channel(lc_data)
@@ -397,7 +397,7 @@ async def ui_logical_channel_form(logical_channel_id: str | None = None):
                 if mappings_to_save:
                     await handler.update_mappings_for_logical_channel(new_id, mappings_to_save)
                 await flash(f"Channel '{lc_data['display_name']}' created.", "success")
-                await handler.reload_handler_config(update_providers=False)
+                await handler.reload_handler_config()
                 return redirect(url_for('ui_logical_channel_form', logical_channel_id=new_id))
             else:
                 await flash("Error creating channel.", "error")
@@ -495,7 +495,7 @@ async def ui_remove_dead_mappings(logical_channel_id: str) -> Response:
     discovered: list[dict[str, Any]] = []
     removed_count = 0
     for service in handler.get_mappings_for_logical_channel(logical_channel_id):
-        if service['source_service_id'] in handler.discovered_source_services:
+        if service['source_service_id'] in handler.discovered_source_services_data:
             discovered.append(service)
         else:
             await quality_monitor.remove_source_service(service['source_service_id'])
@@ -678,7 +678,7 @@ async def ui_logical_channel_delete(logical_channel_id: str) -> Response:
     if channel:
         if await handler.delete_logical_channel(logical_channel_id):
             await flash(f"Logical Channel '{channel['display_name']}' deleted.", "success")
-            await handler.reload_handler_config(update_providers=False)
+            await handler.reload_handler_config()
         else:
             await flash(f"Error deleting logical channel '{channel['display_name']}'.", "error")
     else:
@@ -700,7 +700,7 @@ async def ui_logs_modal() -> str:
 
 @app.route("/ui/service-preview/<path:service_id>")
 async def ui_player_for_service(service_id: str) -> str:
-    source_service = handler.discovered_source_services.get(service_id)
+    source_service = handler.discovered_source_services_data.get(service_id)
     if not source_service:
         await flash(f"Error: source service ID not found.", "error")
     service_name = source_service.get('original_display_name_extinf', source_service.get('original_tvg_name', 'Preview'))

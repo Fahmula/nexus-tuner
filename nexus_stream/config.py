@@ -68,6 +68,7 @@ class Config:
 
         # --- JSON Data Paths ---
         self.providers_path: Path = self.config_dir / "providers.json"
+        self.discovered_source_services_path: Path = self.config_dir / "discovered_source_services.json"
         self.logical_channels_path: Path = self.config_dir / "logical_channels.json"
         self.channel_mappings_path: Path = self.config_dir / "channel_mappings.json"
         self.channel_list_path: Path = self.config_dir / "channel_list.json"
@@ -273,6 +274,14 @@ class Config:
     async def save_providers_config(self, data: dict[str, dict[str, dict[str, Any]]]) -> bool:
         """Saves the providers configuration to providers.json asynchronously."""
         return await self._save_json_file(self.providers_path, data)
+
+    async def get_discovered_source_services_config(self) -> dict[str, dict[str, Any]]:
+        """Loads the discovered source services from discovered_source_services.json asynchronously."""
+        return await self._load_json_file(self.discovered_source_services_path, dict)
+
+    async def save_discovered_source_services_config(self, data: dict[str, dict[str, Any]]) -> bool:
+        """Saves the discovered source services to discovered_source_services.json asynchronously."""
+        return await self._save_json_file(self.discovered_source_services_path, data)
 
     async def get_logical_channels_config(self) -> list[dict[str, Any]]:
         """Loads the logical channels configuration from logical_channels.json asynchronously."""

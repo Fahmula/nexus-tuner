@@ -225,7 +225,7 @@ class QualityMonitor:
         for logical_channel_id, service_ids, _ in valid_mappings:
             tasks: list[Coroutine[Any, Any, tuple[str, dict[str, str | float | int]]]] = []
             for service_id in service_ids:                
-                service_details = self.handler.discovered_source_services.get(service_id)
+                service_details = self.handler.discovered_source_services_data.get(service_id)
                 if not service_details:
                     self.config.log_message(f"Quality Monitor: Service {service_id} not found in discovered services.", level="DEBUG")
                     continue
