@@ -109,19 +109,17 @@ def inject_global_vars() -> Dict[str, Any]:
 # --- Core Streaming and Playlist Endpoints ---
 
 @app.route(f'/{VideoType.MPEGTS}/<string:logical_channel_id>')
-async def serve_mpegts_stream(logical_channel_id: str, stream_response: bool = True, label: str | None = None) -> Response:
+async def serve_mpegts_stream(logical_channel_id: str, stream_response: bool = True) -> Response:
     """Serves a channel stream using MPEG-TS format asynchronously.
     If stream_response is True, it returns a generator that the client connects to, otherwise it simply creates the stream.
     """
-    if label is None:
-        label = f"[{request.method} {request.path}]"
     added_pending_stream = False
     loop = asyncio.get_running_loop()
     end_time = loop.time() + CREATE_STREAM_DEADLINE
     try:
         while not await handler.add_pending_stream(logical_channel_id, VideoType.MPEGTS):
             if loop.time() > end_time:
-                msg = f"{label} Exceeded timeout while waiting for earlier request for MPEGTS {logical_channel_id} to complete."
+                msg = f"[{VideoType.MPEGTS}] Exceeded timeout while waiting for earlier request for MPEGTS {logical_channel_id} to complete."
                 config.log_message(msg, level="ERROR")
                 abort(503, msg)
             await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
@@ -129,7 +127,7 @@ async def serve_mpegts_stream(logical_channel_id: str, stream_response: bool = T
 
         logical_channel = handler.get_logical_channel_by_id(logical_channel_id)
         if not logical_channel:
-            msg = f"{label} Logical channel {logical_channel_id} not found for MPEGTS."
+            msg = f"[{VideoType.MPEGTS}] Logical channel {logical_channel_id} not found for MPEGTS."
             config.log_message(msg, level="ERROR")
             abort(404, msg)
         logical_channel_name = str(logical_channel['display_name'])
@@ -138,30 +136,30 @@ async def serve_mpegts_stream(logical_channel_id: str, stream_response: bool = T
         if len(lc_id_processes):
             video_key, p_info = lc_id_processes.popitem()
             if p_info['is_mpegts_active']:
-                config.log_message(f"{label} Client connecting to shared MPEGTS stream for '{logical_channel_name}' with key '{video_key}'.", level="INFO")
+                config.log_message(f"[{VideoType.MPEGTS}] Client connecting to shared MPEGTS stream for '{logical_channel_name}' with key '{video_key}'.", level="INFO")
             else:
-                config.log_message(f"{label} Client reconnected to MPEGTS stream for '{logical_channel_name}' with key '{video_key}'.", level="INFO")
+                config.log_message(f"[{VideoType.MPEGTS}] Client reconnected to MPEGTS stream for '{logical_channel_name}' with key '{video_key}'.", level="INFO")
         else:
             create_stream_task = await CreateStream.create(config, handler, stream_manager, quality_monitor, logical_channel_id, logical_channel_name, VideoType.MPEGTS)
             res = await create_stream_task.result()
             if isinstance(res, tuple):
                 code, msg_text = res
-                msg = f"{label} {msg_text}"
+                msg = f"[{VideoType.MPEGTS}] {msg_text}"
                 config.log_message(msg, level="ERROR")
                 abort(code, msg)
             video_key = res
 
         if not stream_response:
-            config.log_message(f"{label} Recreated MPEGTS stream for logical channel '{logical_channel_name}' with key '{video_key}'.", level="INFO")
+            config.log_message(f"[{VideoType.MPEGTS}] Recreated MPEGTS stream for logical channel '{logical_channel_name}' with key '{video_key}'.", level="INFO")
             return Response(status=204)
 
         async def stream_generator() -> AsyncGenerator[bytes, None]:
             async def recreate_stream() -> None:
-                await serve_mpegts_stream(logical_channel_id, stream_response=False, label=label)
+                await serve_mpegts_stream(logical_channel_id, stream_response=False)
             try:
                 mpegts_stream, reader_id = await MPEGTSStream.register(config, stream_manager, video_key, recreate_stream=recreate_stream)
             except Exception as e:
-                msg = f"{label} {e}"
+                msg = f"[{VideoType.MPEGTS}] {e}"
                 config.log_message(msg, level="ERROR")
                 abort(500, msg)
 
@@ -169,10 +167,10 @@ async def serve_mpegts_stream(logical_channel_id: str, stream_response: bool = T
                 while True:
                     yield await mpegts_stream.read(reader_id)
             except asyncio.CancelledError as e:
-                config.log_message(f"{label} Client disconnected from MPEGTS stream for '{logical_channel_name}' with key '{video_key}'.")
+                config.log_message(f"[{VideoType.MPEGTS}] Client disconnected from MPEGTS stream for '{logical_channel_name}' with key '{video_key}'.")
                 raise
             except BaseException as e:
-                config.log_message(f"{label} Unexpected error in MPEGTS stream for '{logical_channel_name}' with key '{video_key}': {e}", level="ERROR")
+                config.log_message(f"[{VideoType.MPEGTS}] Unexpected error in MPEGTS stream for '{logical_channel_name}' with key '{video_key}': {e}", level="ERROR")
                 raise
             finally:
                 await mpegts_stream.unregister(reader_id)
@@ -194,7 +192,7 @@ async def serve_hls_preview(logical_channel_id: str) -> Response:
     source_service = handler.discovered_source_services.get(source_service_id, None)
     
     if not source_service:
-        msg = f"[{request.method} {request.path}] Preview requested for non-existent source service ID {source_service}."
+        msg = f"[{VideoType.HLS}] Preview requested for non-existent source service ID {source_service}."
         config.log_message(msg, level="ERROR")
         abort(404, msg)
 
@@ -224,7 +222,7 @@ async def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str 
     try:
         while not await handler.add_pending_stream(logical_channel_id, VideoType.HLS):
             if loop.time() > end_time:
-                msg = f"[{request.method} {request.path}] Exceeded timeout while waiting for earlier request for HLS {logical_channel_id} to complete."
+                msg = f"[{VideoType.HLS}] Exceeded timeout while waiting for earlier request for HLS {logical_channel_id} to complete."
                 config.log_message(msg, level="ERROR")
                 abort(503, msg)
             await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
@@ -233,7 +231,7 @@ async def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str 
         if logical_channel_name is None:
             logical_channel = handler.get_logical_channel_by_id(logical_channel_id)
             if not logical_channel:
-                msg = f"[{request.method} {request.path}] Logical channel {logical_channel_id} not found for HLS."
+                msg = f"[{VideoType.HLS}] Logical channel {logical_channel_id} not found for HLS."
                 config.log_message(msg, level="ERROR")
                 abort(404, msg)
             logical_channel_name = str(logical_channel['display_name'])
@@ -246,14 +244,14 @@ async def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str 
             res = await create_stream_task.result()
             if isinstance(res, tuple):
                 code, msg_text = res
-                msg = f"[{request.method} {request.path}] {msg_text}"
+                msg = f"[{VideoType.HLS}] {msg_text}"
                 config.log_message(msg, level="ERROR")
                 abort(code, msg)
             video_key = res
 
         playlist_path = await stream_manager.get_hls_playlist_path(video_key)
         if not playlist_path:
-            msg = f"[{request.method} {request.path}] Internal error: HLS playlist path not found for logical channel '{logical_channel_name}' with key '{video_key}'."
+            msg = f"[{VideoType.HLS}] Internal error: HLS playlist path not found for logical channel '{logical_channel_name}' with key '{video_key}'."
             config.log_message(msg, level="ERROR")
             abort(500, msg)
 
@@ -264,7 +262,7 @@ async def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str 
                 if video_key not in stream_manager.ffmpeg_processes or stream_manager.ffmpeg_processes[video_key]['process'].returncode is not None:
                     to_cleanup = True
             if to_cleanup:
-                msg = f"[{request.method} {request.path}] HLS FFmpeg process for '{logical_channel_name}' with key '{video_key}' terminated unexpectedly."
+                msg = f"[{VideoType.HLS}] HLS FFmpeg process for '{logical_channel_name}' with key '{video_key}' terminated unexpectedly."
                 config.log_message(msg, level="ERROR")
                 await stream_manager.stop_ffmpeg_process(video_key, logical_channel_name)
                 abort(503, msg)
@@ -277,12 +275,12 @@ async def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str 
                     response.headers["Expires"] = "0"
                     return response
                 except Exception as e:
-                    msg = f"[{request.method} {request.path}] Error serving HLS playlist {playlist_path}: {e}"
+                    msg = f"[{VideoType.HLS}] Error serving HLS playlist {playlist_path} for '{logical_channel_name}' with key '{video_key}': {e}"
                     config.log_message(msg, level="ERROR")
                     abort(500, msg)
             await asyncio.sleep(PLAYLIST_POLL_INTERVAL)
 
-        msg = f"[{request.method} {request.path}] HLS playlist for '{logical_channel_name}' was not available after {config.ffmpeg_start_timeout} seconds."
+        msg = f"[{VideoType.HLS}] HLS playlist for '{logical_channel_name}' with key '{video_key}' was not available after {config.ffmpeg_start_timeout} seconds."
         config.log_message(msg, level="ERROR")
         abort(408, msg)
     finally:

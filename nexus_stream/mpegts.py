@@ -20,6 +20,7 @@ class MPEGTSStream:
         self.video_key = video_key
         self.recreate_stream = recreate_stream
         self._buffer: list[bytes] = []
+        self._event = asyncio.Event()
         self._reader_positions: dict[int, int] = {}
         self._cancelled = False
         self._writer: asyncio.Task[NoReturn]
@@ -54,9 +55,9 @@ class MPEGTSStream:
             await self._cancel()
 
     async def read(self, reader_id: int) -> bytes:
-        while self._reader_positions[reader_id] >= len(self._buffer):  
-            await asyncio.sleep(0)
-        if self._cancelled:  # Will always push to buffer on shutdown to break out of above loop
+        if self._reader_positions[reader_id] >= len(self._buffer):  
+            await self._event.wait()
+        if self._cancelled:
             raise asyncio.CancelledError("MPEGTS stream has been cancelled.")
         buf = self._buffer[self._reader_positions[reader_id]]
         self._reader_positions[reader_id] += 1
@@ -75,6 +76,8 @@ class MPEGTSStream:
                         if not chunk:
                             raise EOFError("End of stream reached")
                         self._buffer.append(chunk)
+                        self._event.set()
+                        self._event = asyncio.Event()
                 except Exception as e:
                     self.config.log_message(f"[{VideoType.MPEGTS}] Error reading from MPEGTS stream for '{process_info['logical_channel_name']}' with key '{self.video_key}': {e}", level="ERROR")
                     await self.stream_manager.stop_ffmpeg_process(self.video_key, process_info["logical_channel_name"])
@@ -113,4 +116,4 @@ class MPEGTSStream:
         self.streams.pop(self.video_key, None)
         self._cancelled = True  # Let the stdout reader finish gracefully incase we will reconnect
         self._cleaner.cancel()
-        self._buffer.append(b'')  # Ensure we break out of the read loop
+        self._event.set()  # Ensure any waiting readers are woken up
