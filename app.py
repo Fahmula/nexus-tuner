@@ -31,6 +31,7 @@ from nexus_stream.mpegts import MPEGTSStream
 from nexus_stream.quality_monitor import QualityMonitor
 from nexus_stream.session_monitor import GhostSessionMonitor
 from nexus_stream.stream import StreamManager
+from nexus_stream.scheduler import Scheduler
 
 # --- Constants ---
 PLAYLIST_POLL_INTERVAL = 0.2  # Seconds to wait between checking for a new playlist
@@ -46,6 +47,7 @@ handler: ChannelHandler
 stream_manager: StreamManager
 ghost_monitor: GhostSessionMonitor | None
 quality_monitor: QualityMonitor
+scheduler: Scheduler
 
 @app.before_serving
 async def startup() -> None:
@@ -53,13 +55,14 @@ async def startup() -> None:
     Asynchronous startup function. Initializes all core components and starts background tasks.
     This is the standard Quart pattern for handling async setup.
     """
-    global config, handler, stream_manager, ghost_monitor, quality_monitor
+    global config, handler, stream_manager, ghost_monitor, quality_monitor, scheduler
     try:
         config = await Config.create()
         handler = await ChannelHandler.create(config)
         stream_manager = await StreamManager.create(config, handler)
         ghost_monitor = await GhostSessionMonitor.create(config, handler, stream_manager)
         quality_monitor = await QualityMonitor.create(config, handler)
+        scheduler = await Scheduler.create(config, handler, quality_monitor)
     except BaseException as e:
         print(f"FATAL: Could not initialize application: {e}", file=sys.stderr)
         sys.exit(1)
@@ -67,9 +70,11 @@ async def startup() -> None:
 @app.after_serving
 async def shutdown() -> None:
     """Handles graceful shutdown of the application."""
-    if stream_manager:
+    if "scheduler" in globals():
+        scheduler.shutdown()
+    if "stream_manager" in globals():
         await stream_manager.stop_ffmpeg_processes()
-    if config:
+    if "config" in globals():
         await config.clean_up_hls_segments()
 
 def calculate_channel_metrics(channel: dict[str, Any], mapped_services: list[dict[str, Any]], all_quality_scores: dict[str, dict[str, float]]) -> None:
@@ -495,7 +500,7 @@ async def ui_analyze_mappings(logical_channel_id: str) -> Response:
         return Response("", 204)
 
     channel_log = f"'{channel.get('display_name', 'Unknown Channel')}'{f' ({channel['channel_num']})' if 'channel_num' in channel else ''}"
-    await quality_monitor.analyze_logical_channel(logical_channel_id)
+    await quality_monitor.analyze_mapped_services(logical_channel_id)
     await flash(f"Quality analysis completed for {len(services)} mapping(s) in {channel_log}", "success")
 
     response = Response("", 200)
@@ -712,7 +717,7 @@ async def ui_logs_modal() -> str:
     log_file_path = config.logs_dir / 'app.log'
     try:
         async with aiofiles.open(log_file_path, 'r') as f:
-            log_lines = list(deque(await f.readlines(), 200))
+            log_lines = list(deque(await f.readlines(), 1000))
     except FileNotFoundError:
         log_lines = [f"Error: Log file not found at '{log_file_path}'."]
     except Exception as e:

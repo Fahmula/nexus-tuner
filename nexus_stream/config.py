@@ -8,7 +8,7 @@ from enum import StrEnum
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from dotenv import load_dotenv
-from typing import Any, Callable, NewType, Self
+from typing import Any, Callable, Iterable, NewType, Self
 
 import asyncio
 import aiofiles
@@ -24,19 +24,51 @@ class VideoType(StrEnum):
     HLS = "hls"
     MPEGTS = "mpegts"
 
+class JobName(StrEnum):
+    BACKUP = "backup"
+    CLEANUP = "cleanup"
+    DISCOVER = "discover"
+    QUALITY = "quality"
+
 class Label(StrEnum):
-    STARTUP = "startup"
-    SERVER = "server"
     CONFIG = "config"
     HANDLER = "handler"
+    SCHEDULER = "scheduler"
+    SERVER = "server"
+    SESSION = "session"
+    STARTUP = "startup"
     STREAM = "stream"
     QUALITY = "quality"
-    SESSION = "session"
 
 # --- Constants ---
 NOT_ALPHANUM_REGEX = re.compile(r'[^a-zA-Z0-9_-]')
 CREATE_STREAM_DEADLINE = 25  # The maximum time that clients will wait for a stream to be created
 NEW_DEADLINE_NON_BEST = 1  # The number of seconds after a stream is healthy before giving up waiting on others, the best remaining source deadline is immediate
+HUMAN_READABLE_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+
+def relative_time(dt: datetime, reference_time: datetime | None = None) -> str:
+    """Formats a datetime as a relative time string (e.g. '5m ago' or 'in 2h')."""
+    reference_time = reference_time or datetime.now()
+    delta = dt - reference_time if dt > reference_time else reference_time - dt
+    
+    seconds = delta.total_seconds()
+    if seconds < 60:
+        unit = "s"
+        value = int(seconds)
+    elif seconds < 3600:
+        unit = "m"
+        value = int(seconds / 60)
+    elif seconds < 86400:
+        unit = "h"
+        value = int(seconds / 3600)
+    else:
+        unit = "d"
+        value = int(seconds / 86400)
+    if dt < reference_time:
+        return f"{value}{unit} ago"
+    else:
+        return f"in {value}{unit}"
 
 
 class Config:
@@ -95,8 +127,14 @@ class Config:
         self.service_quality_cache_name: str = "service_quality_cache.json"
         self.service_quality_cache_path: Path = self.config_dir / self.service_quality_cache_name
 
+        self.jobs_name: str = "jobs.json"
+        self.jobs_path: Path = self.config_dir / self.jobs_name
+
         # --- Backup Config ---
-        self.backups_path: Path = self.config_dir / "backups"
+        self.backups_base_path: Path = self.config_dir / "backups"
+        self.backups_scheduled_path: Path = self.backups_base_path / "scheduled"
+        self.backups_manual_path: Path = self.backups_base_path / "manual"
+        self.backup_count: int = int(os.getenv("NEXUS_BACKUP_COUNT", 7))
 
         # --- HLS Segment Directory ---
         self.hls_base_segment_dir: Path = self.config_dir / "hls_segments"
@@ -140,7 +178,8 @@ class Config:
         self.info(Label.STARTUP, f"NexusStream v{NEXUS_STREAM_VERSION}")
         await aiofiles.os.makedirs(self.logs_dir, exist_ok=True)
         await aiofiles.os.makedirs(self.config_dir, exist_ok=True)
-        await aiofiles.os.makedirs(self.backups_path, exist_ok=True)
+        await aiofiles.os.makedirs(self.backups_scheduled_path, exist_ok=True)
+        await aiofiles.os.makedirs(self.backups_manual_path, exist_ok=True)
 
         if not await aiofiles.os.path.exists(self.channel_list_path):
             self.debug(Label.STARTUP, f"Creating default channel list at {self.channel_list_path}")
@@ -163,30 +202,29 @@ class Config:
             log_file_path, when='midnight', backupCount=self.log_backup_count
         )
         format_str = "%(asctime)s.%(msecs)03d %(levelname)s: %(message)s"
-        datefmt_str = "%Y-%m-%d %H:%M:%S"
 
         class ColoredFormatter(logging.Formatter):
-            grey = "\x1b[38;20m"
-            green = "\x1b[32;20m"
-            yellow = "\x1b[33;20m"
-            red = "\x1b[31;20m"
-            bold_red = "\x1b[31;1m"
-            reset = "\x1b[0m"
+            GREY_ANSI = "\x1b[38;20m"
+            GREEN_ANSI = "\x1b[32;20m"
+            YELLOW_ANSI = "\x1b[33;20m"
+            RED_ANSI = "\x1b[31;20m"
+            BOLD_RED_ANSI = "\x1b[31;1m"
+            RESET_ANSI = "\x1b[0m"
 
             FORMATS = {
-                logging.DEBUG: format_str.replace("%(levelname)s", f"{grey}%(levelname)s{reset}"),
-                logging.INFO: format_str.replace("%(levelname)s", f"{green}%(levelname)s{reset}"),
-                logging.WARNING: format_str.replace("%(levelname)s", f"{yellow}%(levelname)s{reset}"),
-                logging.ERROR: format_str.replace("%(levelname)s", f"{red}%(levelname)s{reset}"),
-                logging.CRITICAL: format_str.replace("%(levelname)s", f"{bold_red}%(levelname)s{reset}"),
+                logging.DEBUG: format_str.replace("%(levelname)s", f"{GREY_ANSI}%(levelname)s{RESET_ANSI}"),
+                logging.INFO: format_str.replace("%(levelname)s", f"{GREEN_ANSI}%(levelname)s{RESET_ANSI}"),
+                logging.WARNING: format_str.replace("%(levelname)s", f"{YELLOW_ANSI}%(levelname)s{RESET_ANSI}"),
+                logging.ERROR: format_str.replace("%(levelname)s", f"{RED_ANSI}%(levelname)s{RESET_ANSI}"),
+                logging.CRITICAL: format_str.replace("%(levelname)s", f"{BOLD_RED_ANSI}%(levelname)s{RESET_ANSI}"),
             }
 
             def format(self, record: logging.LogRecord) -> str:
                 log_fmt = self.FORMATS.get(record.levelno, format_str)
-                formatter = logging.Formatter(log_fmt, datefmt=datefmt_str)
+                formatter = logging.Formatter(log_fmt, datefmt=HUMAN_READABLE_DATE_FORMAT)
                 return formatter.format(record)
 
-        file_handler.setFormatter(logging.Formatter(format_str, datefmt=datefmt_str))
+        file_handler.setFormatter(logging.Formatter(format_str, datefmt=HUMAN_READABLE_DATE_FORMAT))
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(ColoredFormatter())
         logger.addHandler(file_handler)
@@ -359,14 +397,14 @@ class Config:
     async def get_channel_mappings_config(self) -> dict[str, Any]:
         """Loads the channel mappings from channel_mappings.json asynchronously."""
         return await self._load_json_file(self.channel_mappings_path, dict)
-    
-    async def get_channel_list_config(self) -> dict[str, Any]:
-        """Loads the predefined channel list from channel_list.json asynchronously."""
-        return await self._load_json_file(self.channel_list_path, dict)
 
     async def save_channel_mappings_config(self, data: dict[str, Any]) -> bool:
         """Saves the channel mappings to channel_mappings.json asynchronously."""
         return await self._save_json_file(self.channel_mappings_path, data)
+    
+    async def get_channel_list_config(self) -> dict[str, Any]:
+        """Loads the predefined channel list from channel_list.json asynchronously."""
+        return await self._load_json_file(self.channel_list_path, dict)
 
     async def get_service_quality_cache(self) -> dict[str, Any]:
         """Loads the service quality cache from service_quality_cache.json asynchronously."""
@@ -376,11 +414,19 @@ class Config:
         """Saves the service quality cache to service_quality_cache.json asynchronously."""
         return await self._save_json_file(self.service_quality_cache_path, data)
 
-    async def backup_config(self, scheduled: bool) -> Path | None:
+    async def get_jobs_config(self) -> dict[JobName, dict[str, Any]]:
+        """Loads the jobs configuration from jobs.json asynchronously."""
+        return await self._load_json_file(self.jobs_path, dict)
+
+    async def save_jobs_config(self, data: dict[JobName, dict[str, Any]]) -> bool:
+        """Saves the jobs configuration to jobs.json asynchronously."""
+        return await self._save_json_file(self.jobs_path, data)
+
+    async def backup_config(self, *, scheduled: bool) -> Path | None:
         """Creates a zip backup of the current configuration files."""
         try:
-            sub_folder = "scheduled" if scheduled else "manual"
-            backup_folder = self.backups_path / sub_folder / f"nexus_stream_backup_{datetime.now().isoformat(timespec='seconds').replace(':', '-')}"
+            base_path = self.backups_scheduled_path if scheduled else self.backups_manual_path
+            backup_folder = base_path / f"nexus_stream_backup_{datetime.now().isoformat(timespec='seconds').replace(':', '-')}"
             await aiofiles.os.makedirs(backup_folder, exist_ok=True)
             backup_path = backup_folder.with_name(f"{backup_folder.name}.zip")
             self.info(Label.CONFIG, f"Creating backup at {backup_path}")
@@ -391,9 +437,25 @@ class Config:
                 await aioshutil.copy2(self.channel_mappings_path, backup_folder / self.channel_mappings_name)
                 await aioshutil.copy2(self.channel_list_path, backup_folder / self.channel_list_name)
                 await aioshutil.copy2(self.service_quality_cache_path, backup_folder / self.service_quality_cache_name)
+                await aioshutil.copy2(self.jobs_path, backup_folder / self.jobs_name)
                 await aioshutil.make_archive(str(backup_folder), 'zip', backup_folder)
                 await aioshutil.rmtree(backup_folder, ignore_errors=True)
             return backup_path
         except Exception as e:
             self.error(Label.CONFIG, f"Failed to create backup: {e}")
             return
+
+    async def cleanup_backups(self) -> None:
+        """Cleans up old scheduled backups, keeping only the most recent N backups."""
+        try:
+            backup_names = sorted(await aiofiles.os.listdir(self.backups_scheduled_path), reverse=True)
+        except Exception as e:
+            self.error(Label.CONFIG, f"Failed to get backups in {self.backups_scheduled_path}: {e}")
+            return
+        for backup_name in backup_names[self.backup_count:]:
+            backup_path = self.backups_scheduled_path / backup_name
+            try:
+                await aiofiles.os.remove(backup_path)
+                self.debug(Label.CONFIG, f"Removed old backup: {backup_path}")
+            except Exception as e:
+                self.error(Label.CONFIG, f"Failed to remove old backup {backup_path}: {e}")

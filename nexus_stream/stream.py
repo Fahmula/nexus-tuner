@@ -3,7 +3,7 @@ import aiofiles
 import aioshutil
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Any, Iterable, NoReturn, Self
+from typing import Any, Coroutine, Iterable, NoReturn, Self
 
 from nexus_stream.config import CREATE_STREAM_DEADLINE, NEW_DEADLINE_NON_BEST, Config, Label, VideoKey, VideoType
 from nexus_stream.handler import ChannelHandler
@@ -176,7 +176,7 @@ class StreamManager:
                 if data['is_long_term'] and not data['is_mpegts_active'] and now - data['last_access'] > timedelta(seconds=self.config.segment_prune_timeout)
             ]
         
-        tasks = []
+        tasks: list[Coroutine[Any, Any, None]] = []
         for video_key, logical_channel_name in inactive_ids:
             self.config.info(Label.STREAM, f"Pruning inactive stream '{logical_channel_name}' [{video_key}].")
             tasks.append(self.stop_ffmpeg_process(video_key, logical_channel_name))
@@ -245,8 +245,6 @@ class StreamManager:
                 await aioshutil.rmtree(hls_dir)
         except OSError as e:
             self.config.error(video_type, f"{name} [{video_key}]: Failed to clean HLS directory {hls_dir}: {e}")
-            
-        await self.config.cleanup_ffmpeg_logs_by_age()
 
         self.config.info(video_type, f"{name} [{video_key}]: Successfully stopped and cleaned up all resources {{{provider}:{new_active_count}}}")
 

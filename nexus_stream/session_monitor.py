@@ -8,6 +8,7 @@ from nexus_stream.stream import StreamManager
 from nexus_stream.create_stream import VideoKey
 
 # --- Constants ---
+SESSION_MONITOR_STARTUP_DELAY = 15
 MEDIA_SERVER_API_TIMEOUT = 10
 SESSION_ACTIVE_BUFFER_SECONDS = 60 # Check for sessions active within interval + this buffer
 
@@ -141,7 +142,7 @@ class GhostSessionMonitor:
             return
 
         self.config.info(Label.STARTUP, "Ghost Session Monitor task started.")
-        await asyncio.sleep(15)
+        await asyncio.sleep(SESSION_MONITOR_STARTUP_DELAY)
         
         while True:
             try:

@@ -17,7 +17,7 @@ RESOLUTION_NORM = 2160
 BITRATE_NORM = 12_000_000
 FRAMERATE_NORM = 60
 
-QUALITY_MONITOR_INTERVAL = 86400
+BACKGROUND_SLOT_WAIT_INTERVAL = 1
 QUALITY_MONITOR_TIMEOUT = 5
 MAX_HISTORY_PER_SERVICE = 10
 MIN_DAYS_AT_MAX_HISTORY = 7
@@ -37,8 +37,6 @@ class QualityMonitor:
         """Asynchronous factory for creating and initializing a QualityMonitor instance."""
         instance = cls(config, handler)
         instance._build_quality_scores(await config.get_service_quality_cache())
-        instance.quality_monitor_task = asyncio.create_task(instance.run())
-        config.info(Label.STARTUP, "Quality Monitor task started.")
         return instance
 
     async def get_quality_scores(self) -> dict[str, dict[str, float]]:
@@ -55,20 +53,6 @@ class QualityMonitor:
             if service_id in quality_cache:
                 del quality_cache[service_id]
                 await self.config.save_service_quality_cache(quality_cache)
-
-    async def analyze_logical_channel(self, input_lc_id: str) -> None:
-        """Analyzes the quality of services mapped to a specific logical channel."""
-        await self._analyze_mapped_services(input_lc_id)
-
-    async def run(self) -> NoReturn:
-        """The main execution loop for the monitor, run as an asyncio task."""
-        while True:
-            try:
-                await self._analyze_mapped_services()
-            except Exception as e:
-                self.config.critical(Label.QUALITY, f"Unhandled exception in main check loop: {e}")
-            self.config.info(Label.QUALITY, f"Cycle complete. Sleeping for {QUALITY_MONITOR_INTERVAL} seconds.")
-            await asyncio.sleep(QUALITY_MONITOR_INTERVAL)
 
     async def _get_stream_info(self, service_id: str, service_url: str) -> dict[str, Any] | None:
         """
@@ -145,11 +129,15 @@ class QualityMonitor:
         """
         provider_slots = self.handler.slots.get(provider_alias)
         if not provider_slots:
-            return service_id, {"status": "error", "reason": "Provider slot manager not found"}
-
+            msg = f"Provider slot manager for {provider_alias} not found."
+            self.config.error(Label.QUALITY, msg)
+            raise RuntimeError(msg)
+            
         current_task = asyncio.current_task()
         if not current_task:
-            raise RuntimeError("Current task is None, cannot run probe without a task context")
+            msg = "Current task is None, cannot run probe without a task context"
+            self.config.error(Label.QUALITY, msg)
+            raise RuntimeError(msg)
 
         slot_acquired = False
         try:
@@ -159,7 +147,7 @@ class QualityMonitor:
                     if not paused:
                         self.config.debug(Label.QUALITY, f"Pausing probe for {service_id} for user streams...")
                         paused = True
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(BACKGROUND_SLOT_WAIT_INTERVAL)
                     continue
                 if paused:
                     self.config.debug(Label.QUALITY, f"Resuming probe for {service_id} after user streams.")
@@ -170,7 +158,7 @@ class QualityMonitor:
                     slot_acquired = True
                     break
                 except asyncio.TimeoutError:
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(BACKGROUND_SLOT_WAIT_INTERVAL)
 
             stream_info = await self._get_stream_info(service_id, service_url)
             
@@ -188,7 +176,7 @@ class QualityMonitor:
             if slot_acquired:
                 await provider_slots.release_background_slot(current_task)
     
-    async def _analyze_mapped_services(self, input_lc_id: str | None = None) -> None:
+    async def analyze_mapped_services(self, input_lc_id: str | None = None) -> None:
         """Finds and probes all mapped services concurrently."""
         valid_mappings: list[tuple[str, list[str], str]] = []
         if input_lc_id:
@@ -240,7 +228,15 @@ class QualityMonitor:
                 self.config.debug(Label.QUALITY, f"No valid services found to probe for Logical Channel ID {logical_channel_id}.")
                 continue
 
-            stream_infos = await asyncio.gather(*tasks)
+            raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+            stream_infos: list[tuple[str, dict[str, str | float | int]]] = []
+            for raw_result in raw_results:
+                if isinstance(raw_result, BaseException):
+                    if not isinstance(raw_result, asyncio.CancelledError) and not isinstance(raw_result, Exception):
+                        self.config.error(Label.QUALITY, f"Error probing service: {raw_result}")
+                    continue
+                stream_infos.append(raw_result)
+
             async with self._mutex:
                 quality_cache = await self.config.get_service_quality_cache()
                 modified_cache: dict[str, dict[str, list[Any]]] = {}

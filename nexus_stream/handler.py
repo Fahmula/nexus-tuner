@@ -107,9 +107,6 @@ class ChannelHandler:
             for alias in self.providers_data:
                 self.providers_data[alias]["updated_at"] = now.isoformat()
             await self._save_providers_for_ui({"source_m3u_providers": self.providers_data}, update_slots=False)
-        else:
-            max_updated_at = max([p_data.get("updated_at") or "0001-01-01" for p_data in self.providers_data.values()], default="0001-01-01")
-            self.config.info(self.label, f"Skipping source discovery, last updated at {max_updated_at} is within the interval of {DISCOVER_SOURCES_INTERVAL} seconds.")
 
         # Build in-memory data
         self._build_client_facing_channels()
