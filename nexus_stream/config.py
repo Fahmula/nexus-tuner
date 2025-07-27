@@ -347,7 +347,7 @@ class Config:
                 await aioshutil.copy2(self.channel_mappings_path, backup_folder / self.channel_mappings_name)
                 await aioshutil.copy2(self.channel_list_path, backup_folder / self.channel_list_name)
                 await aioshutil.copy2(self.service_quality_cache_path, backup_folder / self.service_quality_cache_name)
-                await aioshutil.make_archive(str(backup_path), 'zip', backup_folder)
+                await aioshutil.make_archive(str(backup_folder), 'zip', backup_folder)
                 await aioshutil.rmtree(backup_folder, ignore_errors=True)
             return backup_path
         except Exception as e:

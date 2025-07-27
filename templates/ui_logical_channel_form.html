@@ -91,16 +91,16 @@
                                 }
                             );
                         }
-                    " hx-indicator="#spinner, #analyze-button-container" data-bs-toggle="tooltip"
+                    " hx-indicator="#analyze-spinner, #analyze-button-container" data-bs-toggle="tooltip"
                     title="Performs a single run of Quality Monitor for this channel's mappings ahead of schedule.">
                     <i class="fas fa-microscope"></i>
                     Save & Analyze Mappings
                 </button>
-                <div id="spinner" class="htmx-indicator d-flex align-items-center">
-                    <div class="spinner-border text-primary me-2" role="status">
+                <div id="analyze-spinner" class="htmx-indicator d-flex align-items-center btn btn-info btn-lg">
+                    <div class="spinner-border text-light me-2" role="status">
                         <span class="visually-hidden">Loading...</span>
                     </div>
-                    <span>Saving and analyzing mappings...</span>
+                    <span>Analyzing...</span>
                 </div>
             </div>
         {% else %}

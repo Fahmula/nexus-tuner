@@ -44,25 +44,35 @@
     <h4>Quick Actions</h4>
     <hr>
     <p>
-        <button class="btn btn-secondary"
-                hx-post="{{ url_for('reload_configuration') }}"
-                hx-target="#flash-messages-container"
-                hx-swap="afterbegin"
-                hx-vals='{"update_providers": "true", "force_discover_sources": "true"}'
-                data-bs-toggle="tooltip" data-bs-placement="top" title="Reloads provider M3Us, re-parses services, and rebuilds the client M3U."
-                hx-indicator="#dashboard-reload-indicator">
+    <div id="dashboard-reload-container" class="d-inline-block">
+        <button id="dashboard-reload-button" class="btn btn-secondary" hx-post="{{ url_for('reload_configuration') }}"
+            hx-target="#flash-messages-container" hx-swap="afterbegin"
+            hx-vals='{"update_providers": "true", "force_discover_sources": "true"}' data-bs-toggle="tooltip"
+            data-bs-placement="top" title="Reloads provider M3Us, re-parses services, and rebuilds the client M3U."
+            hx-indicator="#dashboard-reload-container">
             <i class="fas fa-sync-alt"></i> Full Reload (Providers & M3U)
-            <span id="dashboard-reload-indicator" class="htmx-indicator spinner-border spinner-border-sm ms-1" role="status" aria-hidden="true"></span>
         </button>
-        <button class="btn btn-secondary ms-2"
-                hx-post="{{ url_for('backup_configuration') }}"
-                hx-target="#flash-messages-container"
-                hx-swap="afterbegin"
-                data-bs-toggle="tooltip" data-bs-placement="top" title="Creates a backup of your current configuration."
-                hx-indicator="#dashboard-backup-indicator">
+        <div id="dashboard-reload-spinner" class="htmx-indicator d-flex align-items-center btn btn-secondary">
+            <div class="spinner-border spinner-border-sm me-2" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <span>Reloading...</span>
+        </div>
+    </div>
+    
+    <div id="dashboard-backup-container" class="d-inline-block ms-2">
+        <button id="dashboard-backup-button" class="btn btn-secondary" hx-post="{{ url_for('backup_configuration') }}"
+            hx-target="#flash-messages-container" hx-swap="afterbegin" data-bs-toggle="tooltip" data-bs-placement="top"
+            title="Creates a backup of your current configuration." hx-indicator="#dashboard-backup-container">
             <i class="fas fa-save"></i> Backup Config
-            <span id="dashboard-backup-indicator" class="htmx-indicator spinner-border spinner-border-sm ms-1" role="status" aria-hidden="true"></span>
         </button>
+        <div id="dashboard-backup-spinner" class="htmx-indicator d-flex align-items-center btn btn-secondary">
+            <div class="spinner-border spinner-border-sm me-2" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <span>Backing up...</span>
+        </div>
+    </div>
     </p>
     <p class="text-muted small">
         Use the "Reload Config" button in the top navigation for a quicker reload of JSON configurations and M3U generation without re-parsing all provider M3Us (if only logical channel definitions or mappings changed).

@@ -62,14 +62,56 @@
         [data-bs-theme="dark"] #theme-toggle-button .fa-sun { display: inline-block; }
         [data-bs-theme="dark"] #theme-toggle-button .fa-moon { display: none; }
 
-        /* Hide the button during HTMX requests */
-        #analyze-button-container.htmx-request #analyze-button {
-        display: none;
-        }
-        /* Position the spinner where the button was */
-        #analyze-button-container.htmx-request #spinner {
+        /* --- Dashboard Button Spinners --- */
+        #dashboard-reload-container,
+        #dashboard-backup-container {
+            position: relative;
             display: inline-block;
-            padding: 8px 16px;
+        }
+        #dashboard-reload-container.htmx-request #dashboard-reload-button,
+        #dashboard-backup-container.htmx-request #dashboard-backup-button {
+            visibility: hidden;
+        }
+        #dashboard-reload-spinner,
+        #dashboard-backup-spinner {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            pointer-events: none;
+        }
+        #dashboard-reload-container.htmx-request #dashboard-reload-spinner,
+        #dashboard-backup-container.htmx-request #dashboard-backup-spinner {
+            display: flex !important;
+            pointer-events: auto;
+        }
+
+        /* --- Analyze Button Spinner --- */
+        #analyze-button-container {
+            position: relative;
+            display: inline-block;
+        }
+        #analyze-button-container.htmx-request #analyze-button {
+            visibility: hidden;
+        }
+        #analyze-spinner {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            pointer-events: none;
+        }
+        #analyze-button-container.htmx-request #analyze-spinner {
+            display: flex !important;
+            pointer-events: auto;
         }
 
         /* --- Custom Dark Mode Overrides --- */
@@ -132,21 +174,17 @@
                     </li>
                 </ul>
                 <div class="d-flex align-items-center">
-                    <!-- Dark Mode Toggle Button -->
                     <button class="btn btn-outline-light me-2" type="button" id="theme-toggle-button" title="Toggle theme">
                         <i class="fas fa-moon"></i>
                         <i class="fas fa-sun"></i>
                     </button>
-
                     <form class="d-flex" role="search"
                           hx-post="{{ url_for('reload_configuration') }}"
                           hx-target="#flash-messages-container"
                           hx-swap="innerHTML"
-                          hx-vals='{"update_providers": "true", "force_discover_sources": "false"}'
-                          hx-indicator="#reload-indicator">
+                          hx-vals='{"update_providers": "true", "force_discover_sources": "false"}'>
                         <button class="btn btn-outline-light" type="submit">
                             <i class="fas fa-sync-alt"></i> Reload Config
-                            <span id="reload-indicator" class="htmx-indicator spinner-border spinner-border-sm ms-1" role="status" aria-hidden="true"></span>
                         </button>
                     </form>
                 </div>

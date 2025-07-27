@@ -271,7 +271,7 @@ class QualityMonitor:
                 await self.config.save_service_quality_cache(quality_cache)
                 self._build_quality_scores(modified_cache)
         if input_lc_id:
-            self.config.log_message(f"Quality Monitor: Completed analysis for Logical Channel ID {input_lc_id}.", level="INFO")
+            self.config.log_message(f"Quality Monitor: Completed analysis for {len(valid_mappings[0][1])} mappings(s) in Logical Channel ID {input_lc_id}.", level="INFO")
 
     def _build_quality_scores(self, quality_cache: dict[str, dict[str, list[Any]]]) -> None:
         """Calculates quality scores and updates the internal state."""

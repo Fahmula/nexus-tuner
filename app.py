@@ -150,7 +150,7 @@ async def serve_mpegts_stream(logical_channel_id: str, stream_response: bool = T
             video_key = res
 
         if not stream_response:
-            config.log_message(f"[{VideoType.MPEGTS}] Recreated MPEGTS stream for logical channel '{logical_channel_name}' with key '{video_key}'.", level="INFO")
+            config.log_message(f"[{VideoType.MPEGTS}] Recreated MPEGTS stream for channel '{logical_channel_name}' with key '{video_key}'.", level="INFO")
             return Response(status=204)
 
         async def stream_generator() -> AsyncGenerator[bytes, None]:
@@ -251,7 +251,7 @@ async def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str 
 
         playlist_path = await stream_manager.get_hls_playlist_path(video_key)
         if not playlist_path:
-            msg = f"[{VideoType.HLS}] Internal error: HLS playlist path not found for logical channel '{logical_channel_name}' with key '{video_key}'."
+            msg = f"[{VideoType.HLS}] Internal error: HLS playlist path not found for channel '{logical_channel_name}' with key '{video_key}'."
             config.log_message(msg, level="ERROR")
             abort(500, msg)
 
@@ -321,7 +321,10 @@ async def reload_configuration() -> Response:
     config.log_message(f"Received request to reload configuration via UI with params={{update_providers={update_providers}, force_discover_sources={force_discover_sources}}}", level="INFO")
     try:
         await handler.reload_handler_config(update_providers=update_providers, force_discover_sources=force_discover_sources)
-        await flash("Configuration reloaded successfully!", "success")
+        if force_discover_sources:
+            await flash("Successfully reloaded configuration and refreshed discovered source services!", "success")
+        else:
+            await flash("Successfully reloaded configuration!", "success")
     except Exception as e:
         config.log_message(f"An error occurred during manual reload: {e}", level="ERROR")
         await flash(f"An error occurred during reload: {e}", "error")
@@ -391,6 +394,7 @@ async def ui_logical_channel_form(logical_channel_id: str | None = None):
             "tvg_id": form_data.get("tvg_id", "").strip(),
             "tvg_logo": form_data.get("tvg_logo", "").strip()
         }
+        channel_log = f"'{lc_data.get('display_name', 'Unknown Channel')}'{f' ({lc_data['channel_num']})' if 'channel_num' in lc_data else ''}"
 
         if not lc_data['display_name'] or not lc_data['channel_num']:
             await flash("Display Name and Channel Number are required.", "error") 
@@ -409,7 +413,7 @@ async def ui_logical_channel_form(logical_channel_id: str | None = None):
         if is_update:
             await handler.update_logical_channel(submitted_id, lc_data)
             await handler.update_mappings_for_logical_channel(submitted_id, mappings_to_save)
-            await flash(f"Channel '{lc_data['display_name']}' updated.", "success")
+            await flash(f"Channel {channel_log} updated.", "success")
             await handler.reload_handler_config()
             return redirect(url_for('ui_logical_channel_form', logical_channel_id=submitted_id))
         else:
@@ -417,7 +421,7 @@ async def ui_logical_channel_form(logical_channel_id: str | None = None):
             if new_id:
                 if mappings_to_save:
                     await handler.update_mappings_for_logical_channel(new_id, mappings_to_save)
-                await flash(f"Channel '{lc_data['display_name']}' created.", "success")
+                await flash(f"Channel {channel_log} created.", "success")
                 await handler.reload_handler_config()
                 return redirect(url_for('ui_logical_channel_form', logical_channel_id=new_id))
             else:
@@ -699,11 +703,12 @@ async def ui_channel_suggest() -> str:
 async def ui_logical_channel_delete(logical_channel_id: str) -> Response:
     channel = handler.get_logical_channel_by_id(logical_channel_id)
     if channel:
+        channel_log = f"'{channel.get('display_name', 'Unknown Channel')}'{f' ({channel['channel_num']})' if 'channel_num' in channel else ''}"
         if await handler.delete_logical_channel(logical_channel_id):
-            await flash(f"Logical Channel '{channel['display_name']}' deleted.", "success")
+            await flash(f"Channel {channel_log} deleted.", "success")
             await handler.reload_handler_config()
         else:
-            await flash(f"Error deleting logical channel '{channel['display_name']}'.", "error")
+            await flash(f"Error deleting channel {channel_log}.", "error")
     else:
         await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "warning")
     return redirect(url_for('ui_logical_channels_list'))

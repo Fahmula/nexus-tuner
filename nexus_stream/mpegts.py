@@ -35,7 +35,7 @@ class MPEGTSStream:
 
     @classmethod
     async def register(cls, config: Config, stream_manager: StreamManager, video_key: VideoKey, recreate_stream: Callable[[], Awaitable[None]]) -> tuple[Self, int]:
-        if video_key not in cls.streams or cls.streams[video_key]._cancelled:
+        if video_key not in cls.streams:
             instance = cls(config, stream_manager, video_key, recreate_stream)
             cls.streams[video_key] = instance
             await instance._initialize()
@@ -97,6 +97,7 @@ class MPEGTSStream:
             async with self.stream_manager.stream_process_lock:
                 process_info["last_access"] = datetime.now()
                 process_info["is_mpegts_active"] = False
+            del self.streams[self.video_key]
 
     async def _cleanup(self) -> NoReturn:
         max_entries = BUFFER_SIZE_LIMIT // MPEGTS_CHUNK_SIZE
@@ -113,7 +114,6 @@ class MPEGTSStream:
                     self._reader_positions[reader_id] = max(0, self._reader_positions[reader_id] - dropped)
 
     async def _cancel(self) -> None:
-        self.streams.pop(self.video_key, None)
         self._cancelled = True  # Let the stdout reader finish gracefully incase we will reconnect
         self._cleaner.cancel()
         self._event.set()  # Ensure any waiting readers are woken up
