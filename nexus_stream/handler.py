@@ -6,7 +6,7 @@ import asyncio
 from typing import Any, Self
 
 import aiohttp
-from nexus_stream.config import Config, VideoType, NEXUS_STREAM_USER_AGENT
+from nexus_stream.config import Config, Label, VideoType, NEXUS_STREAM_USER_AGENT
 from nexus_stream.slots import ProviderName, ProviderSlots
 
 # --- Constants ---
@@ -34,6 +34,7 @@ class ChannelHandler:
         """
         Initializes the ChannelHandler. NOTE: This is now a lightweight, synchronous constructor.
         """
+        self.label: Label = Label.STARTUP
         self._loading = False
         self.config = config
         self._mutex = asyncio.Lock()
@@ -59,6 +60,7 @@ class ChannelHandler:
         """Asynchronous factory for creating and initializing a ChannelHandler instance."""
         instance = cls(config)
         await instance._load_and_process_configurations(update_providers=True, force_discover_sources=False)
+        instance.label = Label.HANDLER
         return instance
 
     def is_loading(self) -> bool:
@@ -84,7 +86,7 @@ class ChannelHandler:
         Loads all data from JSON files and rebuilds the in-memory channel structures asynchronously.
         """
         self._loading = True
-        self.config.log_message("Reloading ChannelHandler configurations", level="INFO")
+        self.config.info(self.label, "Reloading ChannelHandler configurations")
 
         self.discovered_source_services_data = await self.config.get_discovered_source_services_config()
         self.logical_channels_data = await self.config.get_logical_channels_config()
@@ -99,21 +101,24 @@ class ChannelHandler:
         min_updated_at = min([p_data.get("updated_at") or "0001-01-01" for p_data in self.providers_data.values()], default="0001-01-01")
         now = datetime.now()
         if force_discover_sources or datetime.fromisoformat(min_updated_at) < now - timedelta(seconds=DISCOVER_SOURCES_INTERVAL):
+            self.config.info(self.label, "Discovering source services from configured providers...")
             await self._parse_all_provider_m3us_and_populate_discovered_services()
             await self.config.save_discovered_source_services_config(self.discovered_source_services_data)
             for alias in self.providers_data:
                 self.providers_data[alias]["updated_at"] = now.isoformat()
             await self._save_providers_for_ui({"source_m3u_providers": self.providers_data}, update_slots=False)
+        else:
+            max_updated_at = max([p_data.get("updated_at") or "0001-01-01" for p_data in self.providers_data.values()], default="0001-01-01")
+            self.config.info(self.label, f"Skipping source discovery, last updated at {max_updated_at} is within the interval of {DISCOVER_SOURCES_INTERVAL} seconds.")
 
         # Build in-memory data
         self._build_client_facing_channels()
         self.generate_master_client_m3u()
         
         self._loading = False
-        self.config.log_message(
+        self.config.info(self.label,
             f"ChannelHandler ready. Discovered: {len(self.discovered_source_services_data)}, "
-            f"Client-Facing: {len(self.client_facing_channels)}",
-            level="INFO"
+            f"Client-Facing: {len(self.client_facing_channels)}"
         )
 
     def _parse_source_m3u_lines(self, lines: list[str]) -> list[dict[str, str]]:
@@ -162,17 +167,17 @@ class ChannelHandler:
                             "provider_alias": provider_alias,
                             **p_channel
                         }
-                self.config.log_message(f"Discovered {len(parsed_channels)} services from provider '{provider_alias}'.", level="INFO")
+                self.config.info(self.label, f"Discovered {len(parsed_channels)} services from provider '{provider_alias}'.")
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-            self.config.log_message(f"Failed to fetch or parse provider '{provider_alias}': {e}", level="ERROR")
+            self.config.error(self.label, f"Failed to fetch or parse provider '{provider_alias}': {e}")
             raise
         except Exception as e:
-            self.config.log_message(f"An unexpected error occurred while processing provider '{provider_alias}': {e}", level="ERROR")
+            self.config.error(self.label, f"An unexpected error occurred while processing provider '{provider_alias}': {e}")
             raise
 
     async def _parse_all_provider_m3us_and_populate_discovered_services(self) -> None:
         """Uses asyncio.gather to fetch and parse all configured provider M3Us concurrently."""
-        self.config.log_message("Starting to parse all provider M3Us...", level="INFO")
+        self.config.info(self.label, "Starting to parse all provider M3Us...")
         self.discovered_source_services_data.clear()
 
         async with aiohttp.ClientSession() as session:
@@ -181,7 +186,7 @@ class ChannelHandler:
                 for alias, details in self.providers_data.items() if details.get("url")
             ]
             if not tasks:
-                self.config.log_message("No providers with URLs configured to parse.", level="DEBUG")
+                self.config.debug(self.label, "No providers with URLs configured to parse.")
                 return
 
             results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -189,19 +194,19 @@ class ChannelHandler:
             provider_aliases = [alias for alias, details in self.providers_data.items() if details.get("url")]
             for result, alias in zip(results, provider_aliases):
                 if isinstance(result, Exception):
-                    self.config.log_message(f"A background task for provider '{alias}' failed: {result}", level="ERROR")
+                    self.config.error(self.label, f"A background task for provider '{alias}' failed: {result}")
         
-        self.config.log_message(f"Finished parsing. Total discovered source services: {len(self.discovered_source_services_data)}", level="INFO")
+        self.config.info(self.label, f"Finished parsing. Total discovered source services: {len(self.discovered_source_services_data)}")
 
     def _build_client_facing_channels(self) -> None:
         """Builds the final list of channels exposed to clients. (Sync - CPU-bound)"""
-        self.config.log_message("Building client-facing channels...", level="INFO")
+        self.config.info(self.label, "Building client-facing channels...")
         self.client_facing_channels.clear()
 
         for lc_def in self.logical_channels_data:
             logical_channel_id = lc_def.get("logical_channel_id")
             if not logical_channel_id:
-                self.config.log_message(f"Skipping logical channel with missing ID: {lc_def.get('display_name', 'N/A')}", level="WARN")
+                self.config.info(self.label, f"Skipping logical channel with missing ID: {lc_def.get('display_name', 'N/A')}")
                 continue
 
             mapped_sources_for_lc = self.get_mappings_for_logical_channel(logical_channel_id)
@@ -218,7 +223,7 @@ class ChannelHandler:
                         "actual_stream_url": discovered_service["actual_stream_url"],
                     })
                 else:
-                    self.config.log_message(f"Mapped source '{source_id}' for '{lc_def.get('display_name', logical_channel_id)}'{f' ({lc_def['channel_num']})' if 'channel_num' in lc_def else ''} not found in discovered services.", level="WARN")
+                    self.config.info(self.label, f"Mapped source '{source_id}' for '{lc_def.get('display_name', logical_channel_id)}'{f' ({lc_def['channel_num']})' if 'channel_num' in lc_def else ''} not found in discovered services.")
 
             if processed_sources:
                 self.client_facing_channels[logical_channel_id] = {
@@ -231,8 +236,8 @@ class ChannelHandler:
                     "sources": processed_sources
                 }
             else:
-                 self.config.log_message(f"No valid mapped sources for LC '{logical_channel_id}'. It will not be included in the client M3U.", level="WARN")
-        self.config.log_message(f"Built {len(self.client_facing_channels)} client-facing channels.", level="INFO")
+                self.config.warn(self.label, f"No valid mapped sources for LC '{logical_channel_id}'. It will not be included in the client M3U.")
+        self.config.info(self.label, f"Built {len(self.client_facing_channels)} client-facing channels.")
 
     async def get_pending_stream_count(self) -> int:
         async with self._mutex:
@@ -254,7 +259,7 @@ class ChannelHandler:
         """Generates the master M3U content to be served to clients. (Sync - CPU-bound)"""
         m3u_lines = ["#EXTM3U x-tvg-url=\"\""]
         if not self.config.nexus_url:
-            self.config.log_message("NEXUS_URL not set. Client M3U URLs will be incorrect.", level="ERROR")
+            self.config.error(self.label, "NEXUS_URL not set. Client M3U URLs will be incorrect.")
             m3u_lines.extend(["#EXTINF:-1,Error: NEXUS_URL not configured", "http://error.invalid/stream"])
             self.master_m3u_content = "\n".join(m3u_lines) + "\n"
             return
@@ -273,7 +278,7 @@ class ChannelHandler:
             m3u_lines.append(f"{self.config.nexus_url}/{VideoType.HLS}/{lc_data['logical_channel_id']}/playlist.m3u8")
         
         self.master_m3u_content = "\n".join(m3u_lines) + "\n"
-        self.config.log_message(f"Generated master client M3U with {len(self.client_facing_channels)} channels.", level="INFO")
+        self.config.info(self.label, f"Generated master client M3U with {len(self.client_facing_channels)} channels.")
 
     def get_sources_for_client_facing_channel(self, logical_channel_id: str) -> list[dict[str, Any]]:
         """Retrieves source stream URLs for a channel. (Sync - in-memory lookup)"""
@@ -286,7 +291,7 @@ class ChannelHandler:
             providers_to_delete: set[ProviderName] = set()
             for alias, curr_details in self.slots.items():
                 if alias not in self.providers_data:
-                    self.config.log_message(f"Removing slots for provider '{alias}' as it no longer exists in configuration.", level="INFO")
+                    self.config.info(self.label, f"Removing slots for provider '{alias}' as it no longer exists in configuration.")
                     providers_to_delete.add(alias)
                     self._kill_provider_streams.add(alias)
                     continue
@@ -294,7 +299,7 @@ class ChannelHandler:
                 max_streams = self.providers_data[alias].get("max_concurrent_streams", 1)
                 if curr_details.get_m3u_url() == m3u_url and curr_details.get_total_slots() == max_streams:
                     continue
-                self.config.log_message(f"Updating slots for provider '{alias}' with new URL or max streams.", level="INFO")
+                self.config.info(self.label, f"Updating slots for provider '{alias}' with new URL or max streams.")
                 self.slots[alias] = ProviderSlots(
                     name=ProviderName(alias),
                     m3u_url=m3u_url,
@@ -313,7 +318,7 @@ class ChannelHandler:
                     m3u_url=details.get("url", ""),
                     total_slots=max_streams
                 )
-                self.config.log_message(f"Initialized slots for provider '{alias}' with capacity {max_streams}", level="INFO")
+                self.config.info(self.label, f"Initialized slots for provider '{alias}' with capacity {max_streams}")
         
     async def reload_handler_config(self, *, update_providers: bool = False, force_discover_sources: bool = False) -> None:
         """Public method to trigger a full async reload of the handler's configuration."""
@@ -524,5 +529,5 @@ class ChannelHandler:
     def get_all_discovered_source_services_for_ui(self) -> list[dict[str, Any]]:
         """Gets a list of discovered services. (Sync - in-memory lookup)"""
         all_services = list(self.discovered_source_services_data.values())
-        self.config.log_message(f"Returning {len(all_services)} services for UI.", level="DEBUG")
+        self.config.debug(self.label, f"Returning {len(all_services)} services for UI.")
         return sorted(all_services, key=lambda x: (x["provider_alias"], (x.get("original_tvg_name","") or x.get("original_display_name_extinf","")).lower()))

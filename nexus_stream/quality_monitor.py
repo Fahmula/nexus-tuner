@@ -3,7 +3,7 @@ import json
 from datetime import datetime, timedelta
 from typing import Coroutine, NoReturn, Any, Self
 
-from nexus_stream.config import Config, NEXUS_STREAM_USER_AGENT
+from nexus_stream.config import Config, NEXUS_STREAM_USER_AGENT, Label
 from nexus_stream.handler import ChannelHandler
 from nexus_stream.slots import ProviderName
 
@@ -30,14 +30,15 @@ class QualityMonitor:
         self.handler = handler
         self._mutex = asyncio.Lock()
         self._quality_scores: dict[str, dict[str, float]] = {}
+        self.quality_monitor_task: asyncio.Task[NoReturn]
 
     @classmethod
     async def create(cls, config: Config, handler: ChannelHandler) -> Self:
         """Asynchronous factory for creating and initializing a QualityMonitor instance."""
         instance = cls(config, handler)
-        config.log_message("Quality Monitor: Building quality scores from cache.", level="DEBUG")
         instance._build_quality_scores(await config.get_service_quality_cache())
-        config.log_message("Quality Monitor: Quality scores built successfully.", level="DEBUG")
+        instance.quality_monitor_task = asyncio.create_task(instance.run())
+        config.info(Label.STARTUP, "Quality Monitor task started.")
         return instance
 
     async def get_quality_scores(self) -> dict[str, dict[str, float]]:
@@ -61,13 +62,12 @@ class QualityMonitor:
 
     async def run(self) -> NoReturn:
         """The main execution loop for the monitor, run as an asyncio task."""
-        self.config.log_message("Quality Monitor: Task started.", level="INFO")
         while True:
             try:
                 await self._analyze_mapped_services()
             except Exception as e:
-                self.config.log_message(f"Quality Monitor: Unhandled exception in main check loop: {e}", level="CRITICAL")
-            self.config.log_message(f"Quality Monitor: Cycle complete. Sleeping for {QUALITY_MONITOR_INTERVAL} seconds.", level="INFO")
+                self.config.critical(Label.QUALITY, f"Unhandled exception in main check loop: {e}")
+            self.config.info(Label.QUALITY, f"Cycle complete. Sleeping for {QUALITY_MONITOR_INTERVAL} seconds.")
             await asyncio.sleep(QUALITY_MONITOR_INTERVAL)
 
     async def _get_stream_info(self, service_id: str, service_url: str) -> dict[str, Any] | None:
@@ -98,18 +98,18 @@ class QualityMonitor:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=QUALITY_MONITOR_TIMEOUT + 3)
 
             if proc.returncode != 0:
-                self.config.log_message(f"Quality Monitor: ffprobe for {service_id} failed with code {proc.returncode}: {stderr.decode()}".replace(service_url, "{{service_url}}").strip(), level="WARN")
+                self.config.warn(Label.QUALITY, f"ffprobe for {service_id} failed with code {proc.returncode}: {stderr.decode()}".replace(service_url, "{{service_url}}").strip())
                 return None
             info = json.loads(stdout)
 
         except asyncio.TimeoutError:
-            self.config.log_message(f"Quality Monitor: ffprobe for {service_id} timed out.", level="WARN")
+            self.config.warn(Label.QUALITY, f"ffprobe for {service_id} timed out.")
             return None
         except asyncio.CancelledError:
-            self.config.log_message(f"Quality Monitor: ffprobe task for {service_id} was cancelled.", level="WARN")
+            self.config.warn(Label.QUALITY, f"ffprobe task for {service_id} was cancelled.")
             raise
         except Exception as e:
-            self.config.log_message(f"Quality Monitor: Failed to parse ffprobe output for {service_id}: {e}", level="ERROR")
+            self.config.error(Label.QUALITY, f"Failed to parse ffprobe output for {service_id}: {e}")
             return None
         finally:
             if proc and proc.returncode is None:
@@ -157,12 +157,12 @@ class QualityMonitor:
             while True:
                 if await self.handler.get_pending_stream_count() > 0:
                     if not paused:
-                        self.config.log_message(f"Quality Monitor: Pausing probe for {service_id} for user streams...", level="DEBUG")
+                        self.config.debug(Label.QUALITY, f"Pausing probe for {service_id} for user streams...")
                         paused = True
                     await asyncio.sleep(1)
                     continue
                 if paused:
-                    self.config.log_message(f"Quality Monitor: Resuming probe for {service_id} after user streams.", level="DEBUG")
+                    self.config.debug(Label.QUALITY, f"Resuming probe for {service_id} after user streams.")
                     paused = False
 
                 try:
@@ -179,10 +179,10 @@ class QualityMonitor:
             return service_id, stream_info
 
         except asyncio.CancelledError:
-            self.config.log_message(f"Quality Monitor: Probe task for {service_id} was cancelled by slot manager.", level="INFO")
+            self.config.info(Label.QUALITY, f"Probe task for {service_id} was cancelled by slot manager.")
             raise
         except Exception as e:
-            self.config.log_message(f"Quality Monitor: Unexpected error during probe for {service_id}: {e}", level="ERROR")
+            self.config.error(Label.QUALITY, f"Unexpected error during probe for {service_id}: {e}")
             return service_id, {"status": "offline", "reason": f"Probe failed: {e}"}
         finally:
             if slot_acquired:
@@ -192,24 +192,24 @@ class QualityMonitor:
         """Finds and probes all mapped services concurrently."""
         valid_mappings: list[tuple[str, list[str], str]] = []
         if input_lc_id:
-            self.config.log_message(f"Quality Monitor: Starting stream quality analysis for Logical Channel ID {input_lc_id}.", level="INFO")
+            self.config.info(Label.QUALITY, f"Starting stream quality analysis for Logical Channel ID {input_lc_id}.")
             services = self.handler.get_mappings_for_logical_channel(input_lc_id)
             if not services:
-                self.config.log_message(f"Quality Monitor: No mapped services found for Logical Channel ID {input_lc_id}.", level="ERROR")
+                self.config.error(Label.QUALITY, f"No mapped services found for Logical Channel ID {input_lc_id}.")
                 return
             valid_mappings.append((input_lc_id, [service["source_service_id"] for service in services], "0001-01-01"))
         else:
-            self.config.log_message("Quality Monitor: Starting stream quality analysis cycle.", level="INFO")
+            self.config.info(Label.QUALITY, "Starting stream quality analysis cycle.")
             all_mappings = self.handler.channel_mappings_data
             if not all_mappings:
-                self.config.log_message("Quality Monitor: No mapped services to analyze.", level="WARN")
+                self.config.warn(Label.QUALITY, "No mapped services to analyze.")
                 return
 
             quality_cache = await self.config.get_service_quality_cache()
             now = datetime.now()
             for logical_channel_id, services in all_mappings.items():
                 if not services:
-                    self.config.log_message(f"Quality Monitor: No valid services found for Logical Channel ID {logical_channel_id}.", level="DEBUG")
+                    self.config.debug(Label.QUALITY, f"No valid services found for Logical Channel ID {logical_channel_id}.")
                     continue
                 min_updated_at = min([quality_cache.get(service["source_service_id"], {}).get("updated_at", "0001-01-01") for service in services])
                 at_max_history = all(len(quality_cache.get(service["source_service_id"], {}).get("statuses", [])) >= MAX_HISTORY_PER_SERVICE for service in services)
@@ -218,7 +218,7 @@ class QualityMonitor:
                     continue
                 valid_mappings.append((logical_channel_id, [service["source_service_id"] for service in services], min_updated_at))
             if not valid_mappings:
-                self.config.log_message("Quality Monitor: No services are due for quality probing.")
+                self.config.info(Label.QUALITY, "No services are due for quality probing.")
                 return
             valid_mappings.sort(key=lambda x: x[2])
 
@@ -227,7 +227,7 @@ class QualityMonitor:
             for service_id in service_ids:                
                 service_details = self.handler.discovered_source_services_data.get(service_id)
                 if not service_details:
-                    self.config.log_message(f"Quality Monitor: Service {service_id} not found in discovered services.", level="DEBUG")
+                    self.config.debug(Label.QUALITY, f"Service {service_id} not found in discovered services.")
                     continue
                 tasks.append(
                     self._run_single_probe(
@@ -237,7 +237,7 @@ class QualityMonitor:
                     )
                 )
             if not tasks:
-                self.config.log_message(f"Quality Monitor: No valid services found to probe for Logical Channel ID {logical_channel_id}.", level="DEBUG")
+                self.config.debug(Label.QUALITY, f"No valid services found to probe for Logical Channel ID {logical_channel_id}.")
                 continue
 
             stream_infos = await asyncio.gather(*tasks)
@@ -260,7 +260,7 @@ class QualityMonitor:
                                 service_entry[key] = []
                             service_entry[key].append(result[key[:-1]])
                     else:
-                        self.config.log_message(f"Quality Monitor: Logical Channel ID {logical_channel_id} service {service_id} is offline: {result.get('reason', 'Unknown')}", level="WARN")
+                        self.config.warn(Label.QUALITY, f"Logical Channel ID {logical_channel_id} service {service_id} is offline: {result.get('reason', 'Unknown')}")
                         service_entry["statuses"].append("offline")
 
                     for key in ["statuses", "widths", "heights", "bitrates", "framerates"]:
@@ -271,7 +271,7 @@ class QualityMonitor:
                 await self.config.save_service_quality_cache(quality_cache)
                 self._build_quality_scores(modified_cache)
         if input_lc_id:
-            self.config.log_message(f"Quality Monitor: Completed analysis for {len(valid_mappings[0][1])} mappings(s) in Logical Channel ID {input_lc_id}.", level="INFO")
+            self.config.info(Label.QUALITY, f"Completed analysis for {len(valid_mappings[0][1])} mappings(s) in Logical Channel ID {input_lc_id}.")
 
     def _build_quality_scores(self, quality_cache: dict[str, dict[str, list[Any]]]) -> None:
         """Calculates quality scores and updates the internal state."""

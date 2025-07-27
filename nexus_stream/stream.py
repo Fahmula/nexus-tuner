@@ -3,14 +3,13 @@ import aiofiles
 import aioshutil
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Any, Iterable, NoReturn
+from typing import Any, Iterable, NoReturn, Self
 
-from nexus_stream.config import CREATE_STREAM_DEADLINE, NEW_DEADLINE_NON_BEST, Config, VideoKey, VideoType
+from nexus_stream.config import CREATE_STREAM_DEADLINE, NEW_DEADLINE_NON_BEST, Config, Label, VideoKey, VideoType
 from nexus_stream.handler import ChannelHandler
 from nexus_stream.slots import ProviderName
 
 from asyncio.subprocess import Process
-from _io import TextIOWrapper
 
 
 # --- Constants ---
@@ -39,15 +38,17 @@ class StreamManager:
         self.stream_process_lock = asyncio.Lock()
 
         self.hls_base_dir: Path = self.config.hls_base_segment_dir
-        self.config.log_message(f"HLS segments will be stored in: {self.hls_base_dir}", level="DEBUG")
+        self.config.debug(Label.STARTUP, f"HLS segments will be stored in: {self.hls_base_dir}")
         
-        self.cleanup_task: asyncio.Task | None = None
+        self.cleanup_task: asyncio.Task[NoReturn] | None = None
 
-    def start_cleanup_task(self) -> None:
-        """Creates and starts the background cleanup task."""
-        if self.cleanup_task is None or self.cleanup_task.done():
-            self.cleanup_task = asyncio.create_task(self._video_cleanup_loop())
-            self.config.log_message("Video FFmpeg cleanup task started.", level="INFO")
+    @classmethod
+    async def create(cls, config: Config, handler: ChannelHandler) -> Self:
+        """Asynchronous factory for creating and initializing a StreamManager instance."""
+        instance = cls(config, handler)
+        instance.cleanup_task = asyncio.create_task(instance._video_cleanup_loop())
+        config.info(Label.STARTUP, "Started Video FFmpeg cleanup task.")
+        return instance
 
     async def get_ffmpeg_process_info(self, video_key: VideoKey) -> dict[str, Any] | None:
         """Returns the FFmpeg process info for a given Video key."""
@@ -90,14 +91,10 @@ class StreamManager:
             if video_key in self.ffmpeg_processes:
                 data = self.ffmpeg_processes[video_key]
                 if not data['is_long_term']:
-                    self.config.log_message(f"Stream {video_key} is not long-term, cannot return playlist path.", level="ERROR")
+                    self.config.error(VideoType.HLS, f"Stream {video_key} is not long-term, cannot return playlist path.")
                     return None
                 if not data['channel_hls_dir']:
-                    self.config.log_message(f"Stream {video_key} has no HLS directory set.", level="ERROR")
-                    self.config.log_message(f"Stream {video_key} is not long-term, cannot return playlist path.", level="ERROR")
-                    return None
-                if not data['channel_hls_dir']:
-                    self.config.log_message(f"Stream {video_key} has no HLS directory set.", level="ERROR")
+                    self.config.error(VideoType.HLS, f"Stream {video_key} has no HLS directory set.")
                     return None
                 return data['channel_hls_dir'] / "playlist.m3u8"
         return None
@@ -112,7 +109,7 @@ class StreamManager:
             if video_key in self.ffmpeg_processes:
                 channel_hls_dir = self.ffmpeg_processes[video_key]['channel_hls_dir']
                 if not channel_hls_dir:
-                    self.config.log_message(f"Stream {video_key} has no HLS directory set.", level="ERROR")
+                    self.config.error(Label.STREAM, f"Stream {video_key} has no HLS directory set.")
                     return None
                 return channel_hls_dir / segment_filename
         return None
@@ -130,7 +127,7 @@ class StreamManager:
             async with self.stream_process_lock:
                 segment_lc_ids_to_cleanup = [(lc_id, data) for lc_id, data in self.hls_latest_segments.items() if data[1] < datetime.now() - timedelta(seconds=self.config.latest_segment_timeout)]
                 for lc_id, data in segment_lc_ids_to_cleanup:
-                    self.config.log_message(f"Cleanup: Removing latest HLS segment number cache ({data[0]}) for logical channel ID '{lc_id}'.", level="DEBUG")
+                    self.config.debug(VideoType.HLS, f"Cleanup: Removing latest HLS segment number cache ({data[0]}) for logical channel ID '{lc_id}'.")
                     self.hls_latest_segments.pop(lc_id, None)    
                 
                 providers_to_kill = await self.handler.reset_kill_provider_streams()
@@ -138,7 +135,7 @@ class StreamManager:
                 current_processes = list(self.ffmpeg_processes.items())
 
                 if providers_to_kill:
-                    self.config.log_message(f"Cleanup: Killing streams from providers: {', '.join(providers_to_kill)}", level="WARN")
+                    self.config.warn(Label.STREAM, f"Cleanup: Killing streams from providers: {', '.join(providers_to_kill)}")
                     provider_keys_to_kill = [video_key for video_key, data in current_processes if data['provider_alias'] in providers_to_kill]
                     for video_key in provider_keys_to_kill:
                         data = self.ffmpeg_processes.pop(video_key)
@@ -153,17 +150,17 @@ class StreamManager:
                     
                     if data['process'].returncode is not None:
                         logical_channel_name = data['logical_channel_name']
-                        self.config.log_message(f"Cleanup: Found dead process for '{logical_channel_name}' (PID: {data['process'].pid}).", level="INFO")
+                        self.config.info(Label.STREAM, f"Cleanup: Found dead process for '{logical_channel_name}' (PID: {data['process'].pid}).")
                         inactive_ids.add((video_key, logical_channel_name))
                     elif data['is_long_term']:
                         if not data['is_mpegts_active'] and now - data['last_access'] > timedelta(seconds=timeout):
                             logical_channel_name = data['logical_channel_name']
-                            self.config.log_message(f"Cleanup: Stream '{logical_channel_name}' timed out due to inactivity after {timeout}s (PID: {data['process'].pid}).", level="INFO")
+                            self.config.info(Label.STREAM, f"Cleanup: '{logical_channel_name}' timed out due to inactivity after {timeout}s (PID: {data['process'].pid}).")
                             inactive_ids.add((video_key, logical_channel_name))
                     else:
                         if now - data['last_access'] > timedelta(seconds=CREATE_STREAM_DEADLINE + NEW_DEADLINE_NON_BEST + 5):
                             logical_channel_name = data['logical_channel_name']
-                            self.config.log_message(f"Cleanup: Stream '{logical_channel_name}' is not long-term and hasn't been cleaned up (PID: {data['process'].pid}).", level="INFO")
+                            self.config.info(Label.STREAM, f"Cleanup: '{logical_channel_name}' is not long-term and hasn't been cleaned up (PID: {data['process'].pid}).")
                             inactive_ids.add((video_key, logical_channel_name))
             
             tasks = [self.stop_ffmpeg_process(video_key, name) for video_key, name in inactive_ids]
@@ -181,7 +178,7 @@ class StreamManager:
         
         tasks = []
         for video_key, logical_channel_name in inactive_ids:
-            self.config.log_message(f"Pruning inactive stream '{logical_channel_name}' [{video_key}].", level="INFO")
+            self.config.info(Label.STREAM, f"Pruning inactive stream '{logical_channel_name}' [{video_key}].")
             tasks.append(self.stop_ffmpeg_process(video_key, logical_channel_name))
         if tasks:
             await asyncio.gather(*tasks)
@@ -208,7 +205,7 @@ class StreamManager:
         else:
             should_release_slot = False
 
-        name = f"[{data_to_cleanup['video_type']}] {name}" if not name.startswith(f"[{data_to_cleanup['video_type']}]") else name
+        video_type: VideoType = data_to_cleanup['video_type']
         process: Process = data_to_cleanup['process']
         provider = ProviderName(data_to_cleanup['provider_alias'])
         hls_dir: Path | None = data_to_cleanup['channel_hls_dir']
@@ -221,17 +218,17 @@ class StreamManager:
                     process.stdout._transport.close()
                 await asyncio.wait_for(process.wait(), timeout=FFMPEG_TERMINATE_TIMEOUT)
             except asyncio.TimeoutError:
-                self.config.log_message(f"{name} [{video_key}]: Killing unresponsive FFmpeg process.", level="WARN")
+                self.config.warn(video_type, f"{name} [{video_key}]: Killing unresponsive FFmpeg process.")
                 process.kill()
             except Exception as e:
-                self.config.log_message(f"{name} [{video_key}]: Error terminating FFmpeg process: {e}", level="ERROR")
+                self.config.error(video_type, f"{name} [{video_key}]: Error terminating FFmpeg process: {e}")
                 process.kill()
         
         if log_file:
             try:
                 await log_file.close()
             except Exception as e:
-                self.config.log_message(f"{name} [{video_key}]: Error closing FFmpeg log file: {e}", level="ERROR")
+                self.config.error(video_type, f"{name} [{video_key}]: Error closing FFmpeg log file: {e}")
 
         provider_slots = self.handler.slots.get(provider)
         if provider_slots:
@@ -240,25 +237,25 @@ class StreamManager:
             else:
                 new_active_count = f"0/{provider_slots.get_total_slots()}"
         else:
-            self.config.log_message(f"{name} [{video_key}]: No slots found for provider '{provider}'.", level="ERROR")
+            self.config.error(video_type, f"{name} [{video_key}]: No slots found for provider '{provider}'.")
             new_active_count = "N/A"
         
         try:
             if hls_dir and await aiofiles.os.path.exists(hls_dir):
                 await aioshutil.rmtree(hls_dir)
         except OSError as e:
-            self.config.log_message(f"{name} [{video_key}]: Failed to clean HLS directory {hls_dir}: {e}", level="ERROR")
+            self.config.error(video_type, f"{name} [{video_key}]: Failed to clean HLS directory {hls_dir}: {e}")
             
         await self.config.cleanup_ffmpeg_logs_by_age()
 
-        self.config.log_message(f"{name} [{video_key}]: Successfully stopped and cleaned up all resources {{{provider}:{new_active_count}}}", level="INFO")
+        self.config.info(video_type, f"{name} [{video_key}]: Successfully stopped and cleaned up all resources {{{provider}:{new_active_count}}}")
 
     async def stop_ffmpeg_processes(self, video_keys: Iterable[VideoKey] | None = None) -> None:
         """Stops all (or a specified list of) active FFmpeg processes and cleans up resources asynchronously."""
         processes_to_stop: dict[VideoKey, dict[str, Any]] = {}
         async with self.stream_process_lock:
             if video_keys is None:
-                self.config.log_message("Stopping all active FFmpeg processes.", level="INFO")
+                self.config.info(Label.STREAM, "Stopping all active FFmpeg processes.")
                 processes_to_stop = self.ffmpeg_processes.copy()
             else:
                 processes_to_stop = {video_key: self.ffmpeg_processes[video_key] for video_key in video_keys if video_key in self.ffmpeg_processes}

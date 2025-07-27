@@ -24,6 +24,15 @@ class VideoType(StrEnum):
     HLS = "hls"
     MPEGTS = "mpegts"
 
+class Label(StrEnum):
+    STARTUP = "startup"
+    SERVER = "server"
+    CONFIG = "config"
+    HANDLER = "handler"
+    STREAM = "stream"
+    QUALITY = "quality"
+    SESSION = "session"
+
 # --- Constants ---
 NOT_ALPHANUM_REGEX = re.compile(r'[^a-zA-Z0-9_-]')
 CREATE_STREAM_DEADLINE = 25  # The maximum time that clients will wait for a stream to be created
@@ -62,7 +71,7 @@ class Config:
         
         # --- Logging ---
         self.logs_dir: Path = self.config_dir / "logs"
-        self._loggers: dict[str, logging.Logger] = {}
+        self._logger: logging.Logger
         self.log_level: str = os.getenv("NEXUS_LOG_LEVEL", "INFO").upper()
         self.log_backup_count = int(os.getenv("NEXUS_LOG_BACKUP_COUNT", 7))
         self.ffmpeg_logs_retention_seconds = int(os.getenv("NEXUS_FFMPEG_LOGS_RETENTION_SECONDS", 86400))
@@ -127,21 +136,83 @@ class Config:
         """
         Performs all asynchronous I/O operations required for initialization.
         """
-        self.log_message(f"NexusStream v{NEXUS_STREAM_VERSION}", level="INFO")
+        self._initialize_logger()
+        self.info(Label.STARTUP, f"NexusStream v{NEXUS_STREAM_VERSION}")
         await aiofiles.os.makedirs(self.logs_dir, exist_ok=True)
         await aiofiles.os.makedirs(self.config_dir, exist_ok=True)
         await aiofiles.os.makedirs(self.backups_path, exist_ok=True)
 
         if not await aiofiles.os.path.exists(self.channel_list_path):
-            self.log_message(f"Creating default channel list at {self.channel_list_path}", level="DEBUG")
+            self.debug(Label.STARTUP, f"Creating default channel list at {self.channel_list_path}")
             default_list_path = Path(__file__).parent / "channel_list.json.default"
             await aioshutil.copy(default_list_path, self.channel_list_path)
         
-        self.log_message(f"Cleaning HLS directory at startup: {self.hls_base_segment_dir}", level="DEBUG")
+        self.debug(Label.STARTUP, f"Cleaning HLS directory: {self.hls_base_segment_dir}")
         await aioshutil.rmtree(self.hls_base_segment_dir, ignore_errors=True)
         await aiofiles.os.makedirs(self.hls_base_segment_dir, exist_ok=True)
         
         await aiofiles.os.makedirs(self.ffmpeg_logs_dir, exist_ok=True)
+
+    def _initialize_logger(self) -> None:
+        """Initializes the logger"""
+        log_filename = "app.log"
+        logger = logging.getLogger(log_filename)
+        logger.setLevel(self.log_level)
+        log_file_path = self.logs_dir / log_filename
+        file_handler = TimedRotatingFileHandler(
+            log_file_path, when='midnight', backupCount=self.log_backup_count
+        )
+        format_str = "%(asctime)s.%(msecs)03d %(levelname)s: %(message)s"
+        datefmt_str = "%Y-%m-%d %H:%M:%S"
+
+        class ColoredFormatter(logging.Formatter):
+            grey = "\x1b[38;20m"
+            green = "\x1b[32;20m"
+            yellow = "\x1b[33;20m"
+            red = "\x1b[31;20m"
+            bold_red = "\x1b[31;1m"
+            reset = "\x1b[0m"
+
+            FORMATS = {
+                logging.DEBUG: format_str.replace("%(levelname)s", f"{grey}%(levelname)s{reset}"),
+                logging.INFO: format_str.replace("%(levelname)s", f"{green}%(levelname)s{reset}"),
+                logging.WARNING: format_str.replace("%(levelname)s", f"{yellow}%(levelname)s{reset}"),
+                logging.ERROR: format_str.replace("%(levelname)s", f"{red}%(levelname)s{reset}"),
+                logging.CRITICAL: format_str.replace("%(levelname)s", f"{bold_red}%(levelname)s{reset}"),
+            }
+
+            def format(self, record: logging.LogRecord) -> str:
+                log_fmt = self.FORMATS.get(record.levelno, format_str)
+                formatter = logging.Formatter(log_fmt, datefmt=datefmt_str)
+                return formatter.format(record)
+
+        file_handler.setFormatter(logging.Formatter(format_str, datefmt=datefmt_str))
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(ColoredFormatter())
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
+        logger.propagate = False
+        self._logger = logger
+
+    def debug(self, label: Label | VideoType, msg: str) -> None:
+        """Logs a debug message with the specified label."""
+        self._logger.debug(f"[{label}] {msg}")
+
+    def info(self, label: Label | VideoType, msg: str) -> None:
+        """Logs an info message with the specified label."""
+        self._logger.info(f"[{label}] {msg}")
+
+    def warn(self, label: Label | VideoType, msg: str) -> None:
+        """Logs a warning message with the specified label."""
+        self._logger.warning(f"[{label}] {msg}")
+
+    def error(self, label: Label | VideoType, msg: str) -> None:
+        """Logs an error message with the specified label."""
+        self._logger.error(f"[{label}] {msg}")
+
+    def critical(self, label: Label | VideoType, msg: str) -> None:
+        """Logs a critical message with the specified label."""
+        self._logger.critical(f"[{label}] {msg}")
 
     def get_segment_format(self) -> str:
         """Returns the format string for HLS segment files."""
@@ -153,7 +224,7 @@ class Config:
 
     async def clean_up_hls_segments(self) -> None:
         """Cleans up old HLS segment files in the configured directory asynchronously."""
-        self.log_message(f"Cleaning up HLS segments in {self.hls_base_segment_dir}", level="INFO")
+        self.info(Label.STREAM, f"Cleaning up HLS segments in {self.hls_base_segment_dir}")
         await aioshutil.rmtree(self.hls_base_segment_dir, ignore_errors=True)
 
     def get_fs_safe_alphanum(self, name: str) -> str:
@@ -180,7 +251,7 @@ class Config:
         try:
             self._cleaning_up_ffmpeg_logs = True
             if not await aiofiles.os.path.exists(self.ffmpeg_logs_dir):
-                self.log_message(f"No FFmpeg logs directory at {self.ffmpeg_logs_dir}. Skipping cleanup.", level="DEBUG")
+                self.debug(Label.STREAM, f"No FFmpeg logs directory at {self.ffmpeg_logs_dir}. Skipping cleanup.")
                 return
 
             cutoff_time = time.time() - self.ffmpeg_logs_retention_seconds
@@ -189,7 +260,7 @@ class Config:
             try:
                 log_files = await aiofiles.os.listdir(self.ffmpeg_logs_dir)
             except OSError as e:
-                self.log_message(f"Error listing files in {self.ffmpeg_logs_dir}: {e}", level="ERROR")
+                self.error(Label.STREAM, f"Error listing files in {self.ffmpeg_logs_dir}: {e}")
                 return
 
             for filename in log_files:
@@ -203,10 +274,10 @@ class Config:
                         await aiofiles.os.remove(log_file)
                         files_cleaned_up = True
                 except OSError as e:
-                    self.log_message(f"Error deleting old log file {log_file}: {e}", level="ERROR")
+                    self.error(Label.STREAM, f"Error deleting old log file {log_file}: {e}")
             
             if files_cleaned_up:
-                self.log_message(f"Cleaned up FFmpeg log files older than {self.ffmpeg_logs_retention_seconds} seconds.", level="DEBUG")
+                self.debug(Label.STREAM, f"Cleaned up FFmpeg log files older than {self.ffmpeg_logs_retention_seconds} seconds.")
         finally:
             self._cleaning_up_ffmpeg_logs = False
 
@@ -217,7 +288,7 @@ class Config:
         async with self.file_lock:
             try:
                 if not await aiofiles.os.path.exists(file_path):
-                    self.log_message(f"{file_path} not found. Creating with default content.", level="DEBUG")
+                    self.debug(Label.CONFIG, f"{file_path} not found. Creating with default content.")
                     default_content = default_content_factory()
                     async with aiofiles.open(file_path, "w") as f:
                         await f.write(json.dumps(default_content, indent=2))
@@ -226,14 +297,14 @@ class Config:
                 async with aiofiles.open(file_path, "r") as f:
                     content = await f.read()
                     if not content.strip():
-                         self.log_message(f"{file_path} is empty. Initializing with default content.", level="DEBUG")
+                         self.debug(Label.CONFIG, f"{file_path} is empty. Initializing with default content.")
                          default_content = default_content_factory()
                          async with aiofiles.open(file_path, "w") as wf:
                             await wf.write(json.dumps(default_content, indent=2))
                          return default_content
                     return json.loads(content)
             except (json.JSONDecodeError, OSError) as e:
-                self.log_message(f"Could not load or parse {file_path}: {e}. Returning default.", level="ERROR")
+                self.error(Label.CONFIG, f"Could not load or parse {file_path}: {e}. Returning default.")
                 return default_content_factory()
 
     async def _save_json_file(self, file_path: Path, data: Any) -> bool:
@@ -248,40 +319,13 @@ class Config:
                 await aiofiles.os.replace(temp_file_path, file_path)
                 return True
             except Exception as e:
-                self.log_message(f"Could not write to {file_path}: {e}", level="ERROR")
+                self.error(Label.CONFIG, f"Could not write to {file_path}: {e}")
                 if await aiofiles.os.path.exists(temp_file_path):
                     try:
                         await aiofiles.os.remove(temp_file_path)
                     except Exception as remove_error:
-                        self.log_message(f"Error removing temporary file {temp_file_path}: {remove_error}", level="ERROR")
+                        self.error(Label.CONFIG, f"Error removing temporary file {temp_file_path}: {remove_error}")
                 return False
-
-    def log_message(self, message: str, log_filename: str = "app.log", level: str = "INFO") -> None:
-        """Logs a message to a specified file and the console."""
-        log_level_map = {
-            "DEBUG": logging.DEBUG, "INFO": logging.INFO,
-            "WARN": logging.WARNING, "WARNING": logging.WARNING,
-            "ERROR": logging.ERROR, "CRITICAL": logging.CRITICAL
-        }
-        log_level_const = log_level_map.get(level.upper(), logging.INFO)
-
-        if log_filename not in self._loggers:
-            logger = logging.getLogger(log_filename)
-            logger.setLevel(self.log_level)
-            log_file_path = self.logs_dir / log_filename
-            file_handler = TimedRotatingFileHandler(
-                log_file_path, when='midnight', backupCount=self.log_backup_count
-            )
-            formatter = logging.Formatter("%(asctime)s.%(msecs)03d - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-            file_handler.setFormatter(formatter)
-            console_handler = logging.StreamHandler()
-            console_handler.setFormatter(formatter)
-            logger.addHandler(file_handler)
-            logger.addHandler(console_handler)
-            logger.propagate = False
-            self._loggers[log_filename] = logger
-
-        self._loggers[log_filename].log(log_level_const, message)
 
     async def get_providers_config(self) -> dict[str, dict[str, dict[str, Any]]]:
         """Loads the providers configuration from providers.json asynchronously."""
@@ -339,7 +383,7 @@ class Config:
             backup_folder = self.backups_path / sub_folder / f"nexus_stream_backup_{datetime.now().isoformat(timespec='seconds').replace(':', '-')}"
             await aiofiles.os.makedirs(backup_folder, exist_ok=True)
             backup_path = backup_folder.with_name(f"{backup_folder.name}.zip")
-            self.log_message(f"Creating backup at {backup_path}", level="INFO")
+            self.info(Label.CONFIG, f"Creating backup at {backup_path}")
             async with self.file_lock:
                 await aioshutil.copy2(self.providers_path, backup_folder / self.providers_name)
                 await aioshutil.copy2(self.discovered_source_services_path, backup_folder / self.discovered_source_services_name)
@@ -351,5 +395,5 @@ class Config:
                 await aioshutil.rmtree(backup_folder, ignore_errors=True)
             return backup_path
         except Exception as e:
-            self.log_message(f"Failed to create backup: {e}", level="ERROR")
+            self.error(Label.CONFIG, f"Failed to create backup: {e}")
             return

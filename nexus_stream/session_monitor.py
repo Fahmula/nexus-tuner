@@ -1,8 +1,8 @@
 import asyncio
 import aiohttp
-from typing import NoReturn, Set, Any
+from typing import NoReturn, Self, Set, Any
 
-from nexus_stream.config import Config
+from nexus_stream.config import Config, Label
 from nexus_stream.handler import ChannelHandler
 from nexus_stream.stream import StreamManager
 from nexus_stream.create_stream import VideoKey
@@ -30,25 +30,32 @@ class GhostSessionMonitor:
         self.stream_manager = stream_manager
         
         self.display_name_to_lc_id_map: dict[str, str] = {}
+        self.ghost_monitor_task: asyncio.Task[NoReturn]
 
-        if self.config.emby_url or self.config.jellyfin_url:
-            self.config.log_message("Emby/Jellyfin URL found. Ghost Session Monitor is enabled.", level="INFO")
-        else:
-            self.config.log_message("No Emby/Jellyfin URL configured. Ghost Session Monitor is disabled.", level="DEBUG")
+    @classmethod
+    async def create(cls, config: Config, handler: ChannelHandler, stream_manager: StreamManager) -> Self | None:
+        """Asynchronous factory for creating and initializing a GhostSessionMonitor instance."""
+        if not config.emby_url and not config.jellyfin_url:
+            config.debug(Label.STARTUP, "No Emby/Jellyfin URL configured. Ghost Session Monitor is disabled.")
+            return
+        config.info(Label.STARTUP, "Emby/Jellyfin URL found. Ghost Session Monitor is enabled.")
+        instance = cls(config, handler, stream_manager)
+        instance.ghost_monitor_task = asyncio.create_task(instance.run())
+        return instance
 
     def _build_name_to_id_map(self) -> None:
         """
         Creates a mapping from a channel's display name to its logical_channel_id.
         This is a synchronous, CPU-bound operation on in-memory data.
         """
-        self.config.log_message("Monitor: Building channel name to stream ID map...", level="DEBUG")
+        self.config.debug(Label.SESSION, "Building channel name to stream ID map...")
         name_map = {
             channel_data.get("display_name"): lc_id
             for lc_id, channel_data in self.handler.client_facing_channels.items()
             if channel_data.get("display_name")
         }
         self.display_name_to_lc_id_map = name_map
-        self.config.log_message(f"Monitor: Built map with {len(self.display_name_to_lc_id_map)} entries.", level="DEBUG")
+        self.config.debug(Label.SESSION, f"Built map with {len(self.display_name_to_lc_id_map)} entries.")
 
     async def _fetch_sessions_from_server(self, session: aiohttp.ClientSession, base_url: str | None, api_key: str | None, server_type: str) -> list[Any]:
         """Fetches active session data from a single media server asynchronously."""
@@ -63,7 +70,7 @@ class GhostSessionMonitor:
                 response.raise_for_status()
                 return await response.json()
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-            self.config.log_message(f"Monitor: Could not connect to {server_type} at {base_url}: {e}", level="ERROR")
+            self.config.error(Label.SESSION, f"Could not connect to {server_type} at {base_url}: {e}")
             return []
 
     async def _get_legitimate_stream_ids(self) -> Set[str]:
@@ -89,20 +96,20 @@ class GhostSessionMonitor:
                 if (channel_name := now_playing.get("Name")) in self.display_name_to_lc_id_map:
                     lc_id = self.display_name_to_lc_id_map[channel_name]
                     active_lc_ids.add(lc_id)
-                    self.config.log_message(f"Monitor: Found legitimate session for '{channel_name}' (ID: {lc_id}) on device '{session_data.get('DeviceName', 'Unknown')}'.", level="DEBUG")
+                    self.config.debug(Label.SESSION, f"Found legitimate session for '{channel_name}' (ID: {lc_id}) on device '{session_data.get('DeviceName', 'Unknown')}'.")
         
         return active_lc_ids
 
     async def _check_for_ghost_sessions(self) -> None:
         """The main logic loop to find and terminate ghost streams asynchronously."""
-        self.config.log_message("Monitor: Running check for ghost sessions...", level="DEBUG")
+        self.config.debug(Label.SESSION, "Running check for ghost sessions...")
         self._build_name_to_id_map()
 
         try:
             legitimately_active_lc_ids = await self._get_legitimate_stream_ids()
-            self.config.log_message(f"Monitor: Found {len(legitimately_active_lc_ids)} legitimate sessions: {legitimately_active_lc_ids or 'None'}", level="DEBUG")
+            self.config.debug(Label.SESSION, f"Found {len(legitimately_active_lc_ids)} legitimate sessions: {legitimately_active_lc_ids or 'None'}")
         except Exception as e:
-            self.config.log_message(f"Monitor: Could not get active sessions from media servers: {e}", level="ERROR")
+            self.config.error(Label.SESSION, f"Could not get active sessions from media servers: {e}")
             return
 
         ghost_video_keys: Set[tuple[VideoKey, str]] = set()
@@ -114,14 +121,14 @@ class GhostSessionMonitor:
                     ghost_video_keys.add((video_key, data['logical_channel_name']))
 
         if not ghost_video_keys:
-            self.config.log_message("Monitor: No ghost sessions found.", level="DEBUG")
+            self.config.debug(Label.SESSION, "No ghost sessions found.")
             return
 
-        self.config.log_message(f"Monitor: Found {len(ghost_video_keys)} ghost session(s) to terminate: {', '.join(g[0] for g in ghost_video_keys)}", level="WARN")
+        self.config.warn(Label.SESSION, f"Found {len(ghost_video_keys)} ghost session(s) to terminate: {', '.join(g[0] for g in ghost_video_keys)}")
         
         stop_tasks = []
         for video_key, logical_channel_name in ghost_video_keys:
-            self.config.log_message(f"Monitor: Terminating ghost stream for '{logical_channel_name}' [{video_key}]...", level="INFO")
+            self.config.info(Label.SESSION, f"Terminating ghost stream for '{logical_channel_name}' [{video_key}]...")
             stop_tasks.append(self.stream_manager.stop_ffmpeg_process(video_key, logical_channel_name))
         
         if stop_tasks:
@@ -130,16 +137,16 @@ class GhostSessionMonitor:
     async def run(self) -> NoReturn:
         """The main execution loop for the monitor task."""
         if not self.config.emby_url and not self.config.jellyfin_url:
-            self.config.log_message("Ghost Session Monitor is disabled and will not run.", level="INFO")
+            self.config.info(Label.STARTUP, "Ghost Session Monitor is disabled and will not run.")
             return
 
-        self.config.log_message("Ghost Session Monitor task started.", level="INFO")
+        self.config.info(Label.STARTUP, "Ghost Session Monitor task started.")
         await asyncio.sleep(15)
         
         while True:
             try:
                 await self._check_for_ghost_sessions()
             except Exception as e:
-                self.config.log_message(f"Monitor: Unhandled exception in main check loop: {e}", level="CRITICAL")
+                self.config.critical(Label.SESSION, f"Unhandled exception in main check loop: {e}")
             
             await asyncio.sleep(self.config.ghost_check_interval)
