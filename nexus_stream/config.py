@@ -4,71 +4,19 @@ import json
 import re
 import logging
 import time
-from enum import StrEnum
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from dotenv import load_dotenv
-from typing import Any, Callable, Iterable, NewType, Self
+from typing import Any, Callable, Self
 
 import asyncio
-import aiofiles
 import aiofiles.os
 import aioshutil
 
-VideoKey = NewType("VideoKey", str)
-VideoName = NewType("VideoName", str)
-NEXUS_STREAM_VERSION = (Path(__file__).parent.parent / "VERSION").read_text().strip()
-NEXUS_STREAM_USER_AGENT = f"NexusStream/{NEXUS_STREAM_VERSION}"
+from nexus_stream.utils import NEXUS_STREAM_VERSION, JobName, Label, VideoKey, VideoType
 
-class VideoType(StrEnum):
-    HLS = "hls"
-    MPEGTS = "mpegts"
 
-class JobName(StrEnum):
-    BACKUP = "backup"
-    CLEANUP = "cleanup"
-    DISCOVER = "discover"
-    QUALITY = "quality"
-
-class Label(StrEnum):
-    CONFIG = "config"
-    HANDLER = "handler"
-    SCHEDULER = "scheduler"
-    SERVER = "server"
-    SESSION = "session"
-    STARTUP = "startup"
-    STREAM = "stream"
-    QUALITY = "quality"
-
-# --- Constants ---
 NOT_ALPHANUM_REGEX = re.compile(r'[^a-zA-Z0-9_-]')
-CREATE_STREAM_DEADLINE = 25  # The maximum time that clients will wait for a stream to be created
-NEW_DEADLINE_NON_BEST = 1  # The number of seconds after a stream is healthy before giving up waiting on others, the best remaining source deadline is immediate
-HUMAN_READABLE_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
-
-
-def relative_time(dt: datetime, reference_time: datetime | None = None) -> str:
-    """Formats a datetime as a relative time string (e.g. '5m ago' or 'in 2h')."""
-    reference_time = reference_time or datetime.now()
-    delta = dt - reference_time if dt > reference_time else reference_time - dt
-    
-    seconds = delta.total_seconds()
-    if seconds < 60:
-        unit = "s"
-        value = int(seconds)
-    elif seconds < 3600:
-        unit = "m"
-        value = int(seconds / 60)
-    elif seconds < 86400:
-        unit = "h"
-        value = int(seconds / 3600)
-    else:
-        unit = "d"
-        value = int(seconds / 86400)
-    if dt < reference_time:
-        return f"{value}{unit} ago"
-    else:
-        return f"in {value}{unit}"
 
 
 class Config:
@@ -202,6 +150,7 @@ class Config:
             log_file_path, when='midnight', backupCount=self.log_backup_count
         )
         format_str = "%(asctime)s.%(msecs)03d %(levelname)s: %(message)s"
+        date_fmt = "%Y-%m-%d %H:%M:%S"
 
         class ColoredFormatter(logging.Formatter):
             GREY_ANSI = "\x1b[38;20m"
@@ -221,10 +170,10 @@ class Config:
 
             def format(self, record: logging.LogRecord) -> str:
                 log_fmt = self.FORMATS.get(record.levelno, format_str)
-                formatter = logging.Formatter(log_fmt, datefmt=HUMAN_READABLE_DATE_FORMAT)
+                formatter = logging.Formatter(log_fmt, datefmt=date_fmt)
                 return formatter.format(record)
 
-        file_handler.setFormatter(logging.Formatter(format_str, datefmt=HUMAN_READABLE_DATE_FORMAT))
+        file_handler.setFormatter(logging.Formatter(format_str, datefmt=date_fmt))
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(ColoredFormatter())
         logger.addHandler(file_handler)

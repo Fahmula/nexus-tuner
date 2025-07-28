@@ -2,10 +2,10 @@ import asyncio
 import aiohttp
 from typing import NoReturn, Self, Set, Any
 
-from nexus_stream.config import Config, Label
+from nexus_stream.config import Config
 from nexus_stream.handler import ChannelHandler
 from nexus_stream.stream import StreamManager
-from nexus_stream.create_stream import VideoKey
+from nexus_stream.utils import Label, VideoKey
 
 # --- Constants ---
 SESSION_MONITOR_STARTUP_DELAY = 15

@@ -3,9 +3,9 @@ import json
 from datetime import datetime, timedelta
 from typing import Coroutine, NoReturn, Any, Self
 
-from nexus_stream.config import Config, NEXUS_STREAM_USER_AGENT, Label
+from nexus_stream.config import Config
 from nexus_stream.handler import ChannelHandler
-from nexus_stream.slots import ProviderName
+from nexus_stream.utils import NEXUS_STREAM_USER_AGENT, Label, ProviderName
 
 # --- Constants ---
 RESOLUTION_WEIGHT = 50

@@ -6,11 +6,11 @@ import asyncio
 from typing import Any, Self
 
 import aiohttp
-from nexus_stream.config import Config, Label, VideoType, NEXUS_STREAM_USER_AGENT
-from nexus_stream.slots import ProviderName, ProviderSlots
+from nexus_stream.config import Config
+from nexus_stream.slots import ProviderSlots
+from nexus_stream.utils import DEFAULT_PRIORITY, NEXUS_STREAM_USER_AGENT, Label, ProviderName, VideoType
 
 # --- Constants ---
-DEFAULT_PRIORITY = 5
 PROVIDER_FETCH_TIMEOUT = 20
 DISCOVER_SOURCES_INTERVAL = 60 * 60 * 24
 TVG_NAME_REGEX = re.compile(r'tvg-name="([^"]*)"', re.IGNORECASE)

@@ -1,19 +1,18 @@
 import asyncio
-import aiofiles
+import aiofiles.os
 import aioshutil
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Any, Coroutine, Iterable, NoReturn, Self
 
-from nexus_stream.config import CREATE_STREAM_DEADLINE, NEW_DEADLINE_NON_BEST, Config, Label, VideoKey, VideoType
-from nexus_stream.handler import ChannelHandler
-from nexus_stream.slots import ProviderName
-
 from asyncio.subprocess import Process
+
+from nexus_stream.config import Config
+from nexus_stream.handler import ChannelHandler
+from nexus_stream.utils import CREATE_STREAM_DEADLINE, FFMPEG_TERMINATE_TIMEOUT, NEW_DEADLINE_NON_BEST, Label, ProviderName, VideoKey, VideoType
 
 
 # --- Constants ---
-FFMPEG_TERMINATE_TIMEOUT = 5  # seconds
 CLEANUP_POLL_INTERVAL = 5     # seconds
 
 

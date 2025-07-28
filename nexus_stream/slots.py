@@ -2,9 +2,9 @@ import asyncio
 import threading
 import os
 import sys
-from typing import Any, NewType, List
+from typing import Any, List
 
-ProviderName = NewType("ProviderName", str)
+from nexus_stream.utils import ProviderName
 
 GRACE_PERIOD = 3
 

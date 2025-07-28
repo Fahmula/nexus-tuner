@@ -5,19 +5,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Self
 
-import aiofiles
 import aiofiles.os
 import aioshutil
 
-from nexus_stream.config import CREATE_STREAM_DEADLINE, NEW_DEADLINE_NON_BEST, Config, Label, VideoKey, VideoName, VideoType, NEXUS_STREAM_USER_AGENT
+from nexus_stream.config import Config
 from nexus_stream.quality_monitor import QualityMonitor
-from nexus_stream.slots import ProviderName, ProviderSlots
+from nexus_stream.slots import ProviderSlots
 from nexus_stream.handler import ChannelHandler
-from nexus_stream.stream import FFMPEG_TERMINATE_TIMEOUT, StreamManager
-
-
-CREATE_STREAM_POLL_INTERVAL = 0.01
-MPEGTS_PACKET_SIZE = 188       # Size of a single MPEG-TS packet in bytes
+from nexus_stream.stream import StreamManager
+from nexus_stream.utils import CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL, FFMPEG_TERMINATE_TIMEOUT, MPEGTS_PACKET_SIZE, NEW_DEADLINE_NON_BEST, NEXUS_STREAM_USER_AGENT, Label, ProviderName, VideoKey, VideoName, VideoType, sort_sources
 
 
 def create_video_key(logical_channel_id: str, source_service_id: str, video_type: VideoType) -> VideoKey:
@@ -75,25 +71,6 @@ def create_mpegts_ffmpeg_command(config: Config, input_url: str) -> list[str]:
         "pipe:1"
     ]
     return command
-
-
-def sort_sources(sources: list[dict[str, Any]], quality_scores: dict[str, dict[str, float]], *, reverse: bool) -> dict[str, int]:
-    """Sorts sources based on priority and quality. (Sync - CPU-bound pure function)"""
-    prev_score = None
-    curr_priority = -1
-    source_scores = sorted(((source["priority"],
-                             -quality_scores.get(source["source_service_id"], {}).get("total_score", 0),
-                             -quality_scores.get(source["source_service_id"], {}).get("uptime", 0),
-                             source["source_service_id"]),
-                    source["source_service_id"]) for source in sources)
-    source_priorities: dict[str, int] = {}
-    for score, source_service_id in source_scores:
-        if score != prev_score:
-            prev_score = score
-            curr_priority += 1
-        source_priorities[source_service_id] = curr_priority
-    sources.sort(key=lambda x: source_priorities[x["source_service_id"]], reverse=reverse)
-    return source_priorities
 
 
 class CreateStream:
