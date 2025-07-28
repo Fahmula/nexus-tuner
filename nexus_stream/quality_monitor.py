@@ -5,7 +5,7 @@ from typing import Coroutine, NoReturn, Any, Self
 
 from nexus_stream.config import Config
 from nexus_stream.handler import ChannelHandler
-from nexus_stream.utils import NEXUS_STREAM_USER_AGENT, Label, ProviderName
+from nexus_stream.utils import NEXUS_STREAM_USER_AGENT, Label, ProviderAlias
 
 # --- Constants ---
 RESOLUTION_WEIGHT = 50
@@ -127,7 +127,7 @@ class QualityMonitor:
 
         return {"status": "online", "width": width, "height": height, "bitrate": bitrate, "framerate": frame_rate}
 
-    async def _run_single_probe(self, service_id: str, service_url: str, provider_alias: ProviderName) -> tuple[str, dict[str, str | float | int]]:
+    async def _run_single_probe(self, service_id: str, service_url: str, provider_alias: ProviderAlias) -> tuple[str, dict[str, str | float | int]]:
         """
         Probes a single stream, persistently trying to acquire a slot, and ensures
         all resources are cleaned up upon completion, failure, or cancellation.
@@ -226,7 +226,7 @@ class QualityMonitor:
                     self._run_single_probe(
                         service_id, 
                         service_details["actual_stream_url"], 
-                        ProviderName(service_details["provider_alias"])
+                        ProviderAlias(service_details["provider_alias"])
                     )
                 )
             if not tasks:

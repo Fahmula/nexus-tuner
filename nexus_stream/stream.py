@@ -9,7 +9,7 @@ from asyncio.subprocess import Process
 
 from nexus_stream.config import Config
 from nexus_stream.handler import ChannelHandler
-from nexus_stream.utils import CREATE_STREAM_DEADLINE, FFMPEG_TERMINATE_TIMEOUT, NEW_DEADLINE_NON_BEST, Label, ProviderName, VideoKey, VideoType
+from nexus_stream.utils import CREATE_STREAM_DEADLINE, FFMPEG_TERMINATE_TIMEOUT, NEW_DEADLINE_NON_BEST, Label, ProviderAlias, VideoKey, VideoType
 
 
 # --- Constants ---
@@ -211,7 +211,7 @@ class StreamManager:
 
         video_type: VideoType = data_to_cleanup['video_type']
         process: Process = data_to_cleanup['process']
-        provider = ProviderName(data_to_cleanup['provider_alias'])
+        provider = ProviderAlias(data_to_cleanup['provider_alias'])
         hls_dir: Path | None = data_to_cleanup['channel_hls_dir']
         log_file: aiofiles.threadpool.text.AsyncTextIOWrapper | None = data_to_cleanup.get('stderr_log_file_obj')
 

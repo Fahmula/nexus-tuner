@@ -13,7 +13,7 @@ from nexus_stream.quality_monitor import QualityMonitor
 from nexus_stream.slots import ProviderSlots
 from nexus_stream.handler import ChannelHandler
 from nexus_stream.stream import StreamManager
-from nexus_stream.utils import CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL, FFMPEG_TERMINATE_TIMEOUT, MPEGTS_PACKET_SIZE, NEW_DEADLINE_NON_BEST, NEXUS_STREAM_USER_AGENT, Label, ProviderName, VideoKey, VideoName, VideoType, sort_sources
+from nexus_stream.utils import CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL, FFMPEG_TERMINATE_TIMEOUT, MPEGTS_PACKET_SIZE, NEW_DEADLINE_NON_BEST, NEXUS_STREAM_USER_AGENT, Label, ProviderAlias, VideoKey, VideoName, VideoType, sort_sources
 
 
 def create_video_key(logical_channel_id: str, source_service_id: str, video_type: VideoType) -> VideoKey:
@@ -140,9 +140,9 @@ class CreateStream:
         self._quality_scores = await self.quality_monitor.get_quality_scores()
         self._remaining_priorities = sort_sources(self._sources, self._quality_scores, reverse=True)
 
-        all_provider_sources: dict[ProviderName, list[dict[str, Any]]] = {}
+        all_provider_sources: dict[ProviderAlias, list[dict[str, Any]]] = {}
         for source in self._sources:
-            all_provider_sources.setdefault(ProviderName(source["provider_alias"]), []).append(source)
+            all_provider_sources.setdefault(ProviderAlias(source["provider_alias"]), []).append(source)
 
         self._supervisor_task = asyncio.create_task(self._process_results())
 
@@ -191,7 +191,7 @@ class CreateStream:
                 return provider_sources.pop()
             return
 
-    async def _create_provider_stream(self, provider_alias: ProviderName, provider_sources: list[dict[str, Any]]) -> None:
+    async def _create_provider_stream(self, provider_alias: ProviderAlias, provider_sources: list[dict[str, Any]]) -> None:
         """Creates streams for a provider by launching concurrent worker tasks."""
         provider_slots = self.handler.slots.get(provider_alias)
         if not provider_slots:
@@ -207,7 +207,7 @@ class CreateStream:
         ]
         await asyncio.gather(*worker_tasks, return_exceptions=False)
 
-    async def _provider_worker_task(self, provider_alias: ProviderName, provider_slots: ProviderSlots, provider_sources: list[dict[str, Any]]) -> None:
+    async def _provider_worker_task(self, provider_alias: ProviderAlias, provider_slots: ProviderSlots, provider_sources: list[dict[str, Any]]) -> None:
         """Tries sources for a provider until a stream is created or sources are exhausted."""
         source = await self._pop_source(provider_sources, None)
         if not source:
@@ -283,7 +283,7 @@ class CreateStream:
             except Exception as cleanup_error:
                 self.config.critical(self.video_type, f"{video_name} {stream_info}: Failed to clean up HLS directory: {cleanup_error}")
 
-    async def _create_stream(self, video_key: VideoKey, video_name: VideoName, provider_alias: ProviderName, provider_slots: ProviderSlots, source: dict[str, Any], new_active_count: str) -> VideoKey | None:
+    async def _create_stream(self, video_key: VideoKey, video_name: VideoName, provider_alias: ProviderAlias, provider_slots: ProviderSlots, source: dict[str, Any], new_active_count: str) -> VideoKey | None:
         """Creates a stream using FFmpeg via an asynchronous subprocess."""
         quality_score = self._quality_scores.get(source["source_service_id"])
         score_msg = f"Score={quality_score['total_score']:.2f} | Uptime={quality_score['uptime']*100:.0f}%" if quality_score else "Score=Unknown | Uptime=Unknown"

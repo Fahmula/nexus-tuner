@@ -8,7 +8,7 @@ from typing import Any, Self
 import aiohttp
 from nexus_stream.config import Config
 from nexus_stream.slots import ProviderSlots
-from nexus_stream.utils import DEFAULT_PRIORITY, NEXUS_STREAM_USER_AGENT, Label, ProviderName, VideoType
+from nexus_stream.utils import DEFAULT_PRIORITY, NEXUS_STREAM_USER_AGENT, Label, ProviderAlias, VideoType
 
 # --- Constants ---
 PROVIDER_FETCH_TIMEOUT = 20
@@ -59,7 +59,7 @@ class ChannelHandler:
         self.master_m3u_content: str = "#EXTM3U\n"
 
         # Slots management
-        self.slots: dict[ProviderName, ProviderSlots] = {}
+        self.slots: dict[ProviderAlias, ProviderSlots] = {}
         self._kill_provider_streams: set[str] = set()
         self.pending_streams: set[str] = set()
 
@@ -241,7 +241,7 @@ class ChannelHandler:
                     "sources": processed_sources
                 }
             else:
-                self.config.warn(self.label, f"No valid mapped sources for LC '{logical_channel_id}'. It will not be included in the client M3U.")
+                self.config.warn(self.label, f"No valid mapped sources for logical channel '{logical_channel_id}'. It will not be included in the client M3U.")
         self.config.info(self.label, f"Built {len(self.client_facing_channels)} client-facing channels.")
 
     async def get_pending_stream_count(self) -> int:
@@ -293,7 +293,7 @@ class ChannelHandler:
     async def _update_providers_slots(self) -> None:
         """Initializes or updates provider slots based on config asynchronously."""
         async with self._mutex:
-            providers_to_delete: set[ProviderName] = set()
+            providers_to_delete: set[ProviderAlias] = set()
             for alias, curr_details in self.slots.items():
                 if alias not in self.providers_data:
                     self.config.info(self.label, f"Removing slots for provider '{alias}' as it no longer exists in configuration.")
@@ -306,7 +306,7 @@ class ChannelHandler:
                     continue
                 self.config.info(self.label, f"Updating slots for provider '{alias}' with new URL or max streams.")
                 self.slots[alias] = ProviderSlots(
-                    name=ProviderName(alias),
+                    alias=ProviderAlias(alias),
                     m3u_url=m3u_url,
                     total_slots=max_streams
                 )
@@ -316,10 +316,10 @@ class ChannelHandler:
             for alias, details in self.providers_data.items():
                 if alias in self.slots:
                     continue
-                name = ProviderName(alias)
+                name = ProviderAlias(alias)
                 max_streams = details.get("max_concurrent_streams", 1)
                 self.slots[name] = ProviderSlots(
-                    name=name,
+                    alias=name,
                     m3u_url=details.get("url", ""),
                     total_slots=max_streams
                 )

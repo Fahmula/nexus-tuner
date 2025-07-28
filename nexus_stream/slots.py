@@ -4,7 +4,7 @@ import os
 import sys
 from typing import Any, List
 
-from nexus_stream.utils import ProviderName
+from nexus_stream.utils import ProviderAlias
 
 GRACE_PERIOD = 3
 
@@ -41,12 +41,12 @@ class ProviderSlots:
     An asyncio-native class to represent a provider with its associated slots.
     Uses a custom CountingSemaphore to enable accurate concurrent logging.
     """
-    __slots__ = ('_name', '_m3u_url', '_total_slots', '_active_background_tasks', '_lock', '_semaphore')
+    __slots__ = ('_alias', '_m3u_url', '_total_slots', '_active_background_tasks', '_lock', '_semaphore')
 
-    def __init__(self, name: ProviderName, m3u_url: str, total_slots: int) -> None:
+    def __init__(self, alias: ProviderAlias, m3u_url: str, total_slots: int) -> None:
         if total_slots < 1:
             raise ValueError("total_slots must be >= 1")
-        self._name = name
+        self._alias = alias
         self._m3u_url = m3u_url
         self._total_slots = total_slots
         self._active_background_tasks: List[asyncio.Task[Any]] = []
@@ -55,12 +55,12 @@ class ProviderSlots:
 
     def __repr__(self) -> str:
         return (
-            f"Provider(name={self._name}, total_slots={self._total_slots}, "
+            f"Provider(alias={self._alias}, total_slots={self._total_slots}, "
             f"active_slots={self.get_active_slots()})"
         )
 
-    def get_name(self) -> ProviderName:
-        return self._name
+    def get_alias(self) -> ProviderAlias:
+        return self._alias
 
     def get_m3u_url(self) -> str:
         return self._m3u_url
@@ -99,7 +99,7 @@ class ProviderSlots:
             try:
                 return await asyncio.wait_for(self._semaphore.acquire(), timeout=3.0)
             except asyncio.TimeoutError:
-                raise asyncio.TimeoutError(f"Could not acquire preempted slot for {self._name}.")
+                raise asyncio.TimeoutError(f"Could not acquire preempted slot for {self._alias}.")
 
 
     async def release_user_slot(self) -> str:

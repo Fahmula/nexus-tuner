@@ -4,7 +4,7 @@
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, NewType
+from typing import Any, NewType, TypedDict
 
 # --- Constants ---
 NEXUS_STREAM_VERSION = (Path(__file__).parent.parent / "VERSION").read_text().strip()
@@ -16,12 +16,13 @@ MPEGTS_PACKET_SIZE = 188            # Size of a single MPEG-TS packet in bytes
 DEFAULT_PRIORITY = 5                # Default priority for sources
 FFMPEG_TERMINATE_TIMEOUT = 5        # Timeout for terminating FFmpeg processes
 
-ProviderName = NewType("ProviderName", str)
+ProviderAlias = NewType("ProviderAlias", str)
 LogicalChannelId = NewType("LogicalChannelId", str)
 LogicalChannelName = NewType("LogicalChannelName", str)
 SourceServiceId = NewType("SourceServiceId", str)
 VideoKey = NewType("VideoKey", str)
 VideoName = NewType("VideoName", str)
+DateTimeISO = NewType("DateTimeISO", str)
 
 
 class VideoType(StrEnum):
@@ -45,6 +46,13 @@ class Label(StrEnum):
     STARTUP = "startup"
     STREAM = "stream"
     QUALITY = "quality"
+
+
+class ProviderInfo(TypedDict):
+    url: str
+    max_concurrent_streams: int
+    updated_at: DateTimeISO
+ProvidersData = NewType("ProvidersData", dict[ProviderAlias, ProviderInfo])
 
 
 def relative_time(dt: datetime, reference_time: datetime | None = None) -> str:
