@@ -78,6 +78,16 @@ class CreateStream:
     An asyncio-native class to acquire and use resources for creating a stream.
     The original threaded logic is preserved using asyncio tasks and synchronization primitives.
     """
+    __slots__ = (
+        'config', 'handler', 'stream_manager', 'quality_monitor',
+        'logical_channel_id', 'logical_channel_name', 'video_type',
+        '_res', '_mutex', '_result_event',
+        '_sources', '_quality_scores', '_remaining_priorities',
+        '_input_sources', '_results', '_selected', '_active_video_keys',
+        '_source_quality_messages', '_video_names', '_deadline',
+        '_worker_tasks', '_supervisor_task',
+    )
+    
     def __init__(self, config: Config, handler: ChannelHandler, stream_manager: StreamManager, quality_monitor: QualityMonitor, logical_channel_id: str, logical_channel_name: str, video_type: VideoType, input_sources: list[dict[str, Any]] | None = None) -> None:
         self.config = config
         self.handler = handler

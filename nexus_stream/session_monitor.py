@@ -20,6 +20,11 @@ class GhostSessionMonitor:
     A ghost stream is an FFmpeg process that is running on the server but has no
     corresponding active viewing session on any configured media server.
     """
+    __slots__ = (
+        'config', 'handler', 'stream_manager',
+        'display_name_to_lc_id_map', 'ghost_monitor_task',
+    )
+    
     def __init__(self, config: Config, handler: ChannelHandler, stream_manager: StreamManager) -> None:
         """
         Initializes the monitor.

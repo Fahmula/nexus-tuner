@@ -13,6 +13,12 @@ MPEGTS_CHUNK_SIZE = MPEGTS_PACKET_SIZE * 21  # Size of a chunk in bytes
 
 class MPEGTSStream:
     """A class to manage MPEGTS streams, handling reading and buffering of data."""
+    __slots__ = (
+        'config', 'stream_manager', 'video_key', 'recreate_stream',
+        '_buffer', '_event', '_reader_positions', '_cancelled',
+        '_writer', '_cleaner',
+    )
+
     streams: dict[VideoKey, Self] = {}
     
     def __init__(self, config: Config, stream_manager: StreamManager, video_key: VideoKey, recreate_stream: Callable[[], Awaitable[None]]) -> None:

@@ -26,6 +26,23 @@ class Config:
     Loads settings from environment variables and provides async methods for
     accessing and persisting data to JSON files in a non-blocking, safe manner.
     """
+    __slots__ = (
+        'config_dir', 'nexus_url', 'nexus_port',
+        'logs_dir', '_logger', 'log_level', 'log_backup_count', 'ffmpeg_logs_retention_seconds',
+        'providers_name', 'providers_path',
+        'discovered_source_services_name', 'discovered_source_services_path',
+        'logical_channels_name', 'logical_channels_path',
+        'channel_mappings_name', 'channel_mappings_path',
+        'channel_list_name', 'channel_list_path',
+        'service_quality_cache_name', 'service_quality_cache_path',
+        'jobs_name', 'jobs_path',
+        'backups_base_path', 'backups_scheduled_path', 'backups_manual_path', 'backup_count',
+        'hls_base_segment_dir', 'hls_segment_duration', 'segment_prune_timeout', 'latest_segment_timeout', 'hls_playlist_length',
+        'ffmpeg_start_timeout', 'ffmpeg_inactivity_timeout', 'ffmpeg_path', 'ffmpeg_logs_dir',
+        'emby_url', 'emby_api_key', 'jellyfin_url', 'jellyfin_api_key', 'ghost_check_interval',
+        'file_lock', '_cleaning_up_ffmpeg_logs',
+    )
+    
     def __init__(self) -> None:
         """
         Initializes the configuration object.
@@ -153,23 +170,28 @@ class Config:
         date_fmt = "%Y-%m-%d %H:%M:%S"
 
         class ColoredFormatter(logging.Formatter):
-            GREY_ANSI = "\x1b[38;20m"
-            GREEN_ANSI = "\x1b[32;20m"
-            YELLOW_ANSI = "\x1b[33;20m"
-            RED_ANSI = "\x1b[31;20m"
-            BOLD_RED_ANSI = "\x1b[31;1m"
-            RESET_ANSI = "\x1b[0m"
+            __slots__ = ('formats',)
+            
+            def __init__(self, fmt: str = format_str, datefmt: str = date_fmt) -> None:
+                super().__init__(fmt, datefmt)
+            
+                GREY_ANSI = "\x1b[38;20m"
+                GREEN_ANSI = "\x1b[32;20m"
+                YELLOW_ANSI = "\x1b[33;20m"
+                RED_ANSI = "\x1b[31;20m"
+                BOLD_RED_ANSI = "\x1b[31;1m"
+                RESET_ANSI = "\x1b[0m"
 
-            FORMATS = {
-                logging.DEBUG: format_str.replace("%(levelname)s", f"{GREY_ANSI}%(levelname)s{RESET_ANSI}"),
-                logging.INFO: format_str.replace("%(levelname)s", f"{GREEN_ANSI}%(levelname)s{RESET_ANSI}"),
-                logging.WARNING: format_str.replace("%(levelname)s", f"{YELLOW_ANSI}%(levelname)s{RESET_ANSI}"),
-                logging.ERROR: format_str.replace("%(levelname)s", f"{RED_ANSI}%(levelname)s{RESET_ANSI}"),
-                logging.CRITICAL: format_str.replace("%(levelname)s", f"{BOLD_RED_ANSI}%(levelname)s{RESET_ANSI}"),
-            }
+                self.formats = {
+                    logging.DEBUG: format_str.replace("%(levelname)s", f"{GREY_ANSI}%(levelname)s{RESET_ANSI}"),
+                    logging.INFO: format_str.replace("%(levelname)s", f"{GREEN_ANSI}%(levelname)s{RESET_ANSI}"),
+                    logging.WARNING: format_str.replace("%(levelname)s", f"{YELLOW_ANSI}%(levelname)s{RESET_ANSI}"),
+                    logging.ERROR: format_str.replace("%(levelname)s", f"{RED_ANSI}%(levelname)s{RESET_ANSI}"),
+                    logging.CRITICAL: format_str.replace("%(levelname)s", f"{BOLD_RED_ANSI}%(levelname)s{RESET_ANSI}"),
+                }
 
             def format(self, record: logging.LogRecord) -> str:
-                log_fmt = self.FORMATS.get(record.levelno, format_str)
+                log_fmt = self.formats.get(record.levelno, format_str)
                 formatter = logging.Formatter(log_fmt, datefmt=date_fmt)
                 return formatter.format(record)
 

@@ -26,6 +26,11 @@ class StreamManager:
     - Running a background asyncio task to clean up inactive or dead FFmpeg processes.
     - Providing paths to HLS playlists and segments asynchronously.
     """
+    __slots__ = (
+        'config', 'handler', 'ffmpeg_processes', 'hls_latest_segments',
+        'stream_process_lock', 'hls_base_dir', 'cleanup_task',
+    )
+    
     def __init__(self, config: Config, handler: ChannelHandler) -> None:
         """
         Initializes the StreamManager.

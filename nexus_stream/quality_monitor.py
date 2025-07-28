@@ -25,6 +25,11 @@ MIN_DAYS_AT_NON_MAX_HISTORY = 1
 
 
 class QualityMonitor:
+    __slots__ = (
+        'config', 'handler', '_mutex', '_quality_scores',
+        'quality_monitor_task',
+    )
+    
     def __init__(self, config: Config, handler: ChannelHandler) -> None:
         self.config = config
         self.handler = handler

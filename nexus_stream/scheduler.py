@@ -16,6 +16,7 @@ QUALITY_TIME = "02:00"
 
 class Job:
     """Represents a scheduled job with a name, schedules, and a function to execute."""
+    __slots__ = ('name', 'hour', 'minute', 'func', 'active',)
     
     def __init__(self, name: JobName, schedule: str, func: Callable[[], Awaitable[None]]) -> None:
         if len(schedule) != 5 or schedule[2] != ":" or not (0 <= int(schedule[:2]) <= 23) or not (0 <= int(schedule[3:]) <= 59):
@@ -58,6 +59,7 @@ class Job:
 
 class Scheduler:
     """A background task for running tasks at specific times of day."""
+    __slots__ = ('config', 'handler', 'quality_monitor', '_mutex', '_tasks', 'jobs', '_scheduler_task',)
 
     def __init__(self, config: Config, handler: ChannelHandler, quality_monitor: QualityMonitor) -> None:
         self.config = config

@@ -41,6 +41,7 @@ class ProviderSlots:
     An asyncio-native class to represent a provider with its associated slots.
     Uses a custom CountingSemaphore to enable accurate concurrent logging.
     """
+    __slots__ = ('_name', '_m3u_url', '_total_slots', '_active_background_tasks', '_lock', '_semaphore')
 
     def __init__(self, name: ProviderName, m3u_url: str, total_slots: int) -> None:
         if total_slots < 1:

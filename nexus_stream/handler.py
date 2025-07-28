@@ -30,6 +30,14 @@ class ChannelHandler:
     - Handling provider stream capacity limits using asyncio-native constructs.
     - Providing async methods for the UI to interact with configuration data.
     """
+    __slots__ = (
+        'label', '_loading', 'config', '_mutex',
+        'providers_data', 'discovered_source_services_data',
+        'logical_channels_data', 'channel_mappings_data', 'channel_list_data',
+        'client_facing_channels', 'master_m3u_content',
+        'slots', '_kill_provider_streams', 'pending_streams',
+    )
+    
     def __init__(self, config: Config) -> None:
         """
         Initializes the ChannelHandler. NOTE: This is now a lightweight, synchronous constructor.
