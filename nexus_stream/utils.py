@@ -4,7 +4,7 @@
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, NewType, TypedDict
+from typing import Any, Literal, NewType, ReadOnly, TypedDict
 
 # --- Constants ---
 NEXUS_STREAM_VERSION = (Path(__file__).parent.parent / "VERSION").read_text().strip()
@@ -49,10 +49,11 @@ class Label(StrEnum):
 
 
 class ProviderInfo(TypedDict):
-    url: str
-    max_concurrent_streams: int
-    updated_at: DateTimeISO
+    url: ReadOnly[str]
+    max_concurrent_streams: ReadOnly[int]
+    updated_at: ReadOnly[DateTimeISO | None]
 ProvidersData = NewType("ProvidersData", dict[ProviderAlias, ProviderInfo])
+ProvidersSourceData = NewType("ProvidersSourceData", dict[Literal["source_m3u_providers"], ProvidersData])
 
 
 def relative_time(dt: datetime, reference_time: datetime | None = None) -> str:

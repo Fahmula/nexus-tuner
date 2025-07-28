@@ -13,7 +13,7 @@ import asyncio
 import aiofiles.os
 import aioshutil
 
-from nexus_stream.utils import NEXUS_STREAM_VERSION, JobName, Label, VideoKey, VideoType
+from nexus_stream.utils import NEXUS_STREAM_VERSION, JobName, Label, ProvidersSourceData, VideoKey, VideoType
 
 
 NOT_ALPHANUM_REGEX = re.compile(r'[^a-zA-Z0-9_-]')
@@ -336,11 +336,11 @@ class Config:
                         self.error(Label.CONFIG, f"Error removing temporary file {temp_file_path}: {remove_error}")
                 return False
 
-    async def get_providers_config(self) -> dict[str, dict[str, dict[str, Any]]]:
+    async def get_providers_config(self) -> ProvidersSourceData:
         """Loads the providers configuration from providers.json asynchronously."""
         return await self._load_json_file(self.providers_path, lambda: {"source_m3u_providers": {}})
 
-    async def save_providers_config(self, data: dict[str, dict[str, dict[str, Any]]]) -> bool:
+    async def save_providers_config(self, data: ProvidersSourceData) -> bool:
         """Saves the providers configuration to providers.json asynchronously."""
         return await self._save_json_file(self.providers_path, data)
 
