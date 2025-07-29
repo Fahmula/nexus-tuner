@@ -5,7 +5,9 @@ from typing import Coroutine, Final, NoReturn, Any, Self, cast
 
 from nexus_stream.config import Config
 from nexus_stream.handler import ChannelHandler
-from nexus_stream.utils import NEXUS_STREAM_USER_AGENT, Label, LogicalChannelId, ProviderAlias, QualityScores, QualityScoresMutable, SourceServiceId, StreamURL
+from nexus_stream.utils import (NEXUS_STREAM_USER_AGENT, Bitrate, BitrateScore, DateTimeISO, Framerate, FramerateScore, Height, Label, LogicalChannelId,
+                                Percent, ProviderAlias, QualityScores, QualityScoresMutable, ResolutionScore, ServiceQualityCacheData,
+                                ServiceQualityCacheDataMutable, SourceServiceId, StreamURL, TotalScore, UptimeScore, Width)
 
 # --- Constants ---
 RESOLUTION_WEIGHT: Final[int] = 50
@@ -56,7 +58,7 @@ class QualityMonitor:
                 del cast(QualityScoresMutable, self._quality_scores)[service_id]
             quality_cache = await self.config.get_service_quality_cache()
             if service_id in quality_cache:
-                del quality_cache[service_id]
+                del cast(ServiceQualityCacheDataMutable, quality_cache)[service_id]
                 await self.config.save_service_quality_cache(quality_cache)
 
     async def _get_stream_info(self, service_id: SourceServiceId, stream_url: StreamURL) -> dict[str, Any] | None:
@@ -183,14 +185,14 @@ class QualityMonitor:
     
     async def analyze_mapped_services(self, input_lc_id: LogicalChannelId | None = None) -> None:
         """Finds and probes all mapped services concurrently."""
-        valid_mappings: list[tuple[str, list[str], str]] = []
+        valid_mappings: list[tuple[LogicalChannelId, list[SourceServiceId], DateTimeISO]] = []
         if input_lc_id:
             self.config.info(Label.QUALITY, f"Starting stream quality analysis for Logical Channel ID {input_lc_id}.")
             services = self.handler.get_mappings_for_logical_channel(input_lc_id)
             if not services:
                 self.config.error(Label.QUALITY, f"No mapped services found for Logical Channel ID {input_lc_id}.")
                 return
-            valid_mappings.append((input_lc_id, [service["source_service_id"] for service in services], "0001-01-01"))
+            valid_mappings.append((input_lc_id, [service["source_service_id"] for service in services], DateTimeISO("0001-01-01")))
         else:
             self.config.info(Label.QUALITY, "Starting stream quality analysis cycle.")
             all_mappings = self.handler.channel_mappings_data
@@ -274,25 +276,25 @@ class QualityMonitor:
         if input_lc_id:
             self.config.info(Label.QUALITY, f"Completed analysis for {len(valid_mappings[0][1])} mappings(s) in Logical Channel ID {input_lc_id}.")
 
-    def _build_quality_scores(self, quality_cache: dict[str, dict[str, list[Any]]]) -> None:
+    def _build_quality_scores(self, quality_cache: ServiceQualityCacheData) -> None:
         """Calculates quality scores and updates the internal state."""
         for service_id, cache_entry in quality_cache.items():
-            avg_width = sum(cache_entry.get("widths", [])) / len(cache_entry["widths"]) if cache_entry.get("widths") else 0.0
-            avg_height = sum(cache_entry.get("heights", [])) / len(cache_entry["heights"]) if cache_entry.get("heights") else 0.0
-            avg_bitrate = sum(cache_entry.get("bitrates", [])) / len(cache_entry["bitrates"]) if cache_entry.get("bitrates") else 0.0
-            avg_framerate = sum(cache_entry.get("framerates", [])) / len(cache_entry["framerates"]) if cache_entry.get("framerates") else 0.0
+            avg_width = Width(sum(cache_entry.get("widths", [])) / len(cache_entry["widths"]) if cache_entry.get("widths") else 0)
+            avg_height = Height(sum(cache_entry.get("heights", [])) / len(cache_entry["heights"]) if cache_entry.get("heights") else 0)
+            avg_bitrate = Bitrate(sum(cache_entry.get("bitrates", [])) / len(cache_entry["bitrates"]) if cache_entry.get("bitrates") else 0)
+            avg_framerate = Framerate(sum(cache_entry.get("framerates", [])) / len(cache_entry["framerates"]) if cache_entry.get("framerates") else 0)
             statuses = cache_entry.get("statuses", [])
-            uptime = sum(1 for s in statuses if s == "online") / len(statuses) if statuses else 0.0
+            uptime = Percent(sum(1 for s in statuses if s == "online") / len(statuses) if statuses else 0)
             
-            height_score = RESOLUTION_WEIGHT * min(avg_height / float(RESOLUTION_NORM), 1.0)
-            bitrate_score = BITRATE_WEIGHT * min(avg_bitrate / float(BITRATE_NORM), 1.0)
-            framerate_score = FRAMERATE_WEIGHT * min(avg_framerate / float(FRAMERATE_NORM), 1.0)
-            uptime_score = UPTIME_WEIGHT * uptime
+            height_score = ResolutionScore(RESOLUTION_WEIGHT * min(avg_height / float(RESOLUTION_NORM), 1.0))
+            bitrate_score = BitrateScore(BITRATE_WEIGHT * min(avg_bitrate / float(BITRATE_NORM), 1.0))
+            framerate_score = FramerateScore(FRAMERATE_WEIGHT * min(avg_framerate / float(FRAMERATE_NORM), 1.0))
+            uptime_score = UptimeScore(UPTIME_WEIGHT * uptime)
             
             cast(QualityScoresMutable, self._quality_scores)[service_id] = {
                 "width": avg_width, "height": avg_height, "bitrate": avg_bitrate,
                 "framerate": avg_framerate, "uptime": uptime, "resolution_score": height_score,
                 "bitrate_score": bitrate_score, "framerate_score": framerate_score,
                 "uptime_score": uptime_score,
-                "total_score": height_score + bitrate_score + framerate_score + uptime_score,
+                "total_score": TotalScore(height_score + bitrate_score + framerate_score + uptime_score),
             }

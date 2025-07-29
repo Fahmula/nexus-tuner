@@ -7,14 +7,14 @@ import time
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from dotenv import load_dotenv
-from typing import Any, Callable, Final, Self
+from typing import Callable, Final, Mapping, Self
 
 import asyncio
 import aiofiles.os
 import aioshutil
 
-from nexus_stream.utils import (NEXUS_STREAM_PORT, NEXUS_STREAM_VERSION, JobName,
-                                Label, ProvidersSourceData, VideoKey, VideoType)
+from nexus_stream.utils import (NEXUS_STREAM_PORT, NEXUS_STREAM_VERSION, ChannelListData, ChannelMappingsData, DiscoveredSourcesData, JobsData,
+                                Label, LogicalChannelsData, ProvidersData, ProvidersSourceData, ServiceQualityCacheData, VideoKey, VideoType)
 
 
 NOT_ALPHANUM_REGEX: Final[re.Pattern[str]] = re.compile(r'[^a-zA-Z0-9_-]')
@@ -283,7 +283,7 @@ class Config:
         finally:
             self._cleaning_up_ffmpeg_logs = False
 
-    async def _load_json_file(self, file_path: Path, default_content_factory: Callable[[], Any]) -> Any:
+    async def _load_json_file[JsonType](self, file_path: Path, default_content_factory: Callable[[], JsonType]) -> JsonType:
         """
         Loads data from a JSON file asynchronously and in a coroutine-safe manner.
         """
@@ -309,7 +309,7 @@ class Config:
                 self.error(Label.CONFIG, f"Could not load or parse {file_path}: {e}. Returning default.")
                 return default_content_factory()
 
-    async def _save_json_file(self, file_path: Path, data: Any) -> bool:
+    async def _save_json_file[K: str, V](self, file_path: Path, data: Mapping[K, V] | list[V] | tuple[V, ...]) -> bool:
         """
         Saves data to a JSON file atomically and asynchronously.
         """
@@ -331,25 +331,25 @@ class Config:
 
     async def get_providers_config(self) -> ProvidersSourceData:
         """Loads the providers configuration from providers.json asynchronously."""
-        return await self._load_json_file(self.providers_path, lambda: {"source_m3u_providers": {}})
+        return await self._load_json_file(self.providers_path, lambda: ProvidersSourceData({"source_m3u_providers": ProvidersData({})}))
 
     async def save_providers_config(self, data: ProvidersSourceData) -> bool:
         """Saves the providers configuration to providers.json asynchronously."""
         return await self._save_json_file(self.providers_path, data)
 
-    async def get_discovered_source_services_config(self) -> dict[str, dict[str, Any]]:
+    async def get_discovered_source_services_config(self) -> DiscoveredSourcesData:
         """Loads the discovered source services from discovered_source_services.json asynchronously."""
-        return await self._load_json_file(self.discovered_source_services_path, dict)
+        return await self._load_json_file(self.discovered_source_services_path, lambda: DiscoveredSourcesData({}))
 
-    async def save_discovered_source_services_config(self, data: dict[str, dict[str, Any]]) -> bool:
+    async def save_discovered_source_services_config(self, data: DiscoveredSourcesData) -> bool:
         """Saves the discovered source services to discovered_source_services.json asynchronously."""
         return await self._save_json_file(self.discovered_source_services_path, data)
 
-    async def get_logical_channels_config(self) -> list[dict[str, Any]]:
+    async def get_logical_channels_config(self) -> LogicalChannelsData:
         """Loads the logical channels configuration from logical_channels.json asynchronously."""
-        return await self._load_json_file(self.logical_channels_path, list)
+        return await self._load_json_file(self.logical_channels_path, lambda: LogicalChannelsData(()))
 
-    async def save_logical_channels_config(self, data: list[dict[str, Any]]) -> bool:
+    async def save_logical_channels_config(self, data: LogicalChannelsData) -> bool:
         """Saves the logical channels configuration to logical_channels.json asynchronously."""
         for channel in data:
             channel.pop("lowest_uptime", None)
@@ -358,31 +358,34 @@ class Config:
             channel.pop("discovered_mappings", None)
         return await self._save_json_file(self.logical_channels_path, data)
 
-    async def get_channel_mappings_config(self) -> dict[str, Any]:
+    async def get_channel_mappings_config(self) -> ChannelMappingsData:
         """Loads the channel mappings from channel_mappings.json asynchronously."""
-        return await self._load_json_file(self.channel_mappings_path, dict)
+        return await self._load_json_file(self.channel_mappings_path, lambda: ChannelMappingsData({}))
 
-    async def save_channel_mappings_config(self, data: dict[str, Any]) -> bool:
+    async def save_channel_mappings_config(self, data: ChannelMappingsData) -> bool:
         """Saves the channel mappings to channel_mappings.json asynchronously."""
         return await self._save_json_file(self.channel_mappings_path, data)
     
-    async def get_channel_list_config(self) -> dict[str, Any]:
+    async def get_channel_list_config(self) -> ChannelListData:
         """Loads the predefined channel list from channel_list.json asynchronously."""
-        return await self._load_json_file(self.channel_list_path, dict)
+        return await self._load_json_file(self.channel_list_path, lambda: ChannelListData({}))
 
-    async def get_service_quality_cache(self) -> dict[str, Any]:
+    async def get_service_quality_cache(self) -> ServiceQualityCacheData:
         """Loads the service quality cache from service_quality_cache.json asynchronously."""
-        return await self._load_json_file(self.service_quality_cache_path, dict)
+        return await self._load_json_file(self.service_quality_cache_path, lambda: ServiceQualityCacheData({}))
 
-    async def save_service_quality_cache(self, data: dict[str, Any]) -> bool:
+    async def save_service_quality_cache(self, data: ServiceQualityCacheData) -> bool:
         """Saves the service quality cache to service_quality_cache.json asynchronously."""
         return await self._save_json_file(self.service_quality_cache_path, data)
 
-    async def get_jobs_config(self) -> dict[JobName, dict[str, Any]]:
+    async def get_jobs_config(self) -> JobsData:
         """Loads the jobs configuration from jobs.json asynchronously."""
-        return await self._load_json_file(self.jobs_path, dict)
+        return await self._load_json_file(self.jobs_path, lambda: JobsData({"backup": {"last_run": None},
+                                                                           "cleanup": {"last_run": None},
+                                                                           "discover": {"last_run": None},
+                                                                           "quality": {"last_run": None}}))
 
-    async def save_jobs_config(self, data: dict[JobName, dict[str, Any]]) -> bool:
+    async def save_jobs_config(self, data: JobsData) -> bool:
         """Saves the jobs configuration to jobs.json asynchronously."""
         return await self._save_json_file(self.jobs_path, data)
 

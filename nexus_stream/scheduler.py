@@ -1,10 +1,10 @@
 import asyncio
 from datetime import datetime, timedelta
-from typing import Awaitable, Callable, Final, NoReturn, Self
+from typing import Awaitable, Callable, Final, NoReturn, Self, cast
 from nexus_stream.config import Config
 from nexus_stream.handler import ChannelHandler
 from nexus_stream.quality_monitor import QualityMonitor
-from nexus_stream.utils import JobName, Label, relative_time
+from nexus_stream.utils import DateTimeISO, JobInfoMutable, JobName, JobsDataMutable, Label, relative_time
 
 
 SCHEDULER_TICK_INTERVAL_SECONDS: Final[int] = 60
@@ -106,9 +106,10 @@ class Scheduler:
         """Sets the last run time of a job by its name."""
         async with self._mutex:
             jobs_data = await self.config.get_jobs_config()
-            if job_name not in jobs_data:
-                jobs_data[job_name] = {}
-            jobs_data[job_name]["last_run"] = last_run.isoformat()
+            if job_name in jobs_data:
+                cast(JobInfoMutable, jobs_data[job_name])["last_run"] = DateTimeISO(last_run.isoformat())
+            else:
+                cast(JobsDataMutable, jobs_data)[job_name] = {"last_run": DateTimeISO(last_run.isoformat())}
             await self.config.save_jobs_config(jobs_data)
 
     async def _run(self) -> NoReturn:
