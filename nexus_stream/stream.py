@@ -9,7 +9,7 @@ from asyncio.subprocess import Process
 
 from nexus_stream.config import Config
 from nexus_stream.handler import ChannelHandler
-from nexus_stream.utils import CREATE_STREAM_DEADLINE, FFMPEG_TERMINATE_TIMEOUT, NEW_DEADLINE_NON_BEST, Label, ProviderAlias, VideoKey, VideoType
+from nexus_stream.utils import CREATE_STREAM_DEADLINE, FFMPEG_TERMINATE_TIMEOUT, NEW_DEADLINE_NON_BEST, Label, LogicalChannelId, ProviderAlias, VideoKey, VideoType
 
 
 # --- Constants ---
@@ -65,7 +65,7 @@ class StreamManager:
             if video_key in self.ffmpeg_processes:
                 self.ffmpeg_processes[video_key]['is_long_term'] = long_term
 
-    async def get_ffmpeg_processes_from_logical_id(self, logical_channel_id: str, *, video_type: VideoType, long_term_only: bool) -> dict[VideoKey, dict[str, Any]]:
+    async def get_ffmpeg_processes_from_logical_id(self, logical_channel_id: LogicalChannelId, *, video_type: VideoType, long_term_only: bool) -> dict[VideoKey, dict[str, Any]]:
         """
         Returns a dictionary of all FFmpeg processes associated with the given logical channel ID and video type asynchronously.
         """
@@ -80,7 +80,7 @@ class StreamManager:
                 if data['logical_channel_id'] == logical_channel_id and data['video_type'] == video_type
             }
 
-    async def record_video_access(self, logical_channel_id: str, video_type: VideoType, *, segment_filename: str | None = None) -> None:
+    async def record_video_access(self, logical_channel_id: LogicalChannelId, video_type: VideoType, *, segment_filename: str | None = None) -> None:
         """Updates the last access time for the stream associated with the given logical channel ID and video type."""
         processes = await self.get_ffmpeg_processes_from_logical_id(logical_channel_id, video_type=video_type, long_term_only=False)
         async with self.stream_process_lock:
@@ -103,7 +103,7 @@ class StreamManager:
                 return data['channel_hls_dir'] / "playlist.m3u8"
         return None
         
-    async def get_hls_segment_path(self, logical_channel_id: str, video_type: VideoType, segment_filename: str) -> Path | None:
+    async def get_hls_segment_path(self, logical_channel_id: LogicalChannelId, video_type: VideoType, segment_filename: str) -> Path | None:
         """Returns the path to a specific HLS segment file if the stream is active asynchronously."""
         processes = await self.get_ffmpeg_processes_from_logical_id(logical_channel_id, video_type=video_type, long_term_only=True)
         if not processes:
@@ -118,7 +118,7 @@ class StreamManager:
                 return channel_hls_dir / segment_filename
         return None
 
-    async def get_hls_latest_segment(self, logical_channel_id: str) -> tuple[int, datetime] | None:
+    async def get_hls_latest_segment(self, logical_channel_id: LogicalChannelId) -> tuple[int, datetime] | None:
         """Returns the latest segment number and its timestamp for the given logical channel ID asynchronously."""
         async with self.stream_process_lock:
             return self.hls_latest_segments.get(logical_channel_id)
@@ -191,7 +191,7 @@ class StreamManager:
         """Stops an FFmpeg process and cleans up resources asynchronously."""
         await self._stop_ffmpeg_process(video_key, name, data_to_cleanup=None)
 
-    async def stop_ffmpeg_processes_with_logical_channel_id(self, logical_channel_id: str, video_type: VideoType) -> None:
+    async def stop_ffmpeg_processes_with_logical_channel_id(self, logical_channel_id: LogicalChannelId, video_type: VideoType) -> None:
         """Stops FFmpeg processes by logical channel ID and video type, and cleans up resources asynchronously."""
         video_keys = (await self.get_ffmpeg_processes_from_logical_id(logical_channel_id, video_type=video_type, long_term_only=False)).keys()
         await self.stop_ffmpeg_processes(video_keys)

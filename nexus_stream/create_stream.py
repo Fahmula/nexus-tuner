@@ -13,20 +13,10 @@ from nexus_stream.quality_monitor import QualityMonitor
 from nexus_stream.slots import ProviderSlots
 from nexus_stream.handler import ChannelHandler
 from nexus_stream.stream import StreamManager
-from nexus_stream.utils import CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL, FFMPEG_TERMINATE_TIMEOUT, MPEGTS_PACKET_SIZE, NEW_DEADLINE_NON_BEST, NEXUS_STREAM_USER_AGENT, Label, ProviderAlias, VideoKey, VideoName, VideoType, sort_sources
+from nexus_stream.utils import CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL, FFMPEG_TERMINATE_TIMEOUT, MPEGTS_PACKET_SIZE, NEW_DEADLINE_NON_BEST, NEXUS_STREAM_USER_AGENT, Label, LogicalChannelId, LogicalChannelName, ProviderAlias, VideoKey, VideoName, VideoType, create_stream_key, create_video_key, create_video_name, sort_sources
 
 
-def create_video_key(logical_channel_id: str, source_service_id: str, video_type: VideoType) -> VideoKey:
-    """Generates a unique key for the stream."""
-    return VideoKey(f"{video_type}_{logical_channel_id}_{source_service_id}")
-
-
-def create_video_name(logical_channel_name: str, source_service_id: str) -> VideoName:
-    """Generates a unique name for the stream."""
-    return VideoName(f"{logical_channel_name} - {source_service_id}")
-
-
-async def create_hls_ffmpeg_command(stream_manager: StreamManager, config: Config, input_url: str, video_key: VideoKey, logical_channel_id: str) -> tuple[list[str], Path]:
+async def create_hls_ffmpeg_command(stream_manager: StreamManager, config: Config, input_url: str, video_key: VideoKey, logical_channel_id: LogicalChannelId) -> tuple[list[str], Path]:
     """Constructs the FFmpeg command list and creates the necessary HLS directory asynchronously."""
     channel_hls_dir = stream_manager.hls_base_dir / config.get_fs_safe_alphanum(f"{video_key}_{time.time()}")
     await aiofiles.os.makedirs(channel_hls_dir, exist_ok=True)
@@ -88,7 +78,7 @@ class CreateStream:
         '_worker_tasks', '_supervisor_task',
     )
     
-    def __init__(self, config: Config, handler: ChannelHandler, stream_manager: StreamManager, quality_monitor: QualityMonitor, logical_channel_id: str, logical_channel_name: str, video_type: VideoType, input_sources: list[dict[str, Any]] | None = None) -> None:
+    def __init__(self, config: Config, handler: ChannelHandler, stream_manager: StreamManager, quality_monitor: QualityMonitor, logical_channel_id: LogicalChannelId, logical_channel_name: LogicalChannelName, video_type: VideoType, input_sources: list[dict[str, Any]] | None = None) -> None:
         self.config = config
         self.handler = handler
         self.stream_manager = stream_manager
@@ -213,7 +203,7 @@ class CreateStream:
         if not source:
             return
         
-        video_key = create_video_key(self.logical_channel_id, source["source_service_id"], self.video_type)
+        video_key = create_video_key(create_stream_key(self.video_type, self.logical_channel_id), source["source_service_id"])
         video_name = create_video_name(self.logical_channel_name, source["source_service_id"])
         self._video_names[video_key] = video_name
         
@@ -253,7 +243,7 @@ class CreateStream:
             source = await self._pop_source(provider_sources, source)
             if not source:
                 return
-            video_key = create_video_key(self.logical_channel_id, source["source_service_id"], self.video_type)
+            video_key = create_video_key(create_stream_key(self.video_type, self.logical_channel_id), source["source_service_id"])
             video_name = create_video_name(self.logical_channel_name, source["source_service_id"])
             self._video_names[video_key] = video_name
 

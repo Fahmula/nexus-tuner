@@ -3,7 +3,7 @@ The main Quart application file for NexusStream.
 
 This file initializes the Quart app and its async components (Config, ChannelHandler, 
 StreamManager, GhostSessionMonitor) and defines all the web routes for:
-- Serving the master M3U playlist.
+- Serving the main M3U playlist.
 - Handling HLS and MPEG-TS streaming requests asynchronously.
 - HDHomeRun emulation endpoints.
 - Providing a web-based user interface (UI) for configuration and management.
@@ -31,7 +31,7 @@ from nexus_stream.quality_monitor import QualityMonitor
 from nexus_stream.session_monitor import GhostSessionMonitor
 from nexus_stream.stream import StreamManager
 from nexus_stream.scheduler import Scheduler
-from nexus_stream.utils import CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL, DEFAULT_PRIORITY, NEXUS_STREAM_VERSION, Label, VideoType, sort_sources
+from nexus_stream.utils import CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL, DEFAULT_PRIORITY, NEXUS_STREAM_VERSION, Label, LogicalChannelId, LogicalChannelName, VideoType, sort_sources
 
 # --- Constants ---
 PLAYLIST_POLL_INTERVAL = 0.2  # Seconds to wait between checking for a new playlist
@@ -109,7 +109,7 @@ def inject_global_vars() -> Dict[str, Any]:
 # --- Core Streaming and Playlist Endpoints ---
 
 @app.route(f'/{VideoType.MPEGTS}/<string:logical_channel_id>')
-async def serve_mpegts_stream(logical_channel_id: str, stream_response: bool = True) -> Response:
+async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_response: bool = True) -> Response:
     """Serves a channel stream using MPEG-TS format asynchronously.
     If stream_response is True, it returns a generator that the client connects to, otherwise it simply creates the stream.
     """
@@ -182,10 +182,10 @@ async def serve_mpegts_stream(logical_channel_id: str, stream_response: bool = T
         return response
     finally:
         if added_pending_stream:
-            await handler.remove_pending_stream(logical_channel_id, video_type=VideoType.MPEGTS)
+            await handler.remove_pending_stream(logical_channel_id, VideoType.MPEGTS)
 
 @app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/preview.m3u8')
-async def serve_hls_preview(logical_channel_id: str) -> Response:
+async def serve_hls_preview(logical_channel_id: LogicalChannelId) -> Response:
     """Serves a preview HLS playlist for a channel asynchronously."""
     source_service_id = logical_channel_id.replace("preview_", "")
     source_service = handler.discovered_source_services_data.get(source_service_id, None)
@@ -212,7 +212,7 @@ async def serve_hls_preview(logical_channel_id: str) -> Response:
     return await serve_hls_playlist(logical_channel_id, logical_channel_name=logical_channel_name, sources=sources)
 
 @app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/playlist.m3u8')
-async def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str | None = None, sources: list[dict[str, Any]] | None = None) -> Response:
+async def serve_hls_playlist(logical_channel_id: LogicalChannelId, logical_channel_name: LogicalChannelName | None = None, sources: list[dict[str, Any]] | None = None) -> Response:
     """Serves the HLS playlist for a channel asynchronously."""
     asyncio.create_task(stream_manager.record_video_access(logical_channel_id, VideoType.HLS))
     added_pending_stream = False
@@ -283,10 +283,10 @@ async def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str 
         abort(408, msg)
     finally:
         if added_pending_stream:
-            await handler.remove_pending_stream(logical_channel_id, video_type=VideoType.HLS)
+            await handler.remove_pending_stream(logical_channel_id, VideoType.HLS)
 
 @app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/<path:segment_filename>')
-async def serve_hls_segment(logical_channel_id: str, segment_filename: str) -> Response:
+async def serve_hls_segment(logical_channel_id: LogicalChannelId, segment_filename: str) -> Response:
     """Serves an HLS video segment (.ts file) asynchronously."""
     asyncio.create_task(stream_manager.record_video_access(logical_channel_id, VideoType.HLS, segment_filename=segment_filename))
     if not segment_filename.endswith(".ts") or ".." in segment_filename:
@@ -299,15 +299,15 @@ async def serve_hls_segment(logical_channel_id: str, segment_filename: str) -> R
     return await send_from_directory(str(segment_path.parent), segment_path.name, mimetype="video/mp2t")
 
 @app.route("/<string:video_type>/<string:logical_channel_id>/stop", methods=["POST"])
-async def stop_stream(video_type: str, logical_channel_id: str) -> Response:
+async def stop_stream(video_type: str, logical_channel_id: LogicalChannelId) -> Response:
     """Stops the stream for a logical channel asynchronously."""
     await stream_manager.stop_ffmpeg_processes_with_logical_channel_id(logical_channel_id, VideoType(video_type))
     return Response(status=204)
 
 @app.route("/playlist.m3u")
-async def serve_master_playlist() -> Response:
-    """Serves the master M3U playlist for clients."""
-    return Response(handler.master_m3u_content, mimetype="application/x-mpegurl")
+async def serve_main_playlist() -> Response:
+    """Serves the main M3U playlist for clients."""
+    return Response(handler.main_m3u_playlist, mimetype="application/x-mpegurl")
 
 @app.route("/reload", methods=["POST"])
 async def reload_configuration() -> Response:
@@ -378,7 +378,7 @@ async def ui_logical_channels_list() -> str:
 
 @app.route("/ui/logical-channels/form/", methods=["GET", "POST"])
 @app.route("/ui/logical-channels/form/<string:logical_channel_id>", methods=["GET", "POST"])
-async def ui_logical_channel_form(logical_channel_id: str | None = None):
+async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = None):
     """Handles adding/editing a logical channel and its mappings asynchronously."""
     if request.method == "POST":
         form_data = await request.form
@@ -488,7 +488,7 @@ async def ui_logical_channel_form(logical_channel_id: str | None = None):
     )
 
 @app.route("/ui/logical-channels/analyze-mappings/<string:logical_channel_id>", methods=["POST"])
-async def ui_analyze_mappings(logical_channel_id: str) -> Response:
+async def ui_analyze_mappings(logical_channel_id: LogicalChannelId) -> Response:
     """Analyzes the mappings for a logical channel asynchronously."""
     channel = handler.get_logical_channel_by_id(logical_channel_id)
     if not channel:
@@ -509,7 +509,7 @@ async def ui_analyze_mappings(logical_channel_id: str) -> Response:
     return response
 
 @app.route("/ui/logical-channels/remove-dead-mappings/<string:logical_channel_id>", methods=["DELETE"])
-async def ui_remove_dead_mappings(logical_channel_id: str) -> Response:
+async def ui_remove_dead_mappings(logical_channel_id: LogicalChannelId) -> Response:
     """Removes dead mappings from logical channels asynchronously."""
     channel = handler.get_logical_channel_by_id(logical_channel_id)
     if not channel:
@@ -698,7 +698,7 @@ async def ui_channel_suggest() -> str:
     return await render_template("_channel_suggestions.html", suggestions=suggestions)
 
 @app.route("/ui/logical-channels/delete/<string:logical_channel_id>", methods=["POST"])
-async def ui_logical_channel_delete(logical_channel_id: str) -> Response:
+async def ui_logical_channel_delete(logical_channel_id: LogicalChannelId) -> Response:
     channel = handler.get_logical_channel_by_id(logical_channel_id)
     if channel:
         channel_log = f"'{channel.get('display_name', 'Unknown Channel')}'{f' ({channel['channel_num']})' if 'channel_num' in channel else ''}"

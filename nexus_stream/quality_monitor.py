@@ -5,7 +5,7 @@ from typing import Coroutine, NoReturn, Any, Self
 
 from nexus_stream.config import Config
 from nexus_stream.handler import ChannelHandler
-from nexus_stream.utils import NEXUS_STREAM_USER_AGENT, Label, ProviderAlias
+from nexus_stream.utils import NEXUS_STREAM_USER_AGENT, Label, LogicalChannelId, ProviderAlias
 
 # --- Constants ---
 RESOLUTION_WEIGHT = 50
@@ -181,7 +181,7 @@ class QualityMonitor:
             if slot_acquired:
                 await provider_slots.release_background_slot(current_task)
     
-    async def analyze_mapped_services(self, input_lc_id: str | None = None) -> None:
+    async def analyze_mapped_services(self, input_lc_id: LogicalChannelId | None = None) -> None:
         """Finds and probes all mapped services concurrently."""
         valid_mappings: list[tuple[str, list[str], str]] = []
         if input_lc_id:

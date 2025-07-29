@@ -8,7 +8,7 @@ from typing import Any, Self
 import aiohttp
 from nexus_stream.config import Config
 from nexus_stream.slots import ProviderSlots
-from nexus_stream.utils import DEFAULT_PRIORITY, NEXUS_STREAM_USER_AGENT, DateTimeISO, Label, ProviderAlias, ProviderInfo, ProvidersData, ProvidersSourceData, VideoType
+from nexus_stream.utils import DEFAULT_PRIORITY, NEXUS_STREAM_USER_AGENT, URL, DateTimeISO, Label, LogicalChannelId, MainM3UPlaylist, MaxStreams, ProviderAlias, ProviderInfo, ProvidersData, ProvidersSourceData, StreamKey, VideoType, create_stream_key
 
 # --- Constants ---
 PROVIDER_FETCH_TIMEOUT = 20
@@ -26,7 +26,7 @@ class ChannelHandler:
     This class is responsible for:
     - Fetching and parsing M3U files from source providers asynchronously.
     - Building a list of "client-facing" channels based on user-defined logical channels and mappings.
-    - Generating the master M3U file for clients.
+    - Generating the main M3U file for clients.
     - Handling provider stream capacity limits using asyncio-native constructs.
     - Providing async methods for the UI to interact with configuration data.
     """
@@ -34,7 +34,7 @@ class ChannelHandler:
         'label', '_loading', 'config', '_mutex',
         'providers_data', 'discovered_source_services_data',
         'logical_channels_data', 'channel_mappings_data', 'channel_list_data',
-        'client_facing_channels', 'master_m3u_content',
+        'client_facing_channels', 'main_m3u_playlist',
         'slots', '_kill_provider_streams', 'pending_streams',
     )
     
@@ -43,9 +43,9 @@ class ChannelHandler:
         Initializes the ChannelHandler. NOTE: This is now a lightweight, synchronous constructor.
         """
         self.label: Label = Label.STARTUP
-        self._loading = False
-        self.config = config
-        self._mutex = asyncio.Lock()
+        self._loading: bool = False
+        self.config: Config = config
+        self._mutex: asyncio.Lock = asyncio.Lock()
 
         # Data loaded from configuration files
         self.providers_data: ProvidersData = ProvidersData({})
@@ -56,12 +56,12 @@ class ChannelHandler:
 
         # In-memory processed data
         self.client_facing_channels: dict[str, dict[str, Any]] = {}
-        self.master_m3u_content: str = "#EXTM3U\n"
+        self.main_m3u_playlist: MainM3UPlaylist = MainM3UPlaylist("#EXTM3U\n")
 
         # Slots management
         self.slots: dict[ProviderAlias, ProviderSlots] = {}
         self._kill_provider_streams: set[ProviderAlias] = set()
-        self.pending_streams: set[str] = set()
+        self.pending_streams: set[StreamKey] = set()
 
     @classmethod
     async def create(cls, config: Config) -> Self:
@@ -121,7 +121,7 @@ class ChannelHandler:
 
         # Build in-memory data
         self._build_client_facing_channels()
-        self.generate_master_client_m3u()
+        self.generate_main_client_m3u()
         
         self._loading = False
         self.config.info(self.label,
@@ -251,25 +251,25 @@ class ChannelHandler:
         async with self._mutex:
             return len(self.pending_streams)
 
-    async def add_pending_stream(self, logical_channel_id: str, video_type: VideoType) -> bool:
-        key = f"{video_type}_{logical_channel_id}"
+    async def add_pending_stream(self, logical_channel_id: LogicalChannelId, video_type: VideoType) -> bool:
+        stream_key = create_stream_key(video_type, logical_channel_id)
         async with self._mutex:
-            if key in self.pending_streams:
+            if stream_key in self.pending_streams:
                 return False
-            self.pending_streams.add(key)
+            self.pending_streams.add(stream_key)
             return True
 
-    async def remove_pending_stream(self, logical_channel_id: str, video_type: VideoType) -> None:
+    async def remove_pending_stream(self, logical_channel_id: LogicalChannelId, video_type: VideoType) -> None:
         async with self._mutex:
-            self.pending_streams.remove(f"{video_type}_{logical_channel_id}")
+            self.pending_streams.remove(create_stream_key(video_type, logical_channel_id))
 
-    def generate_master_client_m3u(self) -> None:
-        """Generates the master M3U content to be served to clients. (Sync - CPU-bound)"""
+    def generate_main_client_m3u(self) -> None:
+        """Generates the main M3U content to be served to clients. (Sync - CPU-bound)"""
         m3u_lines = ["#EXTM3U x-tvg-url=\"\""]
         if not self.config.nexus_url:
             self.config.error(self.label, "NEXUS_URL not set. Client M3U URLs will be incorrect.")
             m3u_lines.extend(["#EXTINF:-1,Error: NEXUS_URL not configured", "http://error.invalid/stream"])
-            self.master_m3u_content = "\n".join(m3u_lines) + "\n"
+            self.main_m3u_playlist = MainM3UPlaylist("\n".join(m3u_lines) + "\n")
             return
 
         sorted_channels = sorted(self.client_facing_channels.values(), key=lambda item: (item.get("group_title", "zzz").lower(), item.get("display_name", "zzz").lower()))
@@ -285,10 +285,10 @@ class ChannelHandler:
             m3u_lines.append(f"#EXTINF:-1 {' '.join(extinf_parts)},{name}")
             m3u_lines.append(f"{self.config.nexus_url}/{VideoType.HLS}/{lc_data['logical_channel_id']}/playlist.m3u8")
         
-        self.master_m3u_content = "\n".join(m3u_lines) + "\n"
-        self.config.info(self.label, f"Generated master client M3U with {len(self.client_facing_channels)} channels.")
+        self.main_m3u_playlist = MainM3UPlaylist("\n".join(m3u_lines) + "\n")
+        self.config.info(self.label, f"Generated main client M3U with {len(self.client_facing_channels)} channels.")
 
-    def get_sources_for_client_facing_channel(self, logical_channel_id: str) -> list[dict[str, Any]]:
+    def get_sources_for_client_facing_channel(self, logical_channel_id: LogicalChannelId) -> list[dict[str, Any]]:
         """Retrieves source stream URLs for a channel. (Sync - in-memory lookup)"""
         channel_data = self.client_facing_channels.get(logical_channel_id)
         return channel_data.get("sources", []) if channel_data else []
@@ -439,7 +439,7 @@ class ChannelHandler:
             await self._update_providers_slots()
         return save_successful
     
-    async def add_provider(self, alias: ProviderAlias, url: str, max_streams: int) -> dict[str, Any] | None:
+    async def add_provider(self, alias: ProviderAlias, url: URL, max_streams: MaxStreams) -> dict[str, Any] | None:
         """Adds a new provider to the configuration asynchronously."""
         if not alias: raise ValueError("Provider alias cannot be empty.")
         if not url: raise ValueError("Provider URL cannot be empty.")
@@ -458,7 +458,7 @@ class ChannelHandler:
                 return
             raise
 
-    async def update_provider(self, alias: ProviderAlias, url: str, max_streams: int) -> bool:
+    async def update_provider(self, alias: ProviderAlias, url: URL, max_streams: MaxStreams) -> bool:
         """Updates an existing provider's configuration asynchronously."""
         if not url: raise ValueError("Provider URL cannot be empty.")
         if max_streams < 1: raise ValueError("Max concurrent streams must be at least 1.")
@@ -500,7 +500,7 @@ class ChannelHandler:
         """Gets a list of all logical channels. (Sync - in-memory lookup)"""
         return sorted(self.logical_channels_data, key=lambda x: x.get("display_name","").lower())
 
-    def get_logical_channel_by_id(self, logical_channel_id: str) -> dict[str, Any] | None:
+    def get_logical_channel_by_id(self, logical_channel_id: LogicalChannelId) -> dict[str, Any] | None:
         """Gets a logical channel by its ID. (Sync - in-memory lookup)"""
         return next((lc for lc in self.logical_channels_data if lc.get("logical_channel_id") == logical_channel_id), None)
 
@@ -512,7 +512,7 @@ class ChannelHandler:
         await self.config.save_logical_channels_config(self.logical_channels_data)
         return new_id
 
-    async def update_logical_channel(self, logical_channel_id: str, updated_lc_data: dict[str, Any]) -> bool:
+    async def update_logical_channel(self, logical_channel_id: LogicalChannelId, updated_lc_data: dict[str, Any]) -> bool:
         """Updates a logical channel in the configuration asynchronously."""
         for i, lc in enumerate(self.logical_channels_data):
             if lc.get("logical_channel_id") == logical_channel_id:
@@ -521,7 +521,7 @@ class ChannelHandler:
                 return await self.config.save_logical_channels_config(self.logical_channels_data)
         return False
 
-    async def delete_logical_channel(self, logical_channel_id: str) -> bool:
+    async def delete_logical_channel(self, logical_channel_id: LogicalChannelId) -> bool:
         """Deletes a logical channel from the configuration asynchronously."""
         original_len = len(self.logical_channels_data)
         self.logical_channels_data = [lc for lc in self.logical_channels_data if lc.get("logical_channel_id") != logical_channel_id]
@@ -532,11 +532,11 @@ class ChannelHandler:
         
         return len(self.logical_channels_data) < original_len and await self.config.save_logical_channels_config(self.logical_channels_data)
 
-    def get_mappings_for_logical_channel(self, logical_channel_id: str) -> list[dict[str, Any]]:
+    def get_mappings_for_logical_channel(self, logical_channel_id: LogicalChannelId) -> list[dict[str, Any]]:
         """Retrieves mappings for a logical channel. (Sync - in-memory lookup)"""
         return self.channel_mappings_data.get(logical_channel_id, [])
 
-    async def update_mappings_for_logical_channel(self, logical_channel_id: str, new_mappings_list: list[dict[str, Any]]) -> bool:
+    async def update_mappings_for_logical_channel(self, logical_channel_id: LogicalChannelId, new_mappings_list: list[dict[str, Any]]) -> bool:
         """Updates mappings for a logical channel asynchronously."""
         self.channel_mappings_data[logical_channel_id] = new_mappings_list
         return await self.config.save_channel_mappings_config(self.channel_mappings_data)
