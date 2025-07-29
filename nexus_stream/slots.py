@@ -2,18 +2,18 @@ import asyncio
 import threading
 import os
 import sys
-from typing import Any, List
+from typing import Any, Final, List
 
-from nexus_stream.utils import ProviderAlias
+from nexus_stream.utils import M3UURL, MaxStreams, ProviderAlias
 
-GRACE_PERIOD = 3
+GRACE_PERIOD: Final[int] = 3
 
 class CountingSemaphore(asyncio.Semaphore):
-    def __init__(self, value: int, total_slots: int) -> None:
+    def __init__(self, value: int, total_slots: MaxStreams) -> None:
         super().__init__(value)
-        self._total_slots = total_slots
+        self._total_slots: MaxStreams = total_slots
 
-    async def acquire(self) -> str:
+    async def acquire(self) -> str:  # type: ignore[reportIncompatibleMethodOverride]
         """Acquires the semaphore and returns the new number of active slots."""
         await super().acquire()
         active_slots = self._total_slots - self._value
@@ -24,7 +24,7 @@ class CountingSemaphore(asyncio.Semaphore):
                 os._exit(7)
         return f"{active_slots}/{self._total_slots}"
 
-    def release(self) -> str:
+    def release(self) -> str:  # type: ignore[reportIncompatibleMethodOverride]
         """Releases the semaphore and returns the new number of active slots."""
         super().release()
         active_slots = self._total_slots - self._value
@@ -43,15 +43,15 @@ class ProviderSlots:
     """
     __slots__ = ('_alias', '_m3u_url', '_total_slots', '_active_background_tasks', '_lock', '_semaphore')
 
-    def __init__(self, alias: ProviderAlias, m3u_url: str, total_slots: int) -> None:
+    def __init__(self, alias: ProviderAlias, m3u_url: M3UURL, total_slots: MaxStreams) -> None:
         if total_slots < 1:
             raise ValueError("total_slots must be >= 1")
-        self._alias = alias
-        self._m3u_url = m3u_url
-        self._total_slots = total_slots
+        self._alias: ProviderAlias = alias
+        self._m3u_url: M3UURL = m3u_url
+        self._total_slots: MaxStreams = total_slots
         self._active_background_tasks: List[asyncio.Task[Any]] = []
-        self._lock = asyncio.Lock()
-        self._semaphore = CountingSemaphore(total_slots, total_slots)
+        self._lock: asyncio.Lock = asyncio.Lock()
+        self._semaphore: CountingSemaphore = CountingSemaphore(total_slots, total_slots)
 
     def __repr__(self) -> str:
         return (

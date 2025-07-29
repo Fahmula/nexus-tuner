@@ -7,16 +7,17 @@ import time
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from dotenv import load_dotenv
-from typing import Any, Callable, Self
+from typing import Any, Callable, Final, Self
 
 import asyncio
 import aiofiles.os
 import aioshutil
 
-from nexus_stream.utils import NEXUS_STREAM_VERSION, JobName, Label, ProvidersSourceData, VideoKey, VideoType
+from nexus_stream.utils import (NEXUS_STREAM_PORT, NEXUS_STREAM_VERSION, JobName,
+                                Label, ProvidersSourceData, VideoKey, VideoType)
 
 
-NOT_ALPHANUM_REGEX = re.compile(r'[^a-zA-Z0-9_-]')
+NOT_ALPHANUM_REGEX: Final[re.Pattern[str]] = re.compile(r'[^a-zA-Z0-9_-]')
 
 
 class Config:
@@ -52,26 +53,26 @@ class Config:
         which is called by the `create` factory method.
         """
         load_dotenv()
-        config_dir_str = os.getenv("NEXUS_CONFIG_DIR")
+        config_dir_str: str | None = os.getenv("NEXUS_CONFIG_DIR")
         if not config_dir_str:
             raise ValueError("NEXUS_CONFIG_DIR environment variable is not set on docker container or system.")
-        self.config_dir = Path(config_dir_str)
-        env_file = self.config_dir / ".env"
+        self.config_dir: Path = Path(config_dir_str)
+        env_file: Path = self.config_dir / ".env"
         if env_file.exists():
             load_dotenv(env_file)
         
-        nexus_url = os.getenv("NEXUS_URL")
+        nexus_url: str | None = os.getenv("NEXUS_URL")
         if not nexus_url:
             raise ValueError("NEXUS_URL environment variable is not set.")
         self.nexus_url: str = nexus_url
-        self.nexus_port = int(os.getenv("NEXUS_PORT", 4040))
+        self.nexus_port: int = NEXUS_STREAM_PORT
         
         # --- Logging ---
         self.logs_dir: Path = self.config_dir / "logs"
         self._logger: logging.Logger
         self.log_level: str = os.getenv("NEXUS_LOG_LEVEL", "INFO").upper()
-        self.log_backup_count = int(os.getenv("NEXUS_LOG_BACKUP_COUNT", 7))
-        self.ffmpeg_logs_retention_seconds = int(os.getenv("NEXUS_FFMPEG_LOGS_RETENTION_SECONDS", 86400))
+        self.log_backup_count: int = int(os.getenv("NEXUS_LOG_BACKUP_COUNT", 7))
+        self.ffmpeg_logs_retention_seconds: int = int(os.getenv("NEXUS_FFMPEG_LOGS_RETENTION_SECONDS", 86400))
 
         # --- JSON Data Paths ---
         self.providers_name: str = "providers.json"
@@ -121,8 +122,8 @@ class Config:
         self.jellyfin_api_key: str | None = os.getenv("NEXUS_JELLYFIN_API_KEY")
         self.ghost_check_interval: int = int(os.getenv("NEXUS_GHOST_SESSION_CHECK_INTERVAL", 60))
 
-        self.file_lock = asyncio.Lock()
-        self._cleaning_up_ffmpeg_logs = False
+        self.file_lock: asyncio.Lock = asyncio.Lock()
+        self._cleaning_up_ffmpeg_logs: bool = False
 
     @classmethod
     async def create(cls) -> Self:
@@ -222,14 +223,6 @@ class Config:
     def critical(self, label: Label | VideoType, msg: str) -> None:
         """Logs a critical message with the specified label."""
         self._logger.critical(f"[{label}] {msg}")
-
-    def get_segment_format(self) -> str:
-        """Returns the format string for HLS segment files."""
-        return "segment_%05d.ts"
-
-    def get_segment_number(self, segment_filename: str) -> int:
-        """Extracts the segment number from the segment filename."""
-        return int(segment_filename.split('_')[1].split('.')[0])
 
     async def clean_up_hls_segments(self) -> None:
         """Cleans up old HLS segment files in the configured directory asynchronously."""

@@ -1,16 +1,16 @@
 import asyncio
 import aiohttp
-from typing import NoReturn, Self, Set, Any
+from typing import Final, NoReturn, Self, Set, Any
 
 from nexus_stream.config import Config
 from nexus_stream.handler import ChannelHandler
 from nexus_stream.stream import StreamManager
-from nexus_stream.utils import Label, VideoKey
+from nexus_stream.utils import Label, LogicalChannelId, TVGDisplayName, VideoKey
 
 # --- Constants ---
-SESSION_MONITOR_STARTUP_DELAY = 15
-MEDIA_SERVER_API_TIMEOUT = 10
-SESSION_ACTIVE_BUFFER_SECONDS = 60 # Check for sessions active within interval + this buffer
+SESSION_MONITOR_STARTUP_DELAY: Final[int] = 15
+MEDIA_SERVER_API_TIMEOUT: Final[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=10)
+SESSION_ACTIVE_BUFFER_SECONDS: Final[int] = 60
 
 class GhostSessionMonitor:
     """
@@ -31,11 +31,11 @@ class GhostSessionMonitor:
         
         The monitor's background task should be started externally using `asyncio.create_task(monitor.run())`.
         """
-        self.config = config
-        self.handler = handler
-        self.stream_manager = stream_manager
+        self.config: Config = config
+        self.handler: ChannelHandler = handler
+        self.stream_manager: StreamManager = stream_manager
         
-        self.display_name_to_lc_id_map: dict[str, str] = {}
+        self.display_name_to_lc_id_map: dict[TVGDisplayName, LogicalChannelId] = {}
         self.ghost_monitor_task: asyncio.Task[NoReturn]
 
     @classmethod
@@ -46,7 +46,7 @@ class GhostSessionMonitor:
             return
         config.info(Label.STARTUP, "Emby/Jellyfin URL found. Ghost Session Monitor is enabled.")
         instance = cls(config, handler, stream_manager)
-        instance.ghost_monitor_task = asyncio.create_task(instance.run())
+        instance.ghost_monitor_task = asyncio.create_task(instance._run())
         return instance
 
     def _build_name_to_id_map(self) -> None:
@@ -69,7 +69,7 @@ class GhostSessionMonitor:
             return []
         
         url = f"{base_url.rstrip('/')}/emby/Sessions"
-        params = {"api_key": api_key, "ActiveWithinSeconds": self.config.ghost_check_interval + SESSION_ACTIVE_BUFFER_SECONDS}
+        params: dict[str, str | int] = {"api_key": api_key, "ActiveWithinSeconds": self.config.ghost_check_interval + SESSION_ACTIVE_BUFFER_SECONDS}
         
         try:
             async with session.get(url, params=params, timeout=MEDIA_SERVER_API_TIMEOUT) as response:
@@ -132,7 +132,7 @@ class GhostSessionMonitor:
 
         self.config.warn(Label.SESSION, f"Found {len(ghost_video_keys)} ghost session(s) to terminate: {', '.join(g[0] for g in ghost_video_keys)}")
         
-        stop_tasks = []
+        stop_tasks: list[asyncio.Task[None]] = []
         for video_key, logical_channel_name in ghost_video_keys:
             self.config.info(Label.SESSION, f"Terminating ghost stream for '{logical_channel_name}' [{video_key}]...")
             stop_tasks.append(self.stream_manager.stop_ffmpeg_process(video_key, logical_channel_name))
@@ -140,12 +140,8 @@ class GhostSessionMonitor:
         if stop_tasks:
             await asyncio.gather(*stop_tasks)
 
-    async def run(self) -> NoReturn:
+    async def _run(self) -> NoReturn:
         """The main execution loop for the monitor task."""
-        if not self.config.emby_url and not self.config.jellyfin_url:
-            self.config.info(Label.STARTUP, "Ghost Session Monitor is disabled and will not run.")
-            return
-
         self.config.info(Label.STARTUP, "Ghost Session Monitor task started.")
         await asyncio.sleep(SESSION_MONITOR_STARTUP_DELAY)
         

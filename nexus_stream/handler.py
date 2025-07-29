@@ -3,20 +3,23 @@ import re
 import html
 import hashlib
 import asyncio
-from typing import Any, Self
+from typing import Any, Final, Self, cast
 
 import aiohttp
 from nexus_stream.config import Config
 from nexus_stream.slots import ProviderSlots
-from nexus_stream.utils import DEFAULT_PRIORITY, NEXUS_STREAM_USER_AGENT, URL, DateTimeISO, Label, LogicalChannelId, MainM3UPlaylist, MaxStreams, ProviderAlias, ProviderInfo, ProvidersData, ProvidersSourceData, StreamKey, VideoType, create_stream_key
+from nexus_stream.utils import (DEFAULT_PRIORITY, M3UURL, NEXUS_STREAM_USER_AGENT, DateTimeISO, Label,
+                                LogicalChannelId, MainM3UPlaylist, MaxStreams, ProviderAlias,
+                                ProviderInfoMutable, ProvidersData, ProvidersDataMutable, ProvidersSourceData,
+                                StreamKey, VideoType, create_stream_key)
 
 # --- Constants ---
-PROVIDER_FETCH_TIMEOUT = 20
-DISCOVER_SOURCES_INTERVAL = 60 * 60 * 24
-TVG_NAME_REGEX = re.compile(r'tvg-name="([^"]*)"', re.IGNORECASE)
-TVG_ID_REGEX = re.compile(r'tvg-id="([^"]*)"', re.IGNORECASE)
-TVG_LOGO_REGEX = re.compile(r'tvg-logo="([^"]*)"', re.IGNORECASE)
-GROUP_TITLE_REGEX = re.compile(r'group-title="([^"]*)"', re.IGNORECASE)
+PROVIDER_FETCH_TIMEOUT: Final[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=20)
+DISCOVER_SOURCES_INTERVAL: Final[int] = 60 * 60 * 24
+TVG_NAME_REGEX: Final[re.Pattern[str]] = re.compile(r'tvg-name="([^"]*)"', re.IGNORECASE)
+TVG_ID_REGEX: Final[re.Pattern[str]] = re.compile(r'tvg-id="([^"]*)"', re.IGNORECASE)
+TVG_LOGO_REGEX: Final[re.Pattern[str]] = re.compile(r'tvg-logo="([^"]*)"', re.IGNORECASE)
+GROUP_TITLE_REGEX: Final[re.Pattern[str]] = re.compile(r'group-title="([^"]*)"', re.IGNORECASE)
 
 
 class ChannelHandler:
@@ -40,7 +43,7 @@ class ChannelHandler:
     
     def __init__(self, config: Config) -> None:
         """
-        Initializes the ChannelHandler. NOTE: This is now a lightweight, synchronous constructor.
+        Initializes the ChannelHandler with the provided configuration.
         """
         self.label: Label = Label.STARTUP
         self._loading: bool = False
@@ -112,11 +115,7 @@ class ChannelHandler:
             await self._parse_all_provider_m3us_and_populate_discovered_services()
             await self.config.save_discovered_source_services_config(self.discovered_source_services_data)
             for alias in self.providers_data:
-                self.providers_data[alias] = ProviderInfo(
-                    url=self.providers_data[alias]["url"],
-                    max_concurrent_streams=self.providers_data[alias]["max_concurrent_streams"],
-                    updated_at=DateTimeISO(now.isoformat())
-                )
+                cast(ProviderInfoMutable, self.providers_data[alias])["updated_at"] = DateTimeISO(now.isoformat())
             await self._save_providers_for_ui(ProvidersSourceData({"source_m3u_providers": self.providers_data}), update_slots=False)
 
         # Build in-memory data
@@ -439,7 +438,7 @@ class ChannelHandler:
             await self._update_providers_slots()
         return save_successful
     
-    async def add_provider(self, alias: ProviderAlias, url: URL, max_streams: MaxStreams) -> dict[str, Any] | None:
+    async def add_provider(self, alias: ProviderAlias, url: M3UURL, max_streams: MaxStreams) -> dict[str, Any] | None:
         """Adds a new provider to the configuration asynchronously."""
         if not alias: raise ValueError("Provider alias cannot be empty.")
         if not url: raise ValueError("Provider URL cannot be empty.")
@@ -448,17 +447,17 @@ class ChannelHandler:
             raise ValueError(f"Provider with alias '{alias}' already exists.")
 
         try:
-            self.providers_data[alias] = {"url": url, "max_concurrent_streams": max_streams, "updated_at": None}
+            cast(ProvidersDataMutable, self.providers_data)[alias] = {"url": url, "max_concurrent_streams": max_streams, "updated_at": None}
             save_data = ProvidersSourceData({"source_m3u_providers": self.providers_data})
             assert await self._save_providers_for_ui(save_data, update_slots=True)
             return {"alias": alias, "url": url, "max_concurrent_streams": max_streams, "active_streams": 0}
         except BaseException as e:
-            del self.providers_data[alias]
+            del cast(ProvidersDataMutable, self.providers_data)[alias]
             if isinstance(e, Exception):
                 return
             raise
 
-    async def update_provider(self, alias: ProviderAlias, url: URL, max_streams: MaxStreams) -> bool:
+    async def update_provider(self, alias: ProviderAlias, url: M3UURL, max_streams: MaxStreams) -> bool:
         """Updates an existing provider's configuration asynchronously."""
         if not url: raise ValueError("Provider URL cannot be empty.")
         if max_streams < 1: raise ValueError("Max concurrent streams must be at least 1.")
@@ -466,16 +465,13 @@ class ChannelHandler:
 
         original_data = self.providers_data[alias].copy()
         try:
-            self.providers_data[alias] = ProviderInfo(
-                url=url,
-                max_concurrent_streams=max_streams,
-                updated_at=self.providers_data[alias]["updated_at"]
-            )
+            cast(ProviderInfoMutable, self.providers_data[alias])["url"] = url
+            cast(ProviderInfoMutable, self.providers_data[alias])["max_concurrent_streams"] = max_streams
             save_data = ProvidersSourceData({"source_m3u_providers": self.providers_data})
             assert await self._save_providers_for_ui(save_data, update_slots=True)
             return True
         except BaseException as e:
-            self.providers_data[alias] = original_data
+            cast(ProvidersDataMutable, self.providers_data)[alias] = original_data
             if isinstance(e, Exception):
                 return False
             raise
@@ -486,12 +482,12 @@ class ChannelHandler:
 
         provider_to_delete = self.providers_data[alias]
         try:
-            del self.providers_data[alias]
+            del cast(ProvidersDataMutable, self.providers_data)[alias]
             save_data = ProvidersSourceData({"source_m3u_providers": self.providers_data})
             assert await self._save_providers_for_ui(save_data, update_slots=True)
             return True
         except BaseException as e:
-            self.providers_data[alias] = provider_to_delete
+            cast(ProvidersDataMutable, self.providers_data)[alias] = provider_to_delete
             if isinstance(e, Exception):
                 return False
             raise

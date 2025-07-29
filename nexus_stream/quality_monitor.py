@@ -1,27 +1,27 @@
 import asyncio
 import json
 from datetime import datetime, timedelta
-from typing import Coroutine, NoReturn, Any, Self
+from typing import Coroutine, Final, NoReturn, Any, Self, cast
 
 from nexus_stream.config import Config
 from nexus_stream.handler import ChannelHandler
-from nexus_stream.utils import NEXUS_STREAM_USER_AGENT, Label, LogicalChannelId, ProviderAlias
+from nexus_stream.utils import NEXUS_STREAM_USER_AGENT, Label, LogicalChannelId, ProviderAlias, QualityScores, QualityScoresMutable, SourceServiceId, StreamURL
 
 # --- Constants ---
-RESOLUTION_WEIGHT = 50
-BITRATE_WEIGHT = 30
-FRAMERATE_WEIGHT = 20
-UPTIME_WEIGHT = 0
+RESOLUTION_WEIGHT: Final[int] = 50
+BITRATE_WEIGHT: Final[int] = 30
+FRAMERATE_WEIGHT: Final[int] = 20
+UPTIME_WEIGHT: Final[int] = 0
 
-RESOLUTION_NORM = 2160
-BITRATE_NORM = 12_000_000
-FRAMERATE_NORM = 60
+RESOLUTION_NORM: Final[int] = 2160
+BITRATE_NORM: Final[int] = 12_000_000
+FRAMERATE_NORM: Final[int] = 60
 
-BACKGROUND_SLOT_WAIT_INTERVAL = 1
-QUALITY_MONITOR_TIMEOUT = 5
-MAX_HISTORY_PER_SERVICE = 10
-MIN_DAYS_AT_MAX_HISTORY = 7
-MIN_DAYS_AT_NON_MAX_HISTORY = 1
+BACKGROUND_SLOT_WAIT_INTERVAL: Final[int] = 1
+QUALITY_MONITOR_TIMEOUT: Final[int] = 5
+MAX_HISTORY_PER_SERVICE: Final[int] = 10
+MIN_DAYS_AT_MAX_HISTORY: Final[int] = 7
+MIN_DAYS_AT_NON_MAX_HISTORY: Final[int] = 1
 
 
 class QualityMonitor:
@@ -31,10 +31,10 @@ class QualityMonitor:
     )
     
     def __init__(self, config: Config, handler: ChannelHandler) -> None:
-        self.config = config
-        self.handler = handler
-        self._mutex = asyncio.Lock()
-        self._quality_scores: dict[str, dict[str, float]] = {}
+        self.config: Config = config
+        self.handler: ChannelHandler = handler
+        self._mutex: asyncio.Lock = asyncio.Lock()
+        self._quality_scores: QualityScores = QualityScores({})
         self.quality_monitor_task: asyncio.Task[NoReturn]
 
     @classmethod
@@ -44,27 +44,27 @@ class QualityMonitor:
         instance._build_quality_scores(await config.get_service_quality_cache())
         return instance
 
-    async def get_quality_scores(self) -> dict[str, dict[str, float]]:
+    async def get_quality_scores(self) -> QualityScores:
         """Returns the current quality scores for all services asynchronously."""
         async with self._mutex:
-            return self._quality_scores.copy()
+            return QualityScores(cast(QualityScoresMutable, self._quality_scores).copy())
 
-    async def remove_source_service(self, service_id: str) -> None:
+    async def remove_source_service(self, service_id: SourceServiceId) -> None:
         """Removes a source service from the quality scores and cache."""
         async with self._mutex:
             if service_id in self._quality_scores:
-                del self._quality_scores[service_id]
+                del cast(QualityScoresMutable, self._quality_scores)[service_id]
             quality_cache = await self.config.get_service_quality_cache()
             if service_id in quality_cache:
                 del quality_cache[service_id]
                 await self.config.save_service_quality_cache(quality_cache)
 
-    async def _get_stream_info(self, service_id: str, service_url: str) -> dict[str, Any] | None:
+    async def _get_stream_info(self, service_id: SourceServiceId, stream_url: StreamURL) -> dict[str, Any] | None:
         """
         Extracts stream information using ffprobe, ensuring the subprocess is
         terminated on timeout or cancellation.
         """
-        cmd = [
+        cmd: list[str] = [
             "ffprobe",
             "-v", "error",
             "-user_agent", NEXUS_STREAM_USER_AGENT,
@@ -73,7 +73,7 @@ class QualityMonitor:
             "-show_entries", "packet=pts_time,size",
             "-read_intervals", f"%+{QUALITY_MONITOR_TIMEOUT}",
             "-of", "json",
-            service_url
+            stream_url
         ]
 
         proc = None
@@ -87,7 +87,7 @@ class QualityMonitor:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=QUALITY_MONITOR_TIMEOUT + 3)
 
             if proc.returncode != 0:
-                self.config.warn(Label.QUALITY, f"ffprobe for {service_id} failed with code {proc.returncode}: {stderr.decode()}".replace(service_url, "{{service_url}}").strip())
+                self.config.warn(Label.QUALITY, f"ffprobe for {service_id} failed with code {proc.returncode}: {stderr.decode()}".replace(stream_url, "{{stream_url}}").strip())
                 return None
             info = json.loads(stdout)
 
@@ -127,7 +127,7 @@ class QualityMonitor:
 
         return {"status": "online", "width": width, "height": height, "bitrate": bitrate, "framerate": frame_rate}
 
-    async def _run_single_probe(self, service_id: str, service_url: str, provider_alias: ProviderAlias) -> tuple[str, dict[str, str | float | int]]:
+    async def _run_single_probe(self, service_id: SourceServiceId, stream_url: StreamURL, provider_alias: ProviderAlias) -> tuple[str, dict[str, str | float | int]]:
         """
         Probes a single stream, persistently trying to acquire a slot, and ensures
         all resources are cleaned up upon completion, failure, or cancellation.
@@ -165,7 +165,7 @@ class QualityMonitor:
                 except asyncio.TimeoutError:
                     await asyncio.sleep(BACKGROUND_SLOT_WAIT_INTERVAL)
 
-            stream_info = await self._get_stream_info(service_id, service_url)
+            stream_info = await self._get_stream_info(service_id, stream_url)
             
             if not stream_info:
                 return service_id, {"status": "offline", "reason": "No stream info available"}
@@ -289,7 +289,7 @@ class QualityMonitor:
             framerate_score = FRAMERATE_WEIGHT * min(avg_framerate / float(FRAMERATE_NORM), 1.0)
             uptime_score = UPTIME_WEIGHT * uptime
             
-            self._quality_scores[service_id] = {
+            cast(QualityScoresMutable, self._quality_scores)[service_id] = {
                 "width": avg_width, "height": avg_height, "bitrate": avg_bitrate,
                 "framerate": avg_framerate, "uptime": uptime, "resolution_score": height_score,
                 "bitrate_score": bitrate_score, "framerate_score": framerate_score,

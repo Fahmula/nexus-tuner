@@ -1,17 +1,17 @@
 import asyncio
 from datetime import datetime, timedelta
-from typing import Awaitable, Callable, NoReturn, Self
+from typing import Awaitable, Callable, Final, NoReturn, Self
 from nexus_stream.config import Config
 from nexus_stream.handler import ChannelHandler
 from nexus_stream.quality_monitor import QualityMonitor
 from nexus_stream.utils import JobName, Label, relative_time
 
 
-SCHEDULER_TICK_INTERVAL_SECONDS = 60
-BACKUP_TIME = "10:00"
-CLEANUP_TIME = "00:00"
-DISCOVER_TIME = "01:00"
-QUALITY_TIME = "02:00"
+SCHEDULER_TICK_INTERVAL_SECONDS: Final[int] = 60
+BACKUP_TIME: Final[str] = "10:00"
+CLEANUP_TIME: Final[str] = "00:00"
+DISCOVER_TIME: Final[str] = "01:00"
+QUALITY_TIME: Final[str] = "02:00"
 
 
 class Job:
@@ -21,10 +21,11 @@ class Job:
     def __init__(self, name: JobName, schedule: str, func: Callable[[], Awaitable[None]]) -> None:
         if len(schedule) != 5 or schedule[2] != ":" or not (0 <= int(schedule[:2]) <= 23) or not (0 <= int(schedule[3:]) <= 59):
             raise ValueError(f"Invalid schedule format: {schedule} (expected HH:MM)")
-        self.name = name
+        self.name: JobName = name
+        self.hour: int; self.minute: int
         self.hour, self.minute = map(int, schedule.split(":"))
-        self.func = func
-        self.active = False
+        self.func: Callable[[], Awaitable[None]] = func
+        self.active: bool = False
 
     async def run(self, config: Config, start_time: datetime, set_last_run: Callable[[JobName, datetime], Awaitable[None]]) -> None:
         """Runs the job function and updates its last run time."""
@@ -62,10 +63,10 @@ class Scheduler:
     __slots__ = ('config', 'handler', 'quality_monitor', '_mutex', '_tasks', 'jobs', '_scheduler_task',)
 
     def __init__(self, config: Config, handler: ChannelHandler, quality_monitor: QualityMonitor) -> None:
-        self.config = config
-        self.handler = handler
-        self.quality_monitor = quality_monitor
-        self._mutex = asyncio.Lock()
+        self.config: Config = config
+        self.handler: ChannelHandler = handler
+        self.quality_monitor: QualityMonitor = quality_monitor
+        self._mutex: asyncio.Lock = asyncio.Lock()
         self._tasks: list[asyncio.Task[None]] = []
 
         async def scheduled_backup() -> None:

@@ -31,7 +31,9 @@ from nexus_stream.quality_monitor import QualityMonitor
 from nexus_stream.session_monitor import GhostSessionMonitor
 from nexus_stream.stream import StreamManager
 from nexus_stream.scheduler import Scheduler
-from nexus_stream.utils import CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL, DEFAULT_PRIORITY, NEXUS_STREAM_VERSION, Label, LogicalChannelId, LogicalChannelName, VideoType, sort_sources
+from nexus_stream.utils import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL,
+                                DEFAULT_PRIORITY, NEXUS_STREAM_PORT, NEXUS_STREAM_VERSION,
+                                Label, LogicalChannelId, LogicalChannelName, VideoType, sort_sources)
 
 # --- Constants ---
 PLAYLIST_POLL_INTERVAL = 0.2  # Seconds to wait between checking for a new playlist
@@ -793,4 +795,4 @@ async def hdhomerun_lineup() -> Response:
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=os.getenv("NEXUS_PORT", 4040), use_reloader=False)
+    app.run(host="0.0.0.0", port=NEXUS_STREAM_PORT, use_reloader=False)
