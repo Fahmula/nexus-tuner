@@ -62,17 +62,17 @@ class StreamManager:
             if video_key in self.ffmpeg_processes:
                 cast(FFmpegProcessInfoMutable, self.ffmpeg_processes[video_key])['is_long_term'] = long_term
 
-    async def get_ffmpeg_processes_from_logical_id(self, logical_channel_id: LogicalChannelId, *, video_type: VideoType, long_term_only: bool) -> FFmpegProcessInfos:
+    async def get_ffmpeg_processes_from_logical_id(self, logical_channel_id: LogicalChannelId, *, video_type: VideoType, long_term_only: bool) -> FFmpegProcessInfosMutable:
         """
         Returns a dictionary of all FFmpeg processes associated with the given logical channel ID and video type asynchronously.
         """
         async with self.stream_process_lock:
             if long_term_only:
-                return FFmpegProcessInfos({
+                return FFmpegProcessInfosMutable({
                     video_key: data for video_key, data in self.ffmpeg_processes.items()
                     if data['logical_channel_id'] == logical_channel_id and data['video_type'] == video_type and data['is_long_term']
                 })
-            return FFmpegProcessInfos({
+            return FFmpegProcessInfosMutable({
                 video_key: data for video_key, data in self.ffmpeg_processes.items()
                 if data['logical_channel_id'] == logical_channel_id and data['video_type'] == video_type
             })
@@ -249,15 +249,19 @@ class StreamManager:
 
         self.config.info(video_type, f"{name} [{video_key}]: Successfully stopped and cleaned up all resources {{{provider}:{new_active_count}}}")
 
-    async def stop_ffmpeg_processes(self, video_keys: Iterable[VideoKey] | None = None) -> None:
+    async def stop_ffmpeg_processes(self, video_keys: Iterable[VideoKey] | None = None, video_names: dict[VideoKey, VideoName] | None = None) -> None:
         """Stops all (or a specified list of) active FFmpeg processes and cleans up resources asynchronously."""
+        if video_names is None:
+            video_names = {}
         tasks: list[Coroutine[Any, Any, None]]
         async with self.stream_process_lock:
             if video_keys is None:
                 self.config.info(Label.STREAM, "Stopping all active FFmpeg processes...")
-                tasks = [self.stop_ffmpeg_process(video_key, data["logical_channel_name"]) for video_key, data in self.ffmpeg_processes.items()]
+                tasks = [self.stop_ffmpeg_process(video_key, video_names.get(video_key) or data["logical_channel_name"])
+                         for video_key, data in self.ffmpeg_processes.items()]
             else:
-                tasks = [self.stop_ffmpeg_process(video_key, data["logical_channel_name"]) for video_key, data in self.ffmpeg_processes.items() if video_key in video_keys]
+                tasks = [self.stop_ffmpeg_process(video_key, video_names.get(video_key) or data["logical_channel_name"])
+                         for video_key, data in self.ffmpeg_processes.items() if video_key in video_keys]
                 
         if tasks:
             await asyncio.gather(*tasks)

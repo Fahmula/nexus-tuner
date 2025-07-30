@@ -112,6 +112,7 @@ class ChannelHandler:
             self.providers_data = (await self.config.get_providers_config()).get("source_m3u_providers", ProvidersData({}))
             await self._update_providers_slots()
 
+        prev_discovered_source_services: DiscoveredSourcesData = DiscoveredSourcesData({k: v for k, v in self.discovered_source_services_data.items()})
         min_updated_at = min([p_data["updated_at"] or DateTimeISO("0001-01-01") for p_data in self.providers_data.values()], default=DateTimeISO("0001-01-01"))
         now = datetime.now()
         if force_discover_sources or datetime.fromisoformat(min_updated_at) < now - timedelta(seconds=DISCOVER_SOURCES_INTERVAL):
@@ -123,7 +124,7 @@ class ChannelHandler:
             await self._save_providers_for_ui(ProvidersSourceData({"source_m3u_providers": self.providers_data}), update_slots=False)
 
         # Build in-memory data
-        self._build_client_facing_channels()
+        self._build_client_facing_channels(prev_discovered_source_services)
         self.generate_main_client_m3u()
         
         self._loading = False
@@ -221,7 +222,7 @@ class ChannelHandler:
         
         self.config.info(self.label, f"Finished parsing. Total discovered source services: {len(self.discovered_source_services_data)}")
 
-    def _build_client_facing_channels(self) -> None:
+    def _build_client_facing_channels(self, prev_discovered_source_services: DiscoveredSourcesData) -> None:
         """Builds the final list of channels exposed to clients. (Sync - CPU-bound)"""
         self.config.info(self.label, "Building client-facing channels...")
         cast(ChannelInfosMutable, self.client_facing_channels).clear()
@@ -230,8 +231,9 @@ class ChannelHandler:
             logical_channel_id = lc_def["logical_channel_id"]
 
             mapped_sources_for_lc = self.get_mappings_for_logical_channel(logical_channel_id)
+            mapped_sources_for_lc.sort(key=lambda x: x.get("priority", DEFAULT_PRIORITY))
             processed_sources: list[SourceInfo] = []
-            for mapping in sorted(mapped_sources_for_lc, key=lambda x: x.get("priority", DEFAULT_PRIORITY)):
+            for mapping in mapped_sources_for_lc:
                 source_id = mapping.get("source_service_id")
                 priority = mapping.get("priority", DEFAULT_PRIORITY)
                 discovered_service = self.discovered_source_services_data.get(source_id)
@@ -243,7 +245,12 @@ class ChannelHandler:
                         "actual_stream_url": discovered_service["actual_stream_url"],
                     })
                 else:
-                    self.config.info(self.label, f"Mapped source '{source_id}' for '{lc_def.get('display_name', logical_channel_id)}'{f' ({lc_def['channel_num']})' if 'channel_num' in lc_def else ''} not found in discovered services.")
+                    if source_id in prev_discovered_source_services:
+                        prev_discovered_source = prev_discovered_source_services[source_id]
+                        source_name = f"'{prev_discovered_source['original_display_name_extinf'] or prev_discovered_source['original_tvg_name']}' ({source_id})"
+                    else:
+                        source_name = f"'Unknown Source' ({source_id})"
+                    self.config.warn(self.label, f"Mapped source {source_name} for '{lc_def.get('display_name', logical_channel_id)}'{f' ({lc_def['channel_num']})' if 'channel_num' in lc_def else ''} not found in discovered services.")
 
             if processed_sources:
                 cast(ChannelInfosMutable, self.client_facing_channels)[logical_channel_id] = {
@@ -482,21 +489,29 @@ class ChannelHandler:
         """Gets a logical channel by its ID."""
         return next((lc for lc in self.logical_channels_data if lc.get("logical_channel_id") == logical_channel_id), None)
 
-    async def add_logical_channel(self, raw_lc_data: LogicalChannelInfo) -> str:
+    async def add_logical_channel(self, raw_lc_data: LogicalChannelInfo) -> LogicalChannelId | None:
         """Adds a new logical channel to the configuration."""
         new_lc_id = self._generate_next_logical_channel_id()
         new_lc_data = LogicalChannelInfo({**raw_lc_data, "logical_channel_id": new_lc_id})
-        self.logical_channels_data = LogicalChannelsData((*self.logical_channels_data, new_lc_data))
-        await self.config.save_logical_channels_config(self.logical_channels_data)
+        new_data = LogicalChannelsData((*self.logical_channels_data, new_lc_data))
+        if not await self.config.save_logical_channels_config(new_data):
+            self.config.error(self.label, f"Failed to save new logical channel configuration: {new_lc_data}")
+            return
+        self.logical_channels_data = new_data
         return new_lc_id
 
     async def update_logical_channel(self, updated_lc_data: LogicalChannelInfo) -> bool:
         """Updates a logical channel in the configuration."""
         if not any(lc["logical_channel_id"] == updated_lc_data["logical_channel_id"] for lc in self.logical_channels_data):
             return False
-        self.logical_channels_data = LogicalChannelsData(tuple(updated_lc_data if lc["logical_channel_id"] == updated_lc_data["logical_channel_id"]
+        new_data = LogicalChannelsData(tuple(updated_lc_data if lc["logical_channel_id"] == updated_lc_data["logical_channel_id"]
                                                                else lc for lc in self.logical_channels_data))
-        return await self.config.save_logical_channels_config(self.logical_channels_data)
+        res = await self.config.save_logical_channels_config(new_data)
+        if res:
+            self.logical_channels_data = new_data
+        else:
+            self.config.error(self.label, f"Failed to save updated logical channel configuration: {updated_lc_data}")
+        return res
 
     async def delete_logical_channel(self, logical_channel_id: LogicalChannelId) -> bool:
         """Deletes a logical channel from the configuration."""
@@ -509,17 +524,20 @@ class ChannelHandler:
         
         return len(self.logical_channels_data) < original_len and await self.config.save_logical_channels_config(self.logical_channels_data)
 
-    def get_mappings_for_logical_channel(self, logical_channel_id: LogicalChannelId) -> tuple[SourcePriority, ...]:
+    def get_mappings_for_logical_channel(self, logical_channel_id: LogicalChannelId) -> list[SourcePriority]:
         """Retrieves mappings for a logical channel."""
-        return self.channel_mappings_data.get(logical_channel_id, ())
+        return [mapping for mapping in self.channel_mappings_data.get(logical_channel_id, [])]
 
-    async def update_mappings_for_logical_channel(self, logical_channel_id: LogicalChannelId, new_mappings_list: tuple[SourcePriority]) -> bool:
+    async def update_mappings_for_logical_channel(self, logical_channel_id: LogicalChannelId, new_mappings_list: list[SourcePriority]) -> bool:
         """Updates mappings for a logical channel."""
         cast(ChannelMappingsDataMutable, self.channel_mappings_data)[logical_channel_id] = new_mappings_list
         return await self.config.save_channel_mappings_config(self.channel_mappings_data)
 
+    def copy_mappings_channel_mappings(self) -> ChannelMappingsDataMutable:
+        """Returns a copy of the channel mappings data."""
+        return ChannelMappingsDataMutable(cast(ChannelMappingsDataMutable, self.channel_mappings_data).copy())
+
     def get_all_discovered_source_services_for_ui(self) -> list[DiscoveredSource]:
         """Gets a list of discovered services."""
         all_services = list(self.discovered_source_services_data.values())
-        self.config.debug(self.label, f"Returning {len(all_services)} services for UI.")
         return sorted(all_services, key=lambda x: (x["provider_alias"], (x.get("original_tvg_name","") or x.get("original_display_name_extinf","")).lower()))

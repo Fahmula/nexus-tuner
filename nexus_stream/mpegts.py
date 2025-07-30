@@ -42,7 +42,7 @@ class MPEGTSStream:
         self._cleaner = asyncio.create_task(self._cleanup())
 
     @classmethod
-    async def register(cls, config: Config, stream_manager: StreamManager, video_key: VideoKey, recreate_stream: Callable[[], Awaitable[None]]) -> tuple[Self, int]:
+    async def register(cls, config: Config, stream_manager: StreamManager, video_key: VideoKey, recreate_stream: Callable[[], Awaitable[None]]) -> tuple[Self, ReaderId]:
         """Register a new MPEGTS stream or return an existing one."""
         if video_key not in cls.streams:  # If stream is cancelled, still choose it to prevent dual ownership
             instance = cls(config, stream_manager, video_key, recreate_stream)

@@ -20,7 +20,8 @@
         
         <tbody>
             {% for service in mapped_services %}
-            <tr>
+                {% set source_metrics = source_metrics.get(service.id, {}) %}
+                <tr>
                 <td class="text-center align-middle">
                     <input class="form-check-input" type="checkbox" name="mapping_service_id" value="{{ service.id }}" checked>
                 </td>
@@ -33,8 +34,8 @@
                     {% endif %}
                 </td>
                 <td class="text-center align-middle">
-                    {% if service.uptime is defined and service.uptime is not none %}
-                        {% set uptime_val = service.uptime|int %}
+                    {% if source_metrics.uptime is defined and source_metrics.uptime is not none %}
+                        {% set uptime_val = source_metrics.uptime|int %}
                         {% if uptime_val >= 75 %}
                             <span class="badge bg-success">{{ uptime_val }}%</span>
                         {% elif uptime_val >= 50 %}
@@ -49,7 +50,7 @@
                     {% endif %}
                 </td>
                 <td class="align-middle">
-                    <input type="number" class="form-control form-control-sm" name="priority_{{ service.id }}" value="{{ service.priority }}" min="0" max="10" required>
+                    <input type="number" class="form-control form-control-sm" name="priority_{{ service.id }}" value="{{ source_metrics.priority }}" min="0" max="10" required>
                 </td>
                 <td class="text-end align-middle">
                     <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#previewModal" 
@@ -58,13 +59,14 @@
                         <i class="fas fa-play"></i>
                     </button>
                 </td>
-            </tr>
+                </tr>
             {% endfor %}
         </tbody>
 
         <tbody>
             {% for service in unmapped_suggestions_for_page %}
-            <tr>
+                {% set source_metrics = source_metrics.get(service.id, {}) %}
+                <tr>
                 <td class="text-center align-middle">
                     <input class="form-check-input" type="checkbox" name="mapping_service_id" value="{{ service.id }}">
                 </td>
@@ -76,8 +78,8 @@
                     {% endif %}
                 </td>
                 <td class="text-center align-middle">
-                    {% if service.uptime is defined and service.uptime is not none %}
-                        {% set uptime_val = service.uptime|int %}
+                    {% if source_metrics.uptime is defined and source_metrics.uptime is not none %}
+                        {% set uptime_val = source_metrics.uptime|int %}
                         {% if uptime_val >= 75 %}
                             <span class="badge bg-success">{{ uptime_val }}%</span>
                         {% elif uptime_val >= 50 %}
@@ -92,7 +94,7 @@
                     {% endif %}
                 </td>
                 <td class="align-middle">
-                    <input type="number" class="form-control form-control-sm" name="priority_{{ service.id }}" value="5" min="0" max="10" required>
+                    <input type="number" class="form-control form-control-sm" name="priority_{{ service.id }}" value="{{ source_metrics.priority }}" min="0" max="10" required>
                 </td>
                 <td class="text-end align-middle">
                     <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#previewModal" 
@@ -101,7 +103,7 @@
                         <i class="fas fa-play"></i>
                     </button>
                 </td>
-            </tr>
+                </tr>
             {% endfor %}
 
             {# Helpful messages for different states #}

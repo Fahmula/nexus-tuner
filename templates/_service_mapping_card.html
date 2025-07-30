@@ -1,11 +1,11 @@
 <div class="card">
     <div class="card-header">
         Map Source Services to "<span id="channel-name-header">{{ channel.display_name or 'New Channel' }}</span>"
-        {% if channel.discovered_mappings != channel.enabled_mappings %}
+        {% if channel_metrics.discovered_mappings != channel_metrics.enabled_mappings %}
             <button class="btn btn-sm btn-danger ms-2 float-end"
                 hx-delete="{{ url_for('ui_remove_dead_mappings', logical_channel_id=channel.logical_channel_id) }}"
                 hx-target="#service-list-container">
-                <i class="fas fa-trash-alt"></i> Remove Dead Mappings ({{ channel.enabled_mappings - channel.discovered_mappings }})
+                <i class="fas fa-trash-alt"></i> Remove Dead Mappings ({{ channel_metrics.enabled_mappings - channel_metrics.discovered_mappings }})
             </button>
         {% endif %}
     </div>

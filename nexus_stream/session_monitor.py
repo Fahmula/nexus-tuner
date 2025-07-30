@@ -42,7 +42,7 @@ class GhostSessionMonitor:
     async def create(cls, config: Config, handler: ChannelHandler, stream_manager: StreamManager) -> Self | None:
         """Asynchronous factory for creating and initializing a GhostSessionMonitor instance."""
         if not config.emby_url and not config.jellyfin_url:
-            config.debug(Label.STARTUP, "No Emby/Jellyfin URL configured. Ghost Session Monitor is disabled.")
+            config.info(Label.STARTUP, "No Emby/Jellyfin URL configured. Ghost Session Monitor is disabled.")
             return
         config.info(Label.STARTUP, "Emby/Jellyfin URL found. Ghost Session Monitor is enabled.")
         instance = cls(config, handler, stream_manager)

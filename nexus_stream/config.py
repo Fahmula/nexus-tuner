@@ -351,11 +351,6 @@ class Config:
 
     async def save_logical_channels_config(self, data: LogicalChannelsData) -> bool:
         """Saves the logical channels configuration to logical_channels.json asynchronously."""
-        for channel in data:
-            channel.pop("lowest_uptime", None)
-            channel.pop("health_score", None)
-            channel.pop("enabled_mappings", None)
-            channel.pop("discovered_mappings", None)
         return await self._save_json_file(self.logical_channels_path, data)
 
     async def get_channel_mappings_config(self) -> ChannelMappingsData:

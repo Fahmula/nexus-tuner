@@ -36,6 +36,7 @@ the most dangerous operations to be clearly marked and the rest of the code to b
 
 DateTimeISO = NewType("DateTimeISO", str)
 Percent = NewType("Percent", float)
+PercentDisplay = NewType("PercentDisplay", float)
 
 ProviderAlias = NewType("ProviderAlias", str)
 M3UURL = NewType("M3UURL", str)
@@ -140,11 +141,21 @@ class LogicalChannelInfo(TypedDict):
     tvg_logo: ReadOnly[TVGLogo]
 LogicalChannelsData = NewType("LogicalChannelsData", tuple[LogicalChannelInfo, ...])
 
+class LogicalChannelMetrics(TypedDict):
+    health_score: ReadOnly[PercentDisplay | None]
+    lowest_uptime: ReadOnly[PercentDisplay | None]
+    enabled_mappings: ReadOnly[int]
+    discovered_mappings: ReadOnly[int]
+
 class SourcePriority(TypedDict):
     source_service_id: ReadOnly[SourceServiceId]
     priority: ReadOnly[Priority]
 ChannelMappingsData = NewType("ChannelMappingsData", Mapping[LogicalChannelId, tuple[SourcePriority, ...]])
-ChannelMappingsDataMutable = NewType("ChannelMappingsDataMutable", dict[LogicalChannelId, tuple[SourcePriority, ...]])
+ChannelMappingsDataMutable = NewType("ChannelMappingsDataMutable", dict[LogicalChannelId, list[SourcePriority]])
+
+class SourceMetrics(TypedDict):
+    priority: ReadOnly[Priority]
+    uptime: ReadOnly[PercentDisplay | None]
 
 class SourceInfo(TypedDict):
     source_service_id: ReadOnly[SourceServiceId]
@@ -262,9 +273,9 @@ def create_video_key(stream_key: StreamKey, source_service_id: SourceServiceId) 
     return VideoKey(f"{stream_key}_{source_service_id}")
 
 
-def create_video_name(logical_channel_name: LogicalChannelName, source_service_id: SourceServiceId) -> VideoName:
+def create_video_name(logical_channel_name: LogicalChannelName, source_name: TVGDisplayName | TVGName, source_service_id: SourceServiceId) -> VideoName:
     """Generates a unique name for the stream."""
-    return VideoName(f"{logical_channel_name} - {source_service_id}")
+    return VideoName(f"{logical_channel_name} - {source_name} ({source_service_id})")
 
 
 def get_segment_format() -> str:
@@ -285,23 +296,23 @@ def relative_time(dt: datetime, reference_time: datetime | None = None) -> str:
     seconds = delta.total_seconds()
     if seconds < 60:
         unit = "s"
-        value = int(seconds)
+        value = round(seconds)
     elif seconds < 3600:
         unit = "m"
-        value = int(seconds / 60)
+        value = round(seconds / 60)
     elif seconds < 86400:
         unit = "h"
-        value = int(seconds / 3600)
+        value = round(seconds / 3600)
     else:
         unit = "d"
-        value = int(seconds / 86400)
+        value = round(seconds / 86400)
     if dt < reference_time:
         return f"{value}{unit} ago"
     else:
         return f"in {value}{unit}"
 
 
-def sort_sources(sources: list[SourceInfo], quality_scores: QualityScores, *, reverse: bool) -> dict[SourceServiceId, Priority]:
+def sort_sources(sources: list[SourceInfo] | list[SourcePriority], quality_scores: QualityScores, *, reverse: bool) -> dict[SourceServiceId, Priority]:
     """Sorts sources based on priority and quality."""
     prev_score: tuple[Priority, float, float, SourceServiceId] | None = None
     curr_priority: Priority = Priority(-1)

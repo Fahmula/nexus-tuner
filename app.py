@@ -18,10 +18,12 @@ import os
 import sys
 from collections import deque
 from datetime import UTC, datetime
-from typing import Any, AsyncGenerator, Dict
+from typing import AsyncGenerator, Dict, Final, cast
 
-from quart import (Quart, Response, abort, flash, redirect, render_template,
-                   request, send_from_directory, url_for)
+from quart import Quart, Response, abort, flash, redirect, render_template, request, url_for
+from quart import send_from_directory  # type: ignore
+from werkzeug.wrappers import Response as WerkzeugResponse
+from werkzeug.datastructures import ImmutableMultiDict
 
 from nexus_stream.config import Config
 from nexus_stream.create_stream import CreateStream
@@ -32,13 +34,16 @@ from nexus_stream.session_monitor import GhostSessionMonitor
 from nexus_stream.stream import StreamManager
 from nexus_stream.scheduler import Scheduler
 from nexus_stream.utils import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL,
-                                DEFAULT_PRIORITY, NEXUS_STREAM_PORT, NEXUS_STREAM_VERSION, DiscoveredSource,
-                                Label, LogicalChannelId, LogicalChannelName, ProviderAlias, VideoType, sort_sources)
+                                DEFAULT_PRIORITY, M3UURL, NEXUS_STREAM_PORT, NEXUS_STREAM_VERSION, ChannelNum, DiscoveredSource,
+                                Label, LogicalChannelId, LogicalChannelInfo, LogicalChannelMetrics, LogicalChannelName, MaxStreams, 
+                                PercentDisplay, Priority, ProviderAlias, ProviderStatus, QualityScores, SourceInfo, SourceMetrics,
+                                SourcePriority, SourceServiceId, TVGGroupTitle, TVGId, TVGLogo, VideoType, sort_sources)
 
 # --- Constants ---
-PLAYLIST_POLL_INTERVAL = 0.2  # Seconds to wait between checking for a new playlist
-UI_SEARCH_MIN_CHARS = 3       # Minimum characters for a UI search
-UI_SEARCH_MAX_RESULTS = 50    # Max results to return in a UI search
+PLAYLIST_POLL_INTERVAL: Final[float] = 0.2    # Seconds to wait between checking for a new playlist
+UI_SEARCH_MIN_CHARS: Final[int] = 3           # Minimum characters for a UI search
+UI_SEARCH_MAX_RESULTS: Final[int] = 50        # Max results to return in a UI search
+HIGHEST_PRIORITY_SOURCES_NUM: Final[int] = 8  # Maximum number of sources to consider for quality metrics
 
 # --- App Initialization ---
 app = Quart(__name__)
@@ -79,29 +84,25 @@ async def shutdown() -> None:
     if "config" in globals():
         await config.clean_up_hls_segments()
 
-def calculate_channel_metrics(channel: dict[str, Any], mapped_services: list[dict[str, Any]], all_quality_scores: dict[str, dict[str, float]]) -> None:
+def calculate_channel_metrics(mapped_services: list[SourcePriority], all_quality_scores: QualityScores) -> LogicalChannelMetrics:
     """Calculates uptime metrics for a channel. (Sync, CPU-bound logic)."""
     uptime_scores: list[float] = []
     if mapped_services:
-        for service_object in mapped_services[:8]:
+        for service_object in mapped_services[:HIGHEST_PRIORITY_SOURCES_NUM]:
             service_id = service_object.get('source_service_id')
             if not service_id: continue
             raw_uptime = all_quality_scores.get(service_id, {}).get('uptime')
             if raw_uptime is not None: uptime_scores.append(raw_uptime)
 
-    if uptime_scores:
-        channel['lowest_uptime'] = int(min(uptime_scores) * 100)
-        prob_all_services_fail = math.prod([(1 - score) for score in uptime_scores])
-        channel['health_score'] = int((1 - prob_all_services_fail) * 100)
-    else:
-        channel['lowest_uptime'] = None
-        channel['health_score'] = None
-
-    channel['enabled_mappings'] = len(mapped_services)
-    channel['discovered_mappings'] = sum(1 for service in mapped_services if service['source_service_id'] in handler.discovered_source_services_data)
+    return LogicalChannelMetrics({
+        "health_score": PercentDisplay(int((1 - math.prod([(1 - score) for score in uptime_scores])) * 100)) if uptime_scores else None,
+        "lowest_uptime": PercentDisplay(int(min(uptime_scores) * 100)) if uptime_scores else None,
+        "enabled_mappings": len(mapped_services),
+        "discovered_mappings": sum(1 for service in mapped_services if service["source_service_id"] in handler.discovered_source_services_data)
+    })
 
 @app.context_processor
-def inject_global_vars() -> Dict[str, Any]:
+def inject_global_vars() -> Dict[str, datetime | str]:
     """Injects global variables into the context of all templates."""
     return {
         'now': datetime.now(UTC),
@@ -132,7 +133,7 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
             msg = f"Logical channel {logical_channel_id} not found for MPEGTS."
             config.error(VideoType.MPEGTS, msg)
             abort(404, msg)
-        logical_channel_name = str(logical_channel['display_name'])
+        logical_channel_name = logical_channel['display_name']
 
         lc_id_processes = await stream_manager.get_ffmpeg_processes_from_logical_id(logical_channel_id, video_type=VideoType.MPEGTS, long_term_only=True)
         if len(lc_id_processes):
@@ -189,7 +190,7 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
 @app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/preview.m3u8')
 async def serve_hls_preview(logical_channel_id: LogicalChannelId) -> Response:
     """Serves a preview HLS playlist for a channel asynchronously."""
-    source_service_id = logical_channel_id.replace("preview_", "")
+    source_service_id = SourceServiceId(logical_channel_id.replace("preview_", ""))
     source_service = handler.discovered_source_services_data.get(source_service_id, None)
     
     if not source_service:
@@ -204,17 +205,16 @@ async def serve_hls_preview(logical_channel_id: LogicalChannelId) -> Response:
                 priority = channel['priority']
                 break
 
-    sources: list[dict[str, Any]] = [{
-        'source_service_id': source_service['id'], 'priority': priority,
+    sources: list[SourceInfo] = [{
+        'source_service_id': source_service['id'], 'priority': Priority(priority),
         'provider_alias': source_service['provider_alias'],
         'actual_stream_url': source_service['actual_stream_url']
     }]
-    logical_channel_name = source_service.get('original_display_name_extinf', source_service.get('original_tvg_name', 'Preview'))
 
-    return await serve_hls_playlist(logical_channel_id, logical_channel_name=logical_channel_name, sources=sources)
+    return await serve_hls_playlist(logical_channel_id, logical_channel_name=LogicalChannelName('Preview'), sources=sources)
 
 @app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/playlist.m3u8')
-async def serve_hls_playlist(logical_channel_id: LogicalChannelId, logical_channel_name: LogicalChannelName | None = None, sources: list[dict[str, Any]] | None = None) -> Response:
+async def serve_hls_playlist(logical_channel_id: LogicalChannelId, logical_channel_name: LogicalChannelName | None = None, sources: list[SourceInfo] | None = None) -> Response:
     """Serves the HLS playlist for a channel asynchronously."""
     asyncio.create_task(stream_manager.record_video_access(logical_channel_id, VideoType.HLS))
     added_pending_stream = False
@@ -235,7 +235,7 @@ async def serve_hls_playlist(logical_channel_id: LogicalChannelId, logical_chann
                 msg = f"Logical channel {logical_channel_id} not found for HLS."
                 config.error(VideoType.HLS, msg)
                 abort(404, msg)
-            logical_channel_name = str(logical_channel['display_name'])
+            logical_channel_name = logical_channel['display_name']
 
         lc_id_processes = await stream_manager.get_ffmpeg_processes_from_logical_id(logical_channel_id, video_type=VideoType.HLS, long_term_only=True)
         if len(lc_id_processes):
@@ -301,9 +301,9 @@ async def serve_hls_segment(logical_channel_id: LogicalChannelId, segment_filena
     return await send_from_directory(str(segment_path.parent), segment_path.name, mimetype="video/mp2t")
 
 @app.route("/<string:video_type>/<string:logical_channel_id>/stop", methods=["POST"])
-async def stop_stream(video_type: str, logical_channel_id: LogicalChannelId) -> Response:
+async def stop_stream(video_type: VideoType, logical_channel_id: LogicalChannelId) -> Response:
     """Stops the stream for a logical channel asynchronously."""
-    await stream_manager.stop_ffmpeg_processes_with_logical_channel_id(logical_channel_id, VideoType(video_type))
+    await stream_manager.stop_ffmpeg_processes_with_logical_channel_id(logical_channel_id, video_type)
     return Response(status=204)
 
 @app.route("/playlist.m3u")
@@ -314,7 +314,7 @@ async def serve_main_playlist() -> Response:
 @app.route("/reload", methods=["POST"])
 async def reload_configuration() -> Response:
     """Triggers a full async reload of all configurations and channel data."""
-    form_data = await request.form
+    form_data = cast(ImmutableMultiDict[str, str], await request.form)  # type: ignore
     update_providers = form_data.get("update_providers", "false").lower() == "true"
     force_discover_sources = form_data.get("force_discover_sources", "false").lower() == "true"
 
@@ -371,67 +371,87 @@ async def ui_logical_channels_list() -> str:
     channels = handler.get_all_logical_channels_for_ui()
     all_quality_scores = await quality_monitor.get_quality_scores()
 
+    all_channel_metrics: dict[LogicalChannelId, LogicalChannelMetrics] = {}
     for channel in channels:
         mapped_services = handler.get_mappings_for_logical_channel(channel['logical_channel_id'])
         sort_sources(mapped_services, all_quality_scores, reverse=False)
-        calculate_channel_metrics(channel, mapped_services, all_quality_scores)
+        all_channel_metrics[channel["logical_channel_id"]] = calculate_channel_metrics(mapped_services, all_quality_scores)
 
-    return await render_template("ui_logical_channels.html", channels=channels, handler=handler)
+    return await render_template("ui_logical_channels.html", channels=channels, all_channel_metrics=all_channel_metrics)
 
 @app.route("/ui/logical-channels/form/", methods=["GET", "POST"])
 @app.route("/ui/logical-channels/form/<string:logical_channel_id>", methods=["GET", "POST"])
-async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = None):
+async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = None) -> Response | WerkzeugResponse | str:
     """Handles adding/editing a logical channel and its mappings asynchronously."""
     if request.method == "POST":
-        form_data = await request.form
-        submitted_id = form_data.get("logical_channel_id")
-        is_update = bool(submitted_id)
+        form_data = cast(ImmutableMultiDict[str, str], await request.form)  # type: ignore
 
-        lc_data = {
-            "logical_channel_id": submitted_id if is_update else None,
-            "display_name": form_data.get("display_name", "").strip(),
-            "channel_num": form_data.get("channel_num", "").strip(),
-            "group_title": form_data.get("group_title", "Uncategorized").strip(),
-            "tvg_id": form_data.get("tvg_id", "").strip(),
-            "tvg_logo": form_data.get("tvg_logo", "").strip()
-        }
-        channel_log = f"'{lc_data.get('display_name', 'Unknown Channel')}'{f' ({lc_data['channel_num']})' if 'channel_num' in lc_data else ''}"
+        logical_channel_name: LogicalChannelName = LogicalChannelName(form_data.get("display_name", "").strip())
+        channel_num: ChannelNum = ChannelNum(form_data.get("channel_num", "").strip())
+        group_title: TVGGroupTitle = TVGGroupTitle(form_data.get("group_title", "Uncategorized").strip())
+        tvg_id: TVGId = TVGId(form_data.get("tvg_id", "").strip())
+        tvg_log: TVGLogo = TVGLogo(form_data.get("tvg_logo", "").strip())
 
-        if not lc_data['display_name'] or not lc_data['channel_num']:
+        if not logical_channel_name or not channel_num:
             await flash("Display Name and Channel Number are required.", "error") 
             return redirect(request.url)
+        try:
+            int(channel_num)
+        except ValueError:
+            await flash(f"Channel Number must be a valid integer, received: {channel_num}", "error")
+            return redirect(request.url)
 
-        mappings_to_save = []
+        mappings_to_save: list[SourcePriority] = []
         for service_id_str in form_data.getlist('mapping_service_id'):
             try:
-                mappings_to_save.append({
-                    'source_service_id': service_id_str,
-                    'priority': int(form_data.get(f"priority_{service_id_str}", DEFAULT_PRIORITY))
-                })
+                mappings_to_save.append(SourcePriority({
+                    'source_service_id': SourceServiceId(service_id_str),
+                    'priority': Priority(int(form_data.get(f"priority_{service_id_str}", DEFAULT_PRIORITY)))
+                }))
             except (ValueError, TypeError):
                 await flash(f"Skipping a mapping with invalid priority for service '{service_id_str}'.", "warning")
 
-        if is_update:
-            await handler.update_logical_channel(lc_data)
-            await handler.update_mappings_for_logical_channel(submitted_id, mappings_to_save)
+        channel_log = f"'{logical_channel_name}' ({channel_num})"
+        submitted_id = form_data.get("logical_channel_id")
+        if submitted_id:
+            lc_data: LogicalChannelInfo = {
+                "logical_channel_id": LogicalChannelId(submitted_id),
+                "display_name": logical_channel_name,
+                "channel_num": channel_num,
+                "group_title": group_title,
+                "tvg_id": tvg_id,
+                "tvg_logo": tvg_log,
+            }
+            if not await handler.update_logical_channel(lc_data):
+                await flash(f"Failed to update channel {channel_log}.", "error")
+                return redirect(request.url)
+            await handler.update_mappings_for_logical_channel(lc_data["logical_channel_id"], mappings_to_save)
             await flash(f"Channel {channel_log} updated.", "success")
             await handler.reload_handler_config()
             return redirect(url_for('ui_logical_channel_form', logical_channel_id=submitted_id))
         else:
+            lc_data: LogicalChannelInfo = {
+                "logical_channel_id": LogicalChannelId("0"),
+                "display_name": logical_channel_name,
+                "channel_num": channel_num,
+                "group_title": group_title,
+                "tvg_id": tvg_id,
+                "tvg_logo": tvg_log,
+            }
             new_id = await handler.add_logical_channel(lc_data)
-            if new_id:
-                if mappings_to_save:
-                    await handler.update_mappings_for_logical_channel(new_id, mappings_to_save)
-                await flash(f"Channel {channel_log} created.", "success")
-                await handler.reload_handler_config()
-                return redirect(url_for('ui_logical_channel_form', logical_channel_id=new_id))
-            else:
-                await flash("Error creating channel.", "error")
-                return await render_template("ui_logical_channel_form.html", channel=lc_data)
+            if not new_id:
+                await flash(f"Failed to create channel {channel_log}.", "error")
+                return redirect(request.url)
+            if mappings_to_save:
+                await handler.update_mappings_for_logical_channel(new_id, mappings_to_save)
+            await flash(f"Channel {channel_log} created.", "success")
+            await handler.reload_handler_config()
+            return redirect(url_for('ui_logical_channel_form', logical_channel_id=new_id))
 
     # --- GET Request Handling ---
+
     is_htmx_service_list_request = (request.headers.get('HX-Request') and request.headers.get('HX-Target') == 'service-list-container')
-    channel = {}
+    channel: LogicalChannelInfo | None = None
     if logical_channel_id:
         channel = handler.get_logical_channel_by_id(logical_channel_id)
         if not channel:
@@ -439,7 +459,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
             return redirect(url_for('ui_logical_channels_list'))
     
     search_query = request.args.get('search_query')
-    if search_query is None and not is_htmx_service_list_request and logical_channel_id:
+    if channel and search_query is None and not is_htmx_service_list_request:
         predefined_channel = handler.find_matching_predefined_channel(channel['display_name'], channel['channel_num'])
         if predefined_channel:
             search_query = " OR ".join(predefined_channel['names']) if predefined_channel.get('names') else predefined_channel.get('title', channel.get('display_name'))
@@ -448,31 +468,37 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     all_services = handler.get_all_discovered_source_services_for_ui()
     all_quality_scores = await quality_monitor.get_quality_scores()
     
-    other_mappings:dict[str, list[dict[str, Any]]] = handler.channel_mappings_data.copy()
+    other_mappings = handler.copy_mappings_channel_mappings()
     current_mappings = other_mappings.pop(logical_channel_id, []) if logical_channel_id else []
     sort_sources(current_mappings, all_quality_scores, reverse=False)
-    services_mapped_elsewhere: set[str] = {mapping['source_service_id'] for mappings in other_mappings.values() for mapping in mappings}
+    services_mapped_elsewhere: set[SourceServiceId] = {mapping['source_service_id'] for mappings in other_mappings.values() for mapping in mappings}
     all_services_map = {s['id']: s for s in all_services}
-    mapped_services: list[dict[str, Any]] = []
-    all_mapped_service_ids: set[str] = set()
+    mapped_services: list[DiscoveredSource] = []
+    all_mapped_service_ids: set[SourceServiceId] = set()
+    source_metrics: dict[SourceServiceId, SourceMetrics] = {}
     for mapping in current_mappings:
         service_id = mapping['source_service_id']
         all_mapped_service_ids.add(service_id)
         if service_id in all_services_map:
             service_details = all_services_map[service_id].copy()
-            service_details['priority'] = mapping['priority']
             raw_score = all_quality_scores.get(service_id, {}).get('uptime', None)
-            service_details['uptime'] = int(raw_score * 100) if raw_score is not None else None
+            source_metrics[service_id] = SourceMetrics({
+                "priority": mapping["priority"],
+                "uptime": PercentDisplay(int(raw_score * 100)) if raw_score is not None else None
+            })
             mapped_services.append(service_details)
-    calculate_channel_metrics(channel, current_mappings, all_quality_scores)
+    channel_metrics = calculate_channel_metrics(current_mappings, all_quality_scores)
     
-    unmapped_suggestions = []
-    if filter_query:
+    unmapped_suggestions: list[DiscoveredSource] = []
+    if filter_query and search_query:
         for service in all_services:
             if service['id'] not in all_mapped_service_ids and handler.filter_sources(search_query, service):
                 service_id = service['id']
                 raw_score = all_quality_scores.get(service_id, {}).get('uptime', None)
-                service['uptime'] = int(raw_score * 100) if raw_score is not None else None
+                source_metrics[service_id] = SourceMetrics({
+                    "priority": Priority(DEFAULT_PRIORITY),
+                    "uptime": PercentDisplay(int(raw_score * 100)) if raw_score is not None else None
+                })
                 unmapped_suggestions.append(service)
 
     page = request.args.get('page', 1, type=int)
@@ -485,7 +511,8 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     template_to_render = "_service_list_content.html" if is_htmx_service_list_request else "ui_logical_channel_form.html"
 
     return await render_template(
-        template_to_render, channel=channel, unmapped_suggestions_for_page=unmapped_suggestions_for_page,
+        template_to_render, channel=channel, channel_metrics=channel_metrics, source_metrics=source_metrics,
+        unmapped_suggestions_for_page=unmapped_suggestions_for_page,
         mapped_services=mapped_services, services_mapped_elsewhere=services_mapped_elsewhere,
         current_page=page, total_pages=total_pages, total_unmapped_items=total_unmapped_items,
         search_query=search_query, filter_query=filter_query,
@@ -503,7 +530,7 @@ async def ui_analyze_mappings(logical_channel_id: LogicalChannelId) -> Response:
         await flash(f"No mappings found for logical channel '{logical_channel_id}'.", "info")
         return Response("", 204)
 
-    channel_log = f"'{channel.get('display_name', 'Unknown Channel')}'{f' ({channel['channel_num']})' if 'channel_num' in channel else ''}"
+    channel_log = f"'{channel['display_name']}' ({channel['channel_num']})"
     await quality_monitor.analyze_mapped_services(logical_channel_id)
     await flash(f"Quality analysis completed for {len(services)} mapping(s) in {channel_log}", "success")
 
@@ -519,17 +546,17 @@ async def ui_remove_dead_mappings(logical_channel_id: LogicalChannelId) -> Respo
     if not channel:
         await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
         return Response("", 404)
-    discovered: list[dict[str, Any]] = []
+    discovered_mappings: list[SourcePriority] = []
     removed_count = 0
     for service in handler.get_mappings_for_logical_channel(logical_channel_id):
         if service['source_service_id'] in handler.discovered_source_services_data:
-            discovered.append(service)
+            discovered_mappings.append(service)
         else:
             await quality_monitor.remove_source_service(service['source_service_id'])
             removed_count += 1
-    await handler.update_mappings_for_logical_channel(logical_channel_id, discovered)
+    await handler.update_mappings_for_logical_channel(logical_channel_id, discovered_mappings)
 
-    channel_log = f"'{channel.get('display_name', 'Unknown Channel')}'{f' ({channel['channel_num']})' if 'channel_num' in channel else ''}"
+    channel_log = f"'{channel['display_name']}' ({channel['channel_num']})"
     if removed_count > 0:
         await flash(f"Removed {removed_count} dead mapping(s) from {channel_log}.", "success")
     else:
@@ -562,12 +589,12 @@ async def ui_providers_manage() -> str:
 @app.route("/ui/providers/add", methods=["GET", "POST"])
 async def ui_provider_add() -> Response | str:
     if request.method == "POST":
-        form_data = await request.form
-        alias = form_data.get("alias", "").strip()
-        url = form_data.get("url", "").strip()
+        form_data = cast(ImmutableMultiDict[str, str], await request.form)  # type: ignore
+        alias = ProviderAlias(form_data.get("alias", "").strip())
+        url = M3UURL(form_data.get("url", "").strip())
         max_streams_str = form_data.get("max_concurrent_streams", "1")
         try:
-            max_streams = int(max_streams_str)
+            max_streams = MaxStreams(int(max_streams_str))
             if await handler.add_provider(alias, url, max_streams):
                 await flash(f"Provider '{alias}' added successfully.", "success")
                 all_providers = sorted((await handler.get_provider_stream_status()).values(), key=lambda p: p['alias'])
@@ -594,14 +621,14 @@ async def ui_provider_edit(alias: ProviderAlias) -> Response | str:
             return await render_template("_provider_row.html", provider=provider)
         return await render_template("_provider_edit_form.html", provider=provider)
 
-    form_data = await request.form
-    url = form_data.get("url", "").strip()
+    form_data = cast(ImmutableMultiDict[str, str], await request.form)  # type: ignore
+    url = M3UURL(form_data.get("url", "").strip())
     max_streams_str = form_data.get("max_concurrent_streams", "1")
     try:
-        max_streams = int(max_streams_str)
+        max_streams = MaxStreams(int(max_streams_str))
         if await handler.update_provider(alias, url, max_streams):
             await flash(f"Provider '{alias}' updated successfully.", "success")
-            updated_provider_data = {**provider, "url": url, "max_concurrent_streams": max_streams}
+            updated_provider_data = ProviderStatus({**provider, "url": url, "max_concurrent_streams": max_streams})
             response = Response(await render_template("_provider_row.html", provider=updated_provider_data))
         else:
             raise ValueError(f"Failed to update provider '{alias}'.")
@@ -612,7 +639,7 @@ async def ui_provider_edit(alias: ProviderAlias) -> Response | str:
     return response
 
 @app.route("/ui/providers/delete/<string:alias>", methods=["DELETE"])
-async def ui_provider_delete(alias: str) -> tuple[str, int]:
+async def ui_provider_delete(alias: ProviderAlias) -> Response:
     try:
         if await handler.delete_provider(alias):
             await flash(f"Provider '{alias}' deleted successfully.", "success")
@@ -633,7 +660,7 @@ async def ui_provider_status() -> str:
     return await render_template("_provider_status_bar.html", active_streams=active_streams, max_total_streams=max_total_streams)
 
 @app.route("/ui/channels/populate-from-suggestion")
-async def ui_channel_populate_from_suggestion():
+async def ui_channel_populate_from_suggestion() -> str:
     """
     Called when a user clicks a channel suggestion.
     Returns multiple OOB fragments to:
@@ -703,10 +730,10 @@ async def ui_channel_suggest() -> str:
     return await render_template("_channel_suggestions.html", suggestions=suggestions)
 
 @app.route("/ui/logical-channels/delete/<string:logical_channel_id>", methods=["POST"])
-async def ui_logical_channel_delete(logical_channel_id: LogicalChannelId) -> Response:
+async def ui_logical_channel_delete(logical_channel_id: LogicalChannelId) -> Response | WerkzeugResponse:
     channel = handler.get_logical_channel_by_id(logical_channel_id)
     if channel:
-        channel_log = f"'{channel.get('display_name', 'Unknown Channel')}'{f' ({channel['channel_num']})' if 'channel_num' in channel else ''}"
+        channel_log = f"'{channel['display_name']}' ({channel['channel_num']})"
         if await handler.delete_logical_channel(logical_channel_id):
             await flash(f"Channel {channel_log} deleted.", "success")
             await handler.reload_handler_config()
@@ -730,7 +757,7 @@ async def ui_logs_modal() -> str:
     return await render_template("_logs_modal_content.html", log_lines=log_lines)
 
 @app.route("/ui/service-preview/<path:service_id>")
-async def ui_player_for_service(service_id: str) -> str:
+async def ui_player_for_service(service_id: SourceServiceId) -> str:
     source_service = handler.discovered_source_services_data.get(service_id)
     if not source_service:
         await flash(f"Error: source service ID not found.", "error")

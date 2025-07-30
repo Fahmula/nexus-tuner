@@ -54,8 +54,10 @@
         </thead>
         <tbody>
             {% for channel in channels %}
-            <tr class="{% if channel.discovered_mappings is defined and channel.enabled_mappings is defined and channel.enabled_mappings > 0 %}
-                       {% set discovered_percent = (channel.discovered_mappings / channel.enabled_mappings * 100)|round %}
+                {% set channel_metrics = all_channel_metrics.get(channel.logical_channel_id, {}) %}
+
+                <tr class="{% if channel_metrics.discovered_mappings is defined and channel_metrics.enabled_mappings is defined and channel_metrics.enabled_mappings > 0 %}
+                       {% set discovered_percent = (channel_metrics.discovered_mappings / channel_metrics.enabled_mappings * 100)|round %}
                        {% if discovered_percent <= 75 %}table-danger
                        {% elif discovered_percent < 100 %}table-warning{% endif %}
                        {% endif %}">
@@ -68,14 +70,14 @@
                     }}</td>
                 <td class="align-middle" data-sort-value="{{ channel.logical_channel_id }}"><small class="text-muted">{{
                         channel.logical_channel_id }}</small></td>
-                <td class="text-center align-middle" data-sort-value="{{ channel.enabled_mappings }}">
-                    {% if channel.discovered_mappings is defined and channel.enabled_mappings is defined and channel.enabled_mappings > 0 %}
-                    {% set discovered_percent = (channel.discovered_mappings / channel.enabled_mappings * 100)|round %}
+                <td class="text-center align-middle" data-sort-value="{{ channel_metrics.enabled_mappings }}">
+                    {% if channel_metrics.discovered_mappings is defined and channel_metrics.enabled_mappings is defined and channel_metrics.enabled_mappings > 0 %}
+                    {% set discovered_percent = (channel_metrics.discovered_mappings / channel_metrics.enabled_mappings * 100)|round %}
                     <span class="badge {% if discovered_percent == 100 %}bg-info
                                        {% elif discovered_percent > 75 %}bg-warning
                                        {% else %}bg-danger{% endif %}" data-bs-toggle="tooltip"
-                        title="Discovered {{ channel.discovered_mappings }} of {{ channel.enabled_mappings }} Enabled mappings">
-                        {{ channel.enabled_mappings }}
+                        title="Discovered {{ channel_metrics.discovered_mappings }} of {{ channel_metrics.enabled_mappings }} Enabled mappings">
+                        {{ channel_metrics.enabled_mappings }}
                     </span>
                     {% else %}
                     <span class="badge bg-secondary" data-bs-toggle="tooltip"
@@ -83,9 +85,9 @@
                     {% endif %}
                 </td>
 
-                <td class="text-center align-middle" data-sort-value="{{ channel.health_score|default(0) }}">
-                    {% if channel.health_score is not none %}
-                        {% set score = channel.health_score %}
+                <td class="text-center align-middle" data-sort-value="{{ channel_metrics.health_score|default(0) }}">
+                    {% if channel_metrics.health_score is not none %}
+                        {% set score = channel_metrics.health_score %}
                         {% if score >= 75 %}<span class="badge bg-success" data-bs-toggle="tooltip" title="Overall Channel Uptime (with failover)">{{ score }}%</span>
                         {% elif score >= 50 %}<span class="badge bg-warning" data-bs-toggle="tooltip" title="Overall Channel Uptime (with failover)">{{ score }}%</span>
                         {% elif score >= 25 %}<span class="badge bg-orange" data-bs-toggle="tooltip" title="Overall Channel Uptime (with failover)">{{ score }}%</span>
@@ -96,9 +98,9 @@
                     {% endif %}
                 </td>
 
-                <td class="text-center align-middle" data-sort-value="{{ channel.lowest_uptime|default(0) }}">
-                    {% if channel.lowest_uptime is not none %}
-                        {% set score = channel.lowest_uptime %}
+                <td class="text-center align-middle" data-sort-value="{{ channel_metrics.lowest_uptime|default(0) }}">
+                    {% if channel_metrics.lowest_uptime is not none %}
+                        {% set score = channel_metrics.lowest_uptime %}
                         {% if score >= 75 %}<span class="badge bg-success" data-bs-toggle="tooltip" title="Uptime of the least reliable mapped service">{{ score }}%</span>
                         {% elif score >= 50 %}<span class="badge bg-warning" data-bs-toggle="tooltip" title="Uptime of the least reliable mapped service">{{ score }}%</span>
                         {% elif score >= 25 %}<span class="badge bg-orange" data-bs-toggle="tooltip" title="Uptime of the least reliable mapped service">{{ score }}%</span>
@@ -129,7 +131,7 @@
                         </button>
                     </form>
                 </td>
-            </tr>
+                </tr>
             {% endfor %}
         </tbody>
     </table>
