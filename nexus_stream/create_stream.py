@@ -191,7 +191,7 @@ class CreateStream:
             return
 
         status = await self.handler.get_provider_stream_status()
-        max_streams = status[provider_alias]["max"]
+        max_streams = status[provider_alias]["max_concurrent_streams"]
         
         worker_tasks = [
             asyncio.create_task(self._provider_worker_task(provider_alias, provider_slots, provider_sources))

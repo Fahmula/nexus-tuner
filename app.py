@@ -32,8 +32,8 @@ from nexus_stream.session_monitor import GhostSessionMonitor
 from nexus_stream.stream import StreamManager
 from nexus_stream.scheduler import Scheduler
 from nexus_stream.utils import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL,
-                                DEFAULT_PRIORITY, NEXUS_STREAM_PORT, NEXUS_STREAM_VERSION,
-                                Label, LogicalChannelId, LogicalChannelName, VideoType, sort_sources)
+                                DEFAULT_PRIORITY, NEXUS_STREAM_PORT, NEXUS_STREAM_VERSION, DiscoveredSource,
+                                Label, LogicalChannelId, LogicalChannelName, ProviderAlias, VideoType, sort_sources)
 
 # --- Constants ---
 PLAYLIST_POLL_INTERVAL = 0.2  # Seconds to wait between checking for a new playlist
@@ -388,6 +388,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
         is_update = bool(submitted_id)
 
         lc_data = {
+            "logical_channel_id": submitted_id if is_update else None,
             "display_name": form_data.get("display_name", "").strip(),
             "channel_num": form_data.get("channel_num", "").strip(),
             "group_title": form_data.get("group_title", "Uncategorized").strip(),
@@ -405,13 +406,13 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
             try:
                 mappings_to_save.append({
                     'source_service_id': service_id_str,
-                    'priority': int(form_data.get(f"priority_{service_id_str}", '5'))
+                    'priority': int(form_data.get(f"priority_{service_id_str}", DEFAULT_PRIORITY))
                 })
             except (ValueError, TypeError):
                 await flash(f"Skipping a mapping with invalid priority for service '{service_id_str}'.", "warning")
 
         if is_update:
-            await handler.update_logical_channel(submitted_id, lc_data)
+            await handler.update_logical_channel(lc_data)
             await handler.update_mappings_for_logical_channel(submitted_id, mappings_to_save)
             await flash(f"Channel {channel_log} updated.", "success")
             await handler.reload_handler_config()
@@ -440,7 +441,8 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     search_query = request.args.get('search_query')
     if search_query is None and not is_htmx_service_list_request and logical_channel_id:
         predefined_channel = handler.find_matching_predefined_channel(channel['display_name'], channel['channel_num'])
-        search_query = " OR ".join(predefined_channel['names']) if predefined_channel.get('names') else predefined_channel.get('title', channel.get('display_name'))
+        if predefined_channel:
+            search_query = " OR ".join(predefined_channel['names']) if predefined_channel.get('names') else predefined_channel.get('title', channel.get('display_name'))
 
     filter_query = search_query.strip().lower() if search_query else None
     all_services = handler.get_all_discovered_source_services_for_ui()
@@ -554,7 +556,7 @@ async def ui_source_services_list() -> str:
 
 @app.route("/ui/providers", methods=["GET"])
 async def ui_providers_manage() -> str:
-    all_providers = await handler.get_all_providers_for_ui()
+    all_providers = sorted((await handler.get_provider_stream_status()).values(), key=lambda p: p['alias'])
     return await render_template("ui_providers.html", providers=all_providers)
 
 @app.route("/ui/providers/add", methods=["GET", "POST"])
@@ -568,7 +570,7 @@ async def ui_provider_add() -> Response | str:
             max_streams = int(max_streams_str)
             if await handler.add_provider(alias, url, max_streams):
                 await flash(f"Provider '{alias}' added successfully.", "success")
-                all_providers = await handler.get_all_providers_for_ui()
+                all_providers = sorted((await handler.get_provider_stream_status()).values(), key=lambda p: p['alias'])
                 table_body_html = await render_template("_providers_table_body.html", providers=all_providers)
                 form_removal_html = '<div id="add-provider-form-wrapper" hx-swap-oob="true"></div>'
                 response = Response(table_body_html + form_removal_html)
@@ -582,33 +584,32 @@ async def ui_provider_add() -> Response | str:
     return await render_template("_provider_add_form.html")
 
 @app.route("/ui/providers/edit/<string:alias>", methods=["GET", "PUT"])
-async def ui_provider_edit(alias: str) -> str:
-    providers = await handler.get_all_providers_for_ui()
-    provider = next((p for p in providers if p['alias'] == alias), None)
-    if not provider: return ""
+async def ui_provider_edit(alias: ProviderAlias) -> Response | str:
+    provider = (await handler.get_provider_stream_status()).get(alias)
+    if not provider:
+        return ""
 
     if request.method == "GET":
         if request.args.get('cancel') == 'true':
             return await render_template("_provider_row.html", provider=provider)
         return await render_template("_provider_edit_form.html", provider=provider)
-    
-    elif request.method == "PUT":
-        form_data = await request.form
-        url = form_data.get("url", "").strip()
-        max_streams_str = form_data.get("max_concurrent_streams", "1")
-        try:
-            max_streams = int(max_streams_str)
-            if await handler.update_provider(alias, url, max_streams):
-                await flash(f"Provider '{alias}' updated successfully.", "success")
-                updated_provider_data = {**provider, "url": url, "max_concurrent_streams": max_streams}
-                response = Response(await render_template("_provider_row.html", provider=updated_provider_data))
-            else:
-                raise ValueError(f"Failed to update provider '{alias}'.")
-        except ValueError as e:
-            await flash(str(e), "error")
-            response = Response(await render_template("_provider_edit_form.html", provider={**provider, "url": url, "max_concurrent_streams": max_streams_str}))
-        response.headers["HX-Trigger"] = "flashMessagesUpdated"
-        return response
+
+    form_data = await request.form
+    url = form_data.get("url", "").strip()
+    max_streams_str = form_data.get("max_concurrent_streams", "1")
+    try:
+        max_streams = int(max_streams_str)
+        if await handler.update_provider(alias, url, max_streams):
+            await flash(f"Provider '{alias}' updated successfully.", "success")
+            updated_provider_data = {**provider, "url": url, "max_concurrent_streams": max_streams}
+            response = Response(await render_template("_provider_row.html", provider=updated_provider_data))
+        else:
+            raise ValueError(f"Failed to update provider '{alias}'.")
+    except ValueError as e:
+        await flash(str(e), "error")
+        response = Response(await render_template("_provider_edit_form.html", provider={**provider, "url": url, "max_concurrent_streams": max_streams_str}))
+    response.headers["HX-Trigger"] = "flashMessagesUpdated"
+    return response
 
 @app.route("/ui/providers/delete/<string:alias>", methods=["DELETE"])
 async def ui_provider_delete(alias: str) -> tuple[str, int]:
@@ -626,8 +627,10 @@ async def ui_provider_delete(alias: str) -> tuple[str, int]:
 
 @app.route("/ui/provider-status")
 async def ui_provider_status() -> str:
-    active, max_total = await handler.get_total_stream_status_for_ui()
-    return await render_template("_provider_status_bar.html", active_streams=active, max_total_streams=max_total)
+    statues = await handler.get_provider_stream_status()
+    active_streams = sum(status['active_streams'] for status in statues.values())
+    max_total_streams = sum(status['max_concurrent_streams'] for status in statues.values())
+    return await render_template("_provider_status_bar.html", active_streams=active_streams, max_total_streams=max_total_streams)
 
 @app.route("/ui/channels/populate-from-suggestion")
 async def ui_channel_populate_from_suggestion():
@@ -651,7 +654,7 @@ async def ui_channel_populate_from_suggestion():
     filter_query = prefilled_data['display_name'].strip().lower()
     all_services = handler.get_all_discovered_source_services_for_ui()
     services_mapped_elsewhere: set[str] = {mapping['source_service_id'] for mappings in handler.channel_mappings_data.values() for mapping in mappings}
-    unmapped_suggestions: list[dict[str, Any]] = []
+    unmapped_suggestions: list[DiscoveredSource] = []
 
     search_query = prefilled_data['display_name']
     for channel_list in handler.channel_list_data.values():
@@ -742,7 +745,7 @@ async def ui_player_for_service(service_id: str) -> str:
 @app.route('/discover.json')
 async def hdhomerun_discover() -> Response:
     """Emulates HDHomeRun device discovery API endpoint."""
-    _, max_streams = await handler.get_total_stream_status_for_ui()
+    
     response_dict: dict[str, str | int] = {
         "FriendlyName": "NexusStream",
         "DeviceAuth": "nexus-stream",
@@ -753,7 +756,7 @@ async def hdhomerun_discover() -> Response:
         "Manufacturer": "nexus-stream",
         "BaseURL": f"{config.nexus_url}",
         "LineupURL": f"{config.nexus_url}/lineup.json",
-        "TunerCount": max_streams
+        "TunerCount": sum(p["max_concurrent_streams"] for p in (await handler.get_provider_stream_status()).values())
     }
     return Response(json.dumps(response_dict), mimetype="application/json")
 

@@ -380,10 +380,7 @@ class Config:
 
     async def get_jobs_config(self) -> JobsData:
         """Loads the jobs configuration from jobs.json asynchronously."""
-        return await self._load_json_file(self.jobs_path, lambda: JobsData({"backup": {"last_run": None},
-                                                                           "cleanup": {"last_run": None},
-                                                                           "discover": {"last_run": None},
-                                                                           "quality": {"last_run": None}}))
+        return await self._load_json_file(self.jobs_path, lambda: JobsData({}))
 
     async def save_jobs_config(self, data: JobsData) -> bool:
         """Saves the jobs configuration to jobs.json asynchronously."""

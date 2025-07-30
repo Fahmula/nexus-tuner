@@ -4,7 +4,7 @@ import os
 import sys
 from typing import Any, Final, List
 
-from nexus_stream.utils import M3UURL, MaxStreams, ProviderAlias
+from nexus_stream.utils import M3UURL, ActiveStreams, AvailableStreams, MaxStreams, ProviderAlias
 
 GRACE_PERIOD: Final[int] = 3
 
@@ -62,17 +62,17 @@ class ProviderSlots:
     def get_alias(self) -> ProviderAlias:
         return self._alias
 
-    def get_m3u_url(self) -> str:
+    def get_m3u_url(self) -> M3UURL:
         return self._m3u_url
 
-    def get_total_slots(self) -> int:
+    def get_total_slots(self) -> MaxStreams:
         return self._total_slots
 
-    def get_available_slots(self) -> int:
-        return self._semaphore._value
+    def get_available_slots(self) -> AvailableStreams:
+        return AvailableStreams(self._semaphore._value)
 
-    def get_active_slots(self) -> int:
-        return self._total_slots - self._semaphore._value
+    def get_active_slots(self) -> ActiveStreams:
+        return ActiveStreams(self._total_slots - self._semaphore._value)
 
     async def acquire_user_slot(self) -> str:
         """

@@ -6,7 +6,7 @@ from typing import Coroutine, Final, NoReturn, Any, Self, cast
 from nexus_stream.config import Config
 from nexus_stream.handler import ChannelHandler
 from nexus_stream.utils import (NEXUS_STREAM_USER_AGENT, Bitrate, BitrateScore, DateTimeISO, Framerate, FramerateScore, Height, Label, LogicalChannelId,
-                                Percent, ProviderAlias, QualityScores, QualityScoresMutable, ResolutionScore, ServiceQualityCacheData,
+                                Percent, ProbeInfo, ProbeSuccess, ProviderAlias, QualityInfo, QualityInfoMutable, QualityScores, QualityScoresMutable, ResolutionScore, ServiceQualityCacheData,
                                 ServiceQualityCacheDataMutable, SourceServiceId, StreamURL, TotalScore, UptimeScore, Width)
 
 # --- Constants ---
@@ -61,7 +61,7 @@ class QualityMonitor:
                 del cast(ServiceQualityCacheDataMutable, quality_cache)[service_id]
                 await self.config.save_service_quality_cache(quality_cache)
 
-    async def _get_stream_info(self, service_id: SourceServiceId, stream_url: StreamURL) -> dict[str, Any] | None:
+    async def _get_stream_info(self, service_id: SourceServiceId, stream_url: StreamURL) -> ProbeSuccess | None:
         """
         Extracts stream information using ffprobe, ensuring the subprocess is
         terminated on timeout or cancellation.
@@ -90,18 +90,18 @@ class QualityMonitor:
 
             if proc.returncode != 0:
                 self.config.warn(Label.QUALITY, f"ffprobe for {service_id} failed with code {proc.returncode}: {stderr.decode()}".replace(stream_url, "{{stream_url}}").strip())
-                return None
+                return
             info = json.loads(stdout)
 
         except asyncio.TimeoutError:
             self.config.warn(Label.QUALITY, f"ffprobe for {service_id} timed out.")
-            return None
+            return
         except asyncio.CancelledError:
             self.config.warn(Label.QUALITY, f"ffprobe task for {service_id} was cancelled.")
             raise
         except Exception as e:
             self.config.error(Label.QUALITY, f"Failed to parse ffprobe output for {service_id}: {e}")
-            return None
+            return
         finally:
             if proc and proc.returncode is None:
                 try:
@@ -111,25 +111,25 @@ class QualityMonitor:
                     pass
 
         stream = info.get('streams', [{}])[0]
-        width = int(stream.get('width', 0))
-        height = int(stream.get('height', 0))
+        width: Width = Width(int(stream.get('width', 0)))
+        height: Height = Height(int(stream.get('height', 0)))
         fr_str = stream.get('r_frame_rate', '0/1')
         nums = fr_str.split('/')
-        frame_rate = float(nums[0]) / float(nums[1]) if len(nums) == 2 and nums[1] != '0' else float(nums[0])
+        framerate: Framerate = Framerate(float(nums[0]) / float(nums[1]) if len(nums) == 2 and nums[1] != '0' else float(nums[0]))
 
         packets = info.get('packets', [])
-        if not packets: return None
+        if not packets: return
 
         sizes, times = zip(*((float(pkt['size']), float(pkt['pts_time'])) for pkt in packets))
         duration_s = max(times) - min(times)
-        if duration_s <= 0: return None
+        if duration_s <= 0: return
         
         total_bytes = sum(sizes)
-        bitrate = (total_bytes * 8) / duration_s
+        bitrate: Bitrate = Bitrate((total_bytes * 8) / duration_s)
 
-        return {"status": "online", "width": width, "height": height, "bitrate": bitrate, "framerate": frame_rate}
+        return ProbeSuccess({"status": "online", "width": width, "height": height, "bitrate": bitrate, "framerate": framerate})
 
-    async def _run_single_probe(self, service_id: SourceServiceId, stream_url: StreamURL, provider_alias: ProviderAlias) -> tuple[str, dict[str, str | float | int]]:
+    async def _run_single_probe(self, service_id: SourceServiceId, stream_url: StreamURL, provider_alias: ProviderAlias) -> tuple[SourceServiceId, ProbeInfo]:
         """
         Probes a single stream, persistently trying to acquire a slot, and ensures
         all resources are cleaned up upon completion, failure, or cancellation.
@@ -218,7 +218,7 @@ class QualityMonitor:
             valid_mappings.sort(key=lambda x: x[2])
 
         for logical_channel_id, service_ids, _ in valid_mappings:
-            tasks: list[Coroutine[Any, Any, tuple[str, dict[str, str | float | int]]]] = []
+            tasks: list[Coroutine[Any, Any, tuple[SourceServiceId, ProbeInfo]]] = []
             for service_id in service_ids:                
                 service_details = self.handler.discovered_source_services_data.get(service_id)
                 if not service_details:
@@ -236,7 +236,7 @@ class QualityMonitor:
                 continue
 
             raw_results = await asyncio.gather(*tasks, return_exceptions=True)
-            stream_infos: list[tuple[str, dict[str, str | float | int]]] = []
+            stream_infos: list[tuple[SourceServiceId, ProbeInfo]] = []
             for raw_result in raw_results:
                 if isinstance(raw_result, BaseException):
                     if not isinstance(raw_result, asyncio.CancelledError) and not isinstance(raw_result, Exception):
@@ -245,34 +245,37 @@ class QualityMonitor:
                 stream_infos.append(raw_result)
 
             async with self._mutex:
-                quality_cache = await self.config.get_service_quality_cache()
-                modified_cache: dict[str, dict[str, list[Any]]] = {}
+                quality_cache = cast(ServiceQualityCacheDataMutable, await self.config.get_service_quality_cache())
+                modified_cache: ServiceQualityCacheDataMutable = ServiceQualityCacheDataMutable({})
                 for service_id, result in stream_infos:
                     if service_id not in quality_cache:
-                        quality_cache[service_id] = {
-                            "updated_at": datetime.now().isoformat(), "statuses": [], "widths": [],
+                        quality_cache[service_id] = cast(QualityInfo, QualityInfoMutable({
+                            "updated_at": DateTimeISO(datetime.now().isoformat()), "statuses": [], "widths": [],
                             "heights": [], "bitrates": [], "framerates": []
-                        }
-                    service_entry = quality_cache[service_id]
+                        }))
+                    service_entry = cast(QualityInfoMutable, quality_cache[service_id])
 
-                    service_entry["updated_at"] = datetime.now().isoformat()
-                    if result['status'] == 'online':
+                    service_entry["updated_at"] = DateTimeISO(datetime.now().isoformat())
+                    if result["status"] == "online":
                         service_entry["statuses"].append("online")
-                        for key in ["widths", "heights", "bitrates", "framerates"]:
-                            if key not in service_entry:
-                                service_entry[key] = []
-                            service_entry[key].append(result[key[:-1]])
+                        service_entry["widths"].append(result["width"])
+                        service_entry["heights"].append(result["height"])
+                        service_entry["bitrates"].append(result["bitrate"])
+                        service_entry["framerates"].append(result["framerate"])
                     else:
                         self.config.warn(Label.QUALITY, f"Logical Channel ID {logical_channel_id} service {service_id} is offline: {result.get('reason', 'Unknown')}")
                         service_entry["statuses"].append("offline")
 
-                    for key in ["statuses", "widths", "heights", "bitrates", "framerates"]:
-                        if len(service_entry[key]) > MAX_HISTORY_PER_SERVICE:
-                            service_entry[key] = service_entry[key][-MAX_HISTORY_PER_SERVICE:]
-                    modified_cache[service_id] = service_entry
+                    if len(service_entry["statuses"]) > MAX_HISTORY_PER_SERVICE:
+                        service_entry["statuses"] = service_entry["statuses"][-MAX_HISTORY_PER_SERVICE:]
+                        service_entry["widths"] = service_entry["widths"][-MAX_HISTORY_PER_SERVICE:]
+                        service_entry["heights"] = service_entry["heights"][-MAX_HISTORY_PER_SERVICE:]
+                        service_entry["bitrates"] = service_entry["bitrates"][-MAX_HISTORY_PER_SERVICE:]
+                        service_entry["framerates"] = service_entry["framerates"][-MAX_HISTORY_PER_SERVICE:]
+                    modified_cache[service_id] = cast(QualityInfo, service_entry)
 
-                await self.config.save_service_quality_cache(quality_cache)
-                self._build_quality_scores(modified_cache)
+                await self.config.save_service_quality_cache(cast(ServiceQualityCacheData, quality_cache))
+                self._build_quality_scores(cast(ServiceQualityCacheData, modified_cache))
         if input_lc_id:
             self.config.info(Label.QUALITY, f"Completed analysis for {len(valid_mappings[0][1])} mappings(s) in Logical Channel ID {input_lc_id}.")
 

@@ -1,11 +1,11 @@
 import asyncio
 import aiohttp
-from typing import Final, NoReturn, Self, Set, Any
+from typing import Coroutine, Final, NoReturn, Self, Set, Any
 
 from nexus_stream.config import Config
 from nexus_stream.handler import ChannelHandler
 from nexus_stream.stream import StreamManager
-from nexus_stream.utils import Label, LogicalChannelId, TVGDisplayName, VideoKey
+from nexus_stream.utils import Label, LogicalChannelId, LogicalChannelName, VideoKey
 
 # --- Constants ---
 SESSION_MONITOR_STARTUP_DELAY: Final[int] = 15
@@ -35,7 +35,7 @@ class GhostSessionMonitor:
         self.handler: ChannelHandler = handler
         self.stream_manager: StreamManager = stream_manager
         
-        self.display_name_to_lc_id_map: dict[TVGDisplayName, LogicalChannelId] = {}
+        self.display_name_to_lc_id_map: dict[LogicalChannelName, LogicalChannelId] = {}
         self.ghost_monitor_task: asyncio.Task[NoReturn]
 
     @classmethod
@@ -55,11 +55,8 @@ class GhostSessionMonitor:
         This is a synchronous, CPU-bound operation on in-memory data.
         """
         self.config.debug(Label.SESSION, "Building channel name to stream ID map...")
-        name_map = {
-            channel_data.get("display_name"): lc_id
-            for lc_id, channel_data in self.handler.client_facing_channels.items()
-            if channel_data.get("display_name")
-        }
+        name_map = {channel_data["display_name"]: lc_id
+                    for lc_id, channel_data in self.handler.client_facing_channels.items()}
         self.display_name_to_lc_id_map = name_map
         self.config.debug(Label.SESSION, f"Built map with {len(self.display_name_to_lc_id_map)} entries.")
 
@@ -118,7 +115,7 @@ class GhostSessionMonitor:
             self.config.error(Label.SESSION, f"Could not get active sessions from media servers: {e}")
             return
 
-        ghost_video_keys: Set[tuple[VideoKey, str]] = set()
+        ghost_video_keys: Set[tuple[VideoKey, LogicalChannelName]] = set()
         async with self.stream_manager.stream_process_lock:
             for video_key, data in self.stream_manager.ffmpeg_processes.items():
                 if data['is_preview']:
@@ -132,7 +129,7 @@ class GhostSessionMonitor:
 
         self.config.warn(Label.SESSION, f"Found {len(ghost_video_keys)} ghost session(s) to terminate: {', '.join(g[0] for g in ghost_video_keys)}")
         
-        stop_tasks: list[asyncio.Task[None]] = []
+        stop_tasks: list[Coroutine[Any, Any, None]] = []
         for video_key, logical_channel_name in ghost_video_keys:
             self.config.info(Label.SESSION, f"Terminating ghost stream for '{logical_channel_name}' [{video_key}]...")
             stop_tasks.append(self.stream_manager.stop_ffmpeg_process(video_key, logical_channel_name))

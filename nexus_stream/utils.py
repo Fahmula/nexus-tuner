@@ -11,6 +11,7 @@ from typing import Final, Literal, Mapping, NewType, ReadOnly, TypedDict
 import aiofiles
 
 # --- Constants ---
+
 NEXUS_STREAM_VERSION: Final[str] = (Path(__file__).parent.parent / "VERSION").read_text().strip()
 NEXUS_STREAM_USER_AGENT: Final[str] = f"NexusStream/{NEXUS_STREAM_VERSION}"
 NEXUS_STREAM_PORT: Final[int] = int(os.getenv("NEXUS_PORT", 4040))
@@ -21,12 +22,26 @@ MPEGTS_PACKET_SIZE: Final[int] = 188              # Size of a single MPEG-TS pac
 DEFAULT_PRIORITY: Final[int] = 5                  # Default priority for sources
 FFMPEG_TERMINATE_TIMEOUT: Final[int] = 5          # Timeout for terminating FFmpeg processes
 
+
+# --- Types ---
+"""The goal is for every long running value to be uniquely typed so that they cannot be used incorrectly.
+For example, LogicalChannelId cannot be used instead of SourceServiceId as it will fail type checking.
+Futher more these types are then used in TypedDicts to model the data structures used in the application.
+All the TypedDicts have all fields marked as ReadOnly and uses Mapping and Tuple instead of dict and list
+to signal immutability, the underlying data structures are likely still dict or lists. This ensures that 99%
+of the application sees these data as immutable as they should, only in the select few areas were we perform
+CRUD operations do we use the Mutable versions of these types by using typing.cast(). This design allows the
+the most dangerous operations to be clearly marked and the rest of the code to be type safe.
+"""
+
 DateTimeISO = NewType("DateTimeISO", str)
 Percent = NewType("Percent", float)
 
 ProviderAlias = NewType("ProviderAlias", str)
 M3UURL = NewType("M3UURL", str)
 MaxStreams = NewType("MaxStreams", int)
+ActiveStreams = NewType("ActiveStreams", int)
+AvailableStreams = NewType("AvailableStreams", int)
 MainM3UPlaylist = NewType("MainM3UPlaylist", str)
 
 LogicalChannelId = NewType("LogicalChannelId", str)
@@ -54,7 +69,7 @@ TotalScore = NewType("TotalScore", float)
 
 TVGName = NewType("TVGName", str)
 TVGDisplayName = NewType("TVGDisplayName", str)
-GroupTitle = NewType("GroupTitle", str)
+TVGGroupTitle = NewType("TVGGroupTitle", str)
 TVGId = NewType("TVGId", str)
 TVGLogo = NewType("TVGLogo", str)
 
@@ -83,48 +98,64 @@ class Label(StrEnum):
     QUALITY = "quality"
 
 
+class ProviderStatus(TypedDict):
+    alias: ReadOnly[ProviderAlias]
+    url: ReadOnly[M3UURL]
+    active_streams: ReadOnly[ActiveStreams]
+    max_concurrent_streams: ReadOnly[MaxStreams]
+ProviderStatuses = NewType("ProviderStatuses", Mapping[ProviderAlias, ProviderStatus])
+
 class ProviderInfo(TypedDict):
     url: ReadOnly[M3UURL]
     max_concurrent_streams: ReadOnly[MaxStreams]
     updated_at: ReadOnly[DateTimeISO | None]
-ProvidersData = NewType("ProvidersData", Mapping[ProviderAlias, ProviderInfo])
-ProvidersDataMutable = NewType("ProvidersDataMutable", dict[ProviderAlias, ProviderInfo])
 class ProviderInfoMutable(TypedDict):
     url: M3UURL
     max_concurrent_streams: MaxStreams
     updated_at: DateTimeISO | None
+ProvidersData = NewType("ProvidersData", Mapping[ProviderAlias, ProviderInfo])
+ProvidersDataMutable = NewType("ProvidersDataMutable", dict[ProviderAlias, ProviderInfo])
 ProvidersSourceData = NewType("ProvidersSourceData", Mapping[Literal["source_m3u_providers"], ProvidersData])
 
-class DiscoveredSource(TypedDict):
-    id: ReadOnly[SourceServiceId]
-    provider_alias: ReadOnly[ProviderAlias]
+class M3USource(TypedDict):
     original_tvg_name: ReadOnly[TVGName]
     original_display_name_extinf: ReadOnly[TVGDisplayName]
-    original_group_title: ReadOnly[GroupTitle]
+    original_group_title: ReadOnly[TVGGroupTitle]
     original_tvg_id: ReadOnly[TVGId]
     original_tvg_logo: ReadOnly[TVGLogo]
     actual_stream_url: ReadOnly[StreamURL]
+
+class DiscoveredSource(M3USource):
+    id: ReadOnly[SourceServiceId]
+    provider_alias: ReadOnly[ProviderAlias]
 DiscoveredSourcesData = NewType("DiscoveredSourcesData", Mapping[SourceServiceId, DiscoveredSource])
+DiscoveredSourcesDataMutable = NewType("DiscoveredSourcesDataMutable", dict[SourceServiceId, DiscoveredSource])
 
 class LogicalChannelInfo(TypedDict):
+    logical_channel_id: ReadOnly[LogicalChannelId]
     display_name: ReadOnly[LogicalChannelName]
     channel_num: ReadOnly[ChannelNum]
-    group_title: ReadOnly[GroupTitle]
+    group_title: ReadOnly[TVGGroupTitle]
     tvg_id: ReadOnly[TVGId]
     tvg_logo: ReadOnly[TVGLogo]
-    logical_channel_id: ReadOnly[LogicalChannelId]
 LogicalChannelsData = NewType("LogicalChannelsData", tuple[LogicalChannelInfo, ...])
 
 class SourcePriority(TypedDict):
     source_service_id: ReadOnly[SourceServiceId]
     priority: ReadOnly[Priority]
 ChannelMappingsData = NewType("ChannelMappingsData", Mapping[LogicalChannelId, tuple[SourcePriority, ...]])
+ChannelMappingsDataMutable = NewType("ChannelMappingsDataMutable", dict[LogicalChannelId, tuple[SourcePriority, ...]])
 
 class SourceInfo(TypedDict):
     source_service_id: ReadOnly[SourceServiceId]
     priority: ReadOnly[Priority]
     provider_alias: ReadOnly[ProviderAlias]
     actual_stream_url: ReadOnly[StreamURL]
+
+class ChannelInfo(LogicalChannelInfo):
+    sources: ReadOnly[list[SourceInfo]]
+ChannelInfos = NewType("ChannelInfos", Mapping[LogicalChannelId, ChannelInfo])
+ChannelInfosMutable = NewType("ChannelInfosMutable", dict[LogicalChannelId, ChannelInfo])
 
 class QualityInfo(TypedDict):
     statuses: ReadOnly[tuple[Literal["online", "offline"], ...]]
@@ -133,6 +164,13 @@ class QualityInfo(TypedDict):
     bitrates: ReadOnly[tuple[Bitrate, ...]]
     framerates: ReadOnly[tuple[Framerate, ...]]
     updated_at: ReadOnly[DateTimeISO]
+class QualityInfoMutable(TypedDict):
+    statuses: list[Literal["online", "offline"]]
+    widths: list[Width]
+    heights: list[Height]
+    bitrates: list[Bitrate]
+    framerates: list[Framerate]
+    updated_at: DateTimeISO
 ServiceQualityCacheData = NewType("ServiceQualityCacheData", Mapping[SourceServiceId, QualityInfo])
 ServiceQualityCacheDataMutable = NewType("ServiceQualityCacheDataMutable", dict[SourceServiceId, QualityInfo])
 
@@ -150,11 +188,14 @@ class QualityScore(TypedDict):
 QualityScores = NewType("QualityScores", Mapping[SourceServiceId, QualityScore])
 QualityScoresMutable = NewType("QualityScoresMutable", dict[SourceServiceId, QualityScore])
 
-class ChannelInfo(TypedDict):
+class ChannelListInfo(TypedDict):
     num: ReadOnly[ChannelNum]
     title: ReadOnly[ChannelTitle]
     names: ReadOnly[tuple[ChannelAliases, ...]]
-ChannelListData = NewType("ChannelListData", Mapping[GroupTitle, list[ChannelInfo]])
+ChannelListData = NewType("ChannelListData", Mapping[TVGGroupTitle, list[ChannelListInfo]])
+
+class ChannelListGroup(ChannelListInfo):
+    group: ReadOnly[TVGGroupTitle]
 
 class JobInfo(TypedDict):
     last_run: ReadOnly[DateTimeISO | None]
@@ -196,6 +237,20 @@ class FFmpegProcessInfoMutable(TypedDict):
     last_access: datetime
     is_mpegts_active: bool
 FFmpegProcessInfosMutable = NewType("FFmpegProcessInfosMutable", dict[VideoKey, FFmpegProcessInfo])
+
+class ProbeSuccess(TypedDict):
+    status: ReadOnly[Literal["online"]]
+    width: ReadOnly[Width]
+    height: ReadOnly[Height]
+    bitrate: ReadOnly[Bitrate]
+    framerate: ReadOnly[Framerate]
+class ProbeFailure(TypedDict):
+    status: ReadOnly[Literal["offline"]]
+    reason: ReadOnly[str]
+type ProbeInfo = ProbeSuccess | ProbeFailure
+
+
+# --- Functions ---
 
 def create_stream_key(video_type: VideoType, logical_channel_id: LogicalChannelId) -> StreamKey:
     """Generates a unique key for the stream."""
