@@ -2,38 +2,35 @@ import asyncio
 import threading
 import os
 import sys
-from typing import Any, Final, List
+from typing import Final, Literal
 
-from nexus_stream.utils import M3UURL, ActiveStreams, AvailableStreams, MaxStreams, ProviderAlias
+from nexus_stream.utils import M3UURL, ActiveStreams, AvailableStreams, MaxStreams, ProviderAlias, run_bg
 
-GRACE_PERIOD: Final[int] = 3
+GRACE_PERIOD: Final[float] = 0.01
 
 class CountingSemaphore(asyncio.Semaphore):
     def __init__(self, value: int, total_slots: MaxStreams) -> None:
         super().__init__(value)
         self._total_slots: MaxStreams = total_slots
 
-    async def acquire(self) -> str:  # type: ignore[reportIncompatibleMethodOverride]
+    async def acquire(self) -> Literal[True]:
         """Acquires the semaphore and returns the new number of active slots."""
         await super().acquire()
-        active_slots = self._total_slots - self._value
-        if active_slots > self._total_slots:
+        if self._value < 0:
             if threading.current_thread() is threading.main_thread():
                 sys.exit(7)
             else:
                 os._exit(7)
-        return f"{active_slots}/{self._total_slots}"
+        return True
 
-    def release(self) -> str:  # type: ignore[reportIncompatibleMethodOverride]
+    def release(self) -> None:
         """Releases the semaphore and returns the new number of active slots."""
         super().release()
-        active_slots = self._total_slots - self._value
-        if active_slots < 0:
+        if self._value > self._total_slots:
             if threading.current_thread() is threading.main_thread():
                 sys.exit(13)
             else:
                 os._exit(13)
-        return f"{active_slots}/{self._total_slots}"
 
 
 class ProviderSlots:
@@ -41,7 +38,7 @@ class ProviderSlots:
     An asyncio-native class to represent a provider with its associated slots.
     Uses a custom CountingSemaphore to enable accurate concurrent logging.
     """
-    __slots__ = ('_alias', '_m3u_url', '_total_slots', '_active_background_tasks', '_lock', '_semaphore')
+    __slots__ = ('_alias', '_m3u_url', '_total_slots', '_lock', '_semaphore')
 
     def __init__(self, alias: ProviderAlias, m3u_url: M3UURL, total_slots: MaxStreams) -> None:
         if total_slots < 1:
@@ -49,15 +46,8 @@ class ProviderSlots:
         self._alias: ProviderAlias = alias
         self._m3u_url: M3UURL = m3u_url
         self._total_slots: MaxStreams = total_slots
-        self._active_background_tasks: List[asyncio.Task[Any]] = []
         self._lock: asyncio.Lock = asyncio.Lock()
         self._semaphore: CountingSemaphore = CountingSemaphore(total_slots, total_slots)
-
-    def __repr__(self) -> str:
-        return (
-            f"Provider(alias={self._alias}, total_slots={self._total_slots}, "
-            f"active_slots={self.get_active_slots()})"
-        )
 
     def get_alias(self) -> ProviderAlias:
         return self._alias
@@ -68,58 +58,35 @@ class ProviderSlots:
     def get_total_slots(self) -> MaxStreams:
         return self._total_slots
 
-    def get_available_slots(self) -> AvailableStreams:
-        return AvailableStreams(self._semaphore._value)
-
-    def get_active_slots(self) -> ActiveStreams:
-        return ActiveStreams(self._total_slots - self._semaphore._value)
-
-    async def acquire_user_slot(self) -> str:
-        """
-        Acquires a user slot, preempting a background task if necessary.
-        """
+    async def get_available_slots(self) -> AvailableStreams:
         async with self._lock:
-            try:
-                return await asyncio.wait_for(self._semaphore.acquire(), timeout=0.01)
-            except asyncio.TimeoutError:
-                pass
+            return AvailableStreams(self._semaphore._value)
 
-            task_to_preempt = None
-            if self._active_background_tasks:
-                task_to_preempt = self._active_background_tasks[0]
-
-            if task_to_preempt:
-                try:
-                    await asyncio.wait_for(asyncio.shield(task_to_preempt), timeout=GRACE_PERIOD)
-                except asyncio.TimeoutError:
-                    task_to_preempt.cancel()
-                except asyncio.CancelledError:
-                    pass
-
-            try:
-                return await asyncio.wait_for(self._semaphore.acquire(), timeout=3.0)
-            except asyncio.TimeoutError:
-                raise asyncio.TimeoutError(f"Could not acquire preempted slot for {self._alias}.")
-
-
-    async def release_user_slot(self) -> str:
-        """Releases a slot for a user."""
+    async def get_active_slots(self) -> ActiveStreams:
         async with self._lock:
-            new_active_count = self._semaphore.release()
-            return new_active_count
+            return ActiveStreams(self._total_slots - self._semaphore._value)
 
-    async def acquire_background_slot(self, task: asyncio.Task[Any]) -> None:
-        """ Acquires a slot for a background task and registers the task. """
+    async def get_status(self) -> str:
         async with self._lock:
-            try:
-                await asyncio.wait_for(self._semaphore.acquire(), timeout=0.01)
-                self._active_background_tasks.append(task)
-            except asyncio.TimeoutError:
-                raise
+            return f"{self._total_slots - self._semaphore._value}/{self._total_slots}"
 
-    async def release_background_slot(self, task: asyncio.Task[Any]) -> None:
-        """ Releases a slot for background tasks and de-registers the task. """
+    async def try_acquire(self) -> bool:
+        """Attempts to acquire a slot."""
+        async with self._lock:
+            initial = self._semaphore._value
+            try:
+                return await asyncio.wait_for(self._semaphore.acquire(), timeout=GRACE_PERIOD)
+            except BaseException as e:
+                if self._semaphore._value != initial:
+                    self._semaphore.release()
+                if isinstance(e, asyncio.TimeoutError):
+                    return False
+                raise e
+
+    async def _release(self) -> None:
         async with self._lock:
             self._semaphore.release()
-            if task in self._active_background_tasks:
-                self._active_background_tasks.remove(task)
+
+    def release(self) -> None:
+        """Cancel the release"""
+        run_bg(self._release())

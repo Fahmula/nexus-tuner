@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import StrEnum
 import os
 from pathlib import Path
-from typing import Final, Literal, Mapping, NewType, ReadOnly, TypedDict
+from typing import Any, Coroutine, Final, Literal, Mapping, NewType, ReadOnly, TypedDict
 
 import aiofiles
 
@@ -31,7 +31,7 @@ All the TypedDicts have all fields marked as ReadOnly and uses Mapping and Tuple
 to signal immutability, the underlying data structures are likely still dict or lists. This ensures that 99%
 of the application sees these data as immutable as they should, only in the select few areas were we perform
 CRUD operations do we use the Mutable versions of these types by using typing.cast(). This design allows the
-the most dangerous operations to be clearly marked and the rest of the code to be type safe.
+the most dangerous operations to be clearly marked and the rest of the code to be type safe and const safe.
 """
 
 DateTimeISO = NewType("DateTimeISO", str)
@@ -262,6 +262,12 @@ type ProbeInfo = ProbeSuccess | ProbeFailure
 
 
 # --- Functions ---
+background_tasks: set[asyncio.Task[Any]] = set()
+def run_bg(coro: Coroutine[Any, Any, Any]) -> None:
+    """Adds a background task to the global set and discard on completion as asyncio.create_task() requires a reference to it."""
+    task = asyncio.create_task(coro)
+    background_tasks.add(task)
+    task.add_done_callback(background_tasks.discard)
 
 def create_stream_key(video_type: VideoType, logical_channel_id: LogicalChannelId) -> StreamKey:
     """Generates a unique key for the stream."""

@@ -7,7 +7,7 @@ from nexus_stream.config import Config
 from nexus_stream.handler import ChannelHandler
 from nexus_stream.utils import (NEXUS_STREAM_USER_AGENT, Bitrate, BitrateScore, DateTimeISO, Framerate, FramerateScore, Height, Label, LogicalChannelId,
                                 Percent, ProbeInfo, ProbeSuccess, ProviderAlias, QualityInfo, QualityInfoMutable, QualityScores, QualityScoresMutable, ResolutionScore, ServiceQualityCacheData,
-                                ServiceQualityCacheDataMutable, SourceServiceId, StreamURL, TotalScore, UptimeScore, Width)
+                                ServiceQualityCacheDataMutable, SourceServiceId, StreamURL, TotalScore, UptimeScore, Width, run_bg)
 
 # --- Constants ---
 RESOLUTION_WEIGHT: Final[int] = 50
@@ -103,12 +103,14 @@ class QualityMonitor:
             self.config.error(Label.QUALITY, f"Failed to parse ffprobe output for {service_id}: {e}")
             return
         finally:
-            if proc and proc.returncode is None:
-                try:
-                    proc.kill()
-                    await proc.wait()
-                except ProcessLookupError:
-                    pass
+            async def bg_cleanup() -> None:
+                if proc and proc.returncode is None:
+                    try:
+                        proc.kill()
+                        await proc.wait()
+                    except ProcessLookupError:
+                        pass
+            run_bg(bg_cleanup())
 
         stream = info.get('streams', [{}])[0]
         width: Width = Width(int(stream.get('width', 0)))
@@ -152,26 +154,23 @@ class QualityMonitor:
             while True:
                 if await self.handler.get_pending_stream_count() > 0:
                     if not paused:
-                        self.config.debug(Label.QUALITY, f"Pausing probe for {service_id} for user streams...")
+                        self.config.debug(Label.QUALITY, f"Pausing probe for {service_id} for pending user streams...")
                         paused = True
                     await asyncio.sleep(BACKGROUND_SLOT_WAIT_INTERVAL)
                     continue
                 if paused:
-                    self.config.debug(Label.QUALITY, f"Resuming probe for {service_id} after user streams.")
+                    self.config.debug(Label.QUALITY, f"Resuming probe for {service_id} after pending user streams.")
                     paused = False
 
-                try:
-                    await provider_slots.acquire_background_slot(current_task)
-                    slot_acquired = True
-                    break
-                except asyncio.TimeoutError:
+                slot_acquired = await provider_slots.try_acquire()
+                if not slot_acquired:
                     await asyncio.sleep(BACKGROUND_SLOT_WAIT_INTERVAL)
+                    continue
 
-            stream_info = await self._get_stream_info(service_id, stream_url)
-            
-            if not stream_info:
-                return service_id, {"status": "offline", "reason": "No stream info available"}
-            return service_id, stream_info
+                stream_info = await self._get_stream_info(service_id, stream_url)
+                if not stream_info:
+                    return service_id, {"status": "offline", "reason": "No stream info available"}
+                return service_id, stream_info
 
         except asyncio.CancelledError:
             self.config.info(Label.QUALITY, f"Probe task for {service_id} was cancelled by slot manager.")
@@ -181,7 +180,7 @@ class QualityMonitor:
             return service_id, {"status": "offline", "reason": f"Probe failed: {e}"}
         finally:
             if slot_acquired:
-                await provider_slots.release_background_slot(current_task)
+                provider_slots.release()
     
     async def analyze_mapped_services(self, input_lc_id: LogicalChannelId | None = None) -> None:
         """Finds and probes all mapped services concurrently."""

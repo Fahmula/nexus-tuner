@@ -37,7 +37,7 @@ from nexus_stream.utils import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTER
                                 DEFAULT_PRIORITY, M3UURL, NEXUS_STREAM_PORT, NEXUS_STREAM_VERSION, ChannelNum, DiscoveredSource,
                                 Label, LogicalChannelId, LogicalChannelInfo, LogicalChannelMetrics, LogicalChannelName, MaxStreams, 
                                 PercentDisplay, Priority, ProviderAlias, ProviderStatus, QualityScores, SourceInfo, SourceMetrics,
-                                SourcePriority, SourceServiceId, TVGGroupTitle, TVGId, TVGLogo, VideoType, sort_sources)
+                                SourcePriority, SourceServiceId, TVGGroupTitle, TVGId, TVGLogo, VideoType, run_bg, sort_sources)
 
 # --- Constants ---
 PLAYLIST_POLL_INTERVAL: Final[float] = 0.2    # Seconds to wait between checking for a new playlist
@@ -175,7 +175,7 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
                 config.error(VideoType.MPEGTS, f"Unexpected error in MPEGTS stream for '{logical_channel_name}' with key '{video_key}': {e}")
                 raise
             finally:
-                await mpegts_stream.unregister(reader_id)
+                mpegts_stream.unregister(reader_id)
 
         response = Response(stream_generator(), mimetype='video/mp2t')
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -185,7 +185,7 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
         return response
     finally:
         if added_pending_stream:
-            await handler.remove_pending_stream(logical_channel_id, VideoType.MPEGTS)
+            handler.remove_pending_stream(logical_channel_id, VideoType.MPEGTS)
 
 @app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/preview.m3u8')
 async def serve_hls_preview(logical_channel_id: LogicalChannelId) -> Response:
@@ -216,7 +216,7 @@ async def serve_hls_preview(logical_channel_id: LogicalChannelId) -> Response:
 @app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/playlist.m3u8')
 async def serve_hls_playlist(logical_channel_id: LogicalChannelId, logical_channel_name: LogicalChannelName | None = None, sources: list[SourceInfo] | None = None) -> Response:
     """Serves the HLS playlist for a channel asynchronously."""
-    asyncio.create_task(stream_manager.record_video_access(logical_channel_id, VideoType.HLS))
+    run_bg(stream_manager.record_video_access(logical_channel_id, VideoType.HLS))
     added_pending_stream = False
     loop = asyncio.get_running_loop()
     end_time = loop.time() + CREATE_STREAM_DEADLINE
@@ -285,12 +285,12 @@ async def serve_hls_playlist(logical_channel_id: LogicalChannelId, logical_chann
         abort(408, msg)
     finally:
         if added_pending_stream:
-            await handler.remove_pending_stream(logical_channel_id, VideoType.HLS)
+            handler.remove_pending_stream(logical_channel_id, VideoType.HLS)
 
 @app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/<path:segment_filename>')
 async def serve_hls_segment(logical_channel_id: LogicalChannelId, segment_filename: str) -> Response:
     """Serves an HLS video segment (.ts file) asynchronously."""
-    asyncio.create_task(stream_manager.record_video_access(logical_channel_id, VideoType.HLS, segment_filename=segment_filename))
+    run_bg(stream_manager.record_video_access(logical_channel_id, VideoType.HLS, segment_filename=segment_filename))
     if not segment_filename.endswith(".ts") or ".." in segment_filename:
         abort(400, f"Invalid segment filename: {segment_filename}")
     

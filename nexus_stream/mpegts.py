@@ -4,7 +4,7 @@ from typing import Awaitable, Callable, Final, NoReturn, Self, cast
 
 from nexus_stream.config import Config
 from nexus_stream.stream import StreamManager
-from nexus_stream.utils import MPEGTS_PACKET_SIZE, FFmpegProcessInfoMutable, MPEGTSProcessInfo, ReaderId, VideoKey, VideoType
+from nexus_stream.utils import MPEGTS_PACKET_SIZE, FFmpegProcessInfoMutable, MPEGTSProcessInfo, ReaderId, VideoKey, VideoType, run_bg
 
 BUFFER_CLEANUP_INTERVAL: Final[int] = 10
 BUFFER_SIZE_LIMIT: Final[int] = 100 * 1024 * 1024
@@ -50,20 +50,24 @@ class MPEGTSStream:
             await instance._initialize()
         else:
             instance = cls.streams[video_key]
-        return instance, await instance._register()
+        return instance, instance._register()
         
-    async def _register(self) -> ReaderId:
+    def _register(self) -> ReaderId:
         """Register a new reader for the MPEGTS stream and return its ID."""
         reader_id = ReaderId(max(self._reader_positions.keys(), default=-1) + 1)
         self._reader_positions[reader_id] = 0
         return reader_id
 
-    async def unregister(self, reader_id: ReaderId) -> None:
+    async def _unregister(self, reader_id: ReaderId) -> None:
         """Unregister a reader from the MPEGTS stream, will stop the stream if no readers are left."""
         del self._reader_positions[reader_id]
         if not len(self._reader_positions):
             self.config.info(VideoType.MPEGTS, f"Inactive MPEGTS stream for '{self.video_key}' as no readers are registered.")
             await self._shutdown()
+
+    def unregister(self, reader_id: ReaderId) -> None:
+        """Unregister a reader from the MPEGTS stream, will stop the stream if no readers are left."""
+        run_bg(self._unregister(reader_id))
 
     async def read(self, reader_id: ReaderId) -> bytes:
         """Read a chunk of data from the MPEGTS stream for the given reader ID, blocking until data is available.
@@ -109,11 +113,13 @@ class MPEGTSStream:
             self.config.error(VideoType.MPEGTS, f"Unexpected error in MPEGTS stream for '{self.video_key}': {e}")
             raise
         finally:  # Don't stop early incase the user reconnects, let the timeout handle it
-            await self._shutdown()
-            async with self.stream_manager.stream_process_lock:
-                cast(FFmpegProcessInfoMutable, process_info)["last_access"] = datetime.now()
-                cast(FFmpegProcessInfoMutable, process_info)["is_mpegts_active"] = False
-                del self.streams[self.video_key]  # Make this atomic with is_mpegts_active
+            async def bg_cleanup() -> None:
+                await self._shutdown()
+                async with self.stream_manager.stream_process_lock:
+                    cast(FFmpegProcessInfoMutable, process_info)["last_access"] = datetime.now()
+                    cast(FFmpegProcessInfoMutable, process_info)["is_mpegts_active"] = False
+                    del self.streams[self.video_key]  # Make this atomic with is_mpegts_active
+            run_bg(bg_cleanup())
 
     async def _cleanup(self) -> NoReturn:
         """Periodically clean up the buffer to prevent excessive memory usage."""

@@ -13,7 +13,7 @@ from nexus_stream.utils import (DEFAULT_PRIORITY, M3UURL, NEXUS_STREAM_USER_AGEN
                                 DiscoveredSource, DiscoveredSourcesData, DiscoveredSourcesDataMutable, LogicalChannelInfo, LogicalChannelName,
                                 ProviderStatuses, SourceInfo, SourcePriority, SourceServiceId, StreamURL, TVGGroupTitle, Label, LogicalChannelId,
                                 LogicalChannelsData, M3USource, MainM3UPlaylist, MaxStreams, ProviderAlias, ProviderInfoMutable, ProvidersData,
-                                ProvidersDataMutable, ProvidersSourceData, StreamKey, TVGDisplayName, TVGId, TVGLogo, TVGName, VideoType, create_stream_key)
+                                ProvidersDataMutable, ProvidersSourceData, StreamKey, TVGDisplayName, TVGId, TVGLogo, TVGName, VideoType, create_stream_key, run_bg)
 
 # --- Constants ---
 INITIAL_LOGICAL_CHANNEL_ID: Final[LogicalChannelId] = LogicalChannelId("1000")
@@ -278,9 +278,13 @@ class ChannelHandler:
             self.pending_streams.add(stream_key)
             return True
 
-    async def remove_pending_stream(self, logical_channel_id: LogicalChannelId, video_type: VideoType) -> None:
+    async def _remove_pending_stream(self, logical_channel_id: LogicalChannelId, video_type: VideoType) -> None:
         async with self._mutex:
             self.pending_streams.remove(create_stream_key(video_type, logical_channel_id))
+
+    def remove_pending_stream(self, logical_channel_id: LogicalChannelId, video_type: VideoType) -> None:
+        """Removes a pending stream from the set of pending streams. (Sync - CPU-bound)"""
+        run_bg(self._remove_pending_stream(logical_channel_id, video_type))
 
     def generate_main_client_m3u(self) -> None:
         """Generates the main M3U content to be served to clients. (Sync - CPU-bound)"""
@@ -352,7 +356,7 @@ class ChannelHandler:
     async def get_provider_stream_status(self) -> ProviderStatuses:
         """Calculates current stream usage for each provider asynchronously."""
         async with self._mutex:
-            return ProviderStatuses({alias: {"alias": alias, "url": provider_slots.get_m3u_url(), "active_streams": provider_slots.get_active_slots(), "max_concurrent_streams": provider_slots.get_total_slots()}
+            return ProviderStatuses({alias: {"alias": alias, "url": provider_slots.get_m3u_url(), "active_streams": await provider_slots.get_active_slots(), "max_concurrent_streams": provider_slots.get_total_slots()}
                                     for alias, provider_slots in self.slots.items()})
 
     # --- UI Interaction Methods ---
