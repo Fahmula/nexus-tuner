@@ -266,25 +266,19 @@ class ChannelHandler:
                 self.config.warn(self.label, f"No valid mapped sources for logical channel '{logical_channel_id}'. It will not be included in the client M3U.")
         self.config.info(self.label, f"Built {len(self.client_facing_channels)} client-facing channels.")
 
-    async def get_pending_stream_count(self) -> int:
-        async with self._mutex:
-            return len(self.pending_streams)
+    def get_pending_stream_count(self) -> int:
+        return len(self.pending_streams)
 
-    async def add_pending_stream(self, logical_channel_id: LogicalChannelId, video_type: VideoType) -> bool:
+    def add_pending_stream(self, logical_channel_id: LogicalChannelId, video_type: VideoType) -> bool:
         stream_key = create_stream_key(video_type, logical_channel_id)
-        async with self._mutex:
-            if stream_key in self.pending_streams:
-                return False
-            self.pending_streams.add(stream_key)
-            return True
-
-    async def _remove_pending_stream(self, logical_channel_id: LogicalChannelId, video_type: VideoType) -> None:
-        async with self._mutex:
-            self.pending_streams.remove(create_stream_key(video_type, logical_channel_id))
+        if stream_key in self.pending_streams:
+            return False
+        self.pending_streams.add(stream_key)
+        return True
 
     def remove_pending_stream(self, logical_channel_id: LogicalChannelId, video_type: VideoType) -> None:
-        """Removes a pending stream from the set of pending streams. (Sync - CPU-bound)"""
-        run_bg(self._remove_pending_stream(logical_channel_id, video_type))
+        """Removes a pending stream from the set of pending streams."""
+        self.pending_streams.remove(create_stream_key(video_type, logical_channel_id))
 
     def generate_main_client_m3u(self) -> None:
         """Generates the main M3U content to be served to clients. (Sync - CPU-bound)"""

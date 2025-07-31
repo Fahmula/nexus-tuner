@@ -258,7 +258,7 @@ class CreateStream:
                 self.config.warn(Label.HANDLER, f"{self.logical_channel_name}: Provider '{provider_alias}' is configured with 0 slots, skipping stream creation.")
                 return
 
-            new_active_count = await provider_slots.try_acquire()
+            new_active_count = await provider_slots.try_acquire(timeout=1)
             if new_active_count is False:
                 if not logged_failure:
                     logged_failure = True

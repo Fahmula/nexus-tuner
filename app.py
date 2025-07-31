@@ -120,7 +120,7 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
     loop = asyncio.get_running_loop()
     end_time = loop.time() + CREATE_STREAM_DEADLINE
     try:
-        while not await handler.add_pending_stream(logical_channel_id, VideoType.MPEGTS):
+        while not handler.add_pending_stream(logical_channel_id, VideoType.MPEGTS):
             if loop.time() > end_time:
                 msg = f"Exceeded timeout while waiting for earlier request for MPEGTS {logical_channel_id} to complete."
                 config.error(VideoType.MPEGTS, msg)
@@ -221,7 +221,7 @@ async def serve_hls_playlist(logical_channel_id: LogicalChannelId, logical_chann
     loop = asyncio.get_running_loop()
     end_time = loop.time() + CREATE_STREAM_DEADLINE
     try:
-        while not await handler.add_pending_stream(logical_channel_id, VideoType.HLS):
+        while not handler.add_pending_stream(logical_channel_id, VideoType.HLS):
             if loop.time() > end_time:
                 msg = f"Exceeded timeout while waiting for earlier request for HLS {logical_channel_id} to complete."
                 config.error(VideoType.HLS, msg)

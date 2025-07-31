@@ -85,14 +85,14 @@ class ProviderSlots:
             return True
         return False
 
-    async def try_acquire(self) -> str | Literal[False]:
+    async def try_acquire(self, *, timeout: float) -> str | Literal[False]:
         """Attempts to acquire a slot, be sure to check if total_slots is greater than 0
         for this provider before running any tasks that uses slots.
         """
         async with self._lock:
             initial = self._semaphore._value
             try:
-                return await asyncio.wait_for(self._semaphore.acquire(), timeout=0.1)
+                return await asyncio.wait_for(self._semaphore.acquire(), timeout=timeout)
             except BaseException as e:
                 if self._semaphore._value != initial:
                     self._semaphore.release()

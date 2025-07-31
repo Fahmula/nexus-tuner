@@ -132,7 +132,7 @@ class QualityMonitor:
         """
         Probes a single stream, persistently trying to acquire a slot, and ensures
         all resources are cleaned up upon completion, failure, or cancellation.
-        """          
+        """
         current_task = asyncio.current_task()
         if not current_task:
             msg = "Current task is None, cannot run probe without a task context"
@@ -142,7 +142,7 @@ class QualityMonitor:
         try:
             paused = False
             while True:
-                if await self.handler.get_pending_stream_count() > 0:
+                if self.handler.get_pending_stream_count() > 0:
                     if not paused:
                         self.config.debug(Label.QUALITY, f"Pausing probe for {service_id} for pending user streams...")
                         paused = True
@@ -161,7 +161,7 @@ class QualityMonitor:
                     msg = f"Provider {provider_alias} is configured with 0 slots, cannot run probe for {service_id}."
                     self.config.warn(Label.QUALITY, msg)
                     raise ValueError(msg)
-                if not await provider_slots.try_acquire():
+                if not await provider_slots.try_acquire(timeout=0.01):
                     await asyncio.sleep(BACKGROUND_SLOT_WAIT_INTERVAL)
                     continue
 
