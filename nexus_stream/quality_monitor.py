@@ -96,9 +96,6 @@ class QualityMonitor:
         except asyncio.TimeoutError:
             self.config.warn(Label.QUALITY, f"ffprobe for {service_id} timed out.")
             return
-        except asyncio.CancelledError:
-            self.config.warn(Label.QUALITY, f"ffprobe task for {service_id} was cancelled.")
-            raise
         except Exception as e:
             self.config.error(Label.QUALITY, f"Failed to parse ffprobe output for {service_id}: {e}")
             return
@@ -148,7 +145,6 @@ class QualityMonitor:
             self.config.error(Label.QUALITY, msg)
             raise RuntimeError(msg)
 
-        slot_acquired = False
         try:
             paused = False
             while True:
@@ -162,12 +158,21 @@ class QualityMonitor:
                     self.config.debug(Label.QUALITY, f"Resuming probe for {service_id} after pending user streams.")
                     paused = False
 
-                slot_acquired = await provider_slots.try_acquire()
-                if not slot_acquired:
+                if not await provider_slots.try_acquire():
                     await asyncio.sleep(BACKGROUND_SLOT_WAIT_INTERVAL)
                     continue
 
-                stream_info = await self._get_stream_info(service_id, stream_url)
+                task = asyncio.create_task(self._get_stream_info(service_id, stream_url))
+                try:
+                    provider_slots.add_background_task(task)
+                    stream_info = await task
+                except asyncio.CancelledError:
+                    self.config.warn(Label.QUALITY, f"ffprobe task for {service_id} was cancelled.")
+                    if provider_slots.pop_cancelled_task(task):
+                        continue  # Retry since we cancelled for a user stream
+                    raise
+                finally:
+                    provider_slots.release()
                 if not stream_info:
                     return service_id, {"status": "offline", "reason": "No stream info available"}
                 return service_id, stream_info
@@ -178,9 +183,6 @@ class QualityMonitor:
         except Exception as e:
             self.config.error(Label.QUALITY, f"Unexpected error during probe for {service_id}: {e}")
             return service_id, {"status": "offline", "reason": f"Probe failed: {e}"}
-        finally:
-            if slot_acquired:
-                provider_slots.release()
     
     async def analyze_mapped_services(self, input_lc_id: LogicalChannelId | None = None) -> None:
         """Finds and probes all mapped services concurrently."""

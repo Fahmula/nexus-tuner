@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Awaitable, Callable, Final, NoReturn, Self, cast
 
 from nexus_stream.config import Config
@@ -116,7 +116,7 @@ class MPEGTSStream:
             async def bg_cleanup() -> None:
                 await self._shutdown()
                 async with self.stream_manager.stream_process_lock:
-                    cast(FFmpegProcessInfoMutable, process_info)["last_access"] = datetime.now()
+                    cast(FFmpegProcessInfoMutable, process_info)["last_access"] = datetime.now() - timedelta(seconds=self.config.segment_prune_timeout)  # Elligible for pruning immediately
                     cast(FFmpegProcessInfoMutable, process_info)["is_mpegts_active"] = False
                     del self.streams[self.video_key]  # Make this atomic with is_mpegts_active
             run_bg(bg_cleanup())

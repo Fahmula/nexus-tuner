@@ -168,18 +168,18 @@ class StreamManager:
             if tasks:
                 await asyncio.gather(*tasks)
 
-    async def prune_ffmpeg_processes(self) -> None:
+    async def prune_ffmpeg_processes(self, alias: ProviderAlias) -> None:
         """Prunes FFmpeg processes to free up resources asynchronously."""
         async with self.stream_process_lock:
             now = datetime.now()
             inactive_ids = [
                 (video_key, data['logical_channel_name']) for video_key, data in self.ffmpeg_processes.items()
-                if data['is_long_term'] and not data['is_mpegts_active'] and now - data['last_access'] > timedelta(seconds=self.config.segment_prune_timeout)
+                if alias == data['provider_alias'] and data['is_long_term'] and not data['is_mpegts_active'] and now - data['last_access'] > timedelta(seconds=self.config.segment_prune_timeout)
             ]
         
         tasks: list[Coroutine[Any, Any, None]] = []
         for video_key, logical_channel_name in inactive_ids:
-            self.config.info(Label.STREAM, f"Pruning inactive stream '{logical_channel_name}' [{video_key}].")
+            self.config.info(Label.STREAM, f"Pruning inactive {alias} stream '{logical_channel_name}' [{video_key}].")
             tasks.append(self.stop_ffmpeg_process(video_key, logical_channel_name))
         if tasks:
             await asyncio.gather(*tasks)
@@ -234,7 +234,8 @@ class StreamManager:
         provider_slots = self.handler.slots.get(provider)
         if provider_slots:
             if should_release_slot:
-                new_active_count = await provider_slots.release_user_slot()
+                provider_slots.release()
+                new_active_count = await provider_slots.get_status()
             else:
                 new_active_count = f"0/{provider_slots.get_total_slots()}"
         else:
