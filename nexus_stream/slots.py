@@ -6,7 +6,6 @@ from typing import Any, Final, Literal
 
 from nexus_stream.utils import M3UURL, ActiveStreams, AvailableStreams, MaxStreams, ProviderAlias
 
-GRACE_PERIOD: Final[float] = 0.01
 
 class CountingSemaphore(asyncio.Semaphore):
     def __init__(self, value: int, total_slots: MaxStreams) -> None:
@@ -42,8 +41,6 @@ class ProviderSlots:
     __slots__ = ('_alias', '_m3u_url', '_total_slots', '_lock', '_semaphore', '_background_tasks', '_cancelled_tasks')
 
     def __init__(self, alias: ProviderAlias, m3u_url: M3UURL, total_slots: MaxStreams) -> None:
-        if total_slots < 1:
-            raise ValueError("total_slots must be >= 1")
         self._alias: ProviderAlias = alias
         self._m3u_url: M3UURL = m3u_url
         self._total_slots: MaxStreams = total_slots
@@ -89,11 +86,13 @@ class ProviderSlots:
         return False
 
     async def try_acquire(self) -> str | Literal[False]:
-        """Attempts to acquire a slot."""
+        """Attempts to acquire a slot, be sure to check if total_slots is greater than 0
+        for this provider before running any tasks that uses slots.
+        """
         async with self._lock:
             initial = self._semaphore._value
             try:
-                return await asyncio.wait_for(self._semaphore.acquire(), timeout=GRACE_PERIOD)
+                return await asyncio.wait_for(self._semaphore.acquire(), timeout=0.1)
             except BaseException as e:
                 if self._semaphore._value != initial:
                     self._semaphore.release()

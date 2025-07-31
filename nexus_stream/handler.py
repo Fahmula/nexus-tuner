@@ -435,7 +435,7 @@ class ChannelHandler:
         """Adds a new provider to the configuration asynchronously."""
         if not alias: raise ValueError("Provider alias cannot be empty.")
         if not url: raise ValueError("Provider URL cannot be empty.")
-        if max_streams < 1: raise ValueError("Max concurrent streams must be at least 1.")
+        if max_streams < 0: raise ValueError("Max concurrent streams must be at least 0.")
         if alias.lower() in {a.lower() for a in self.providers_data.keys()}:
             raise ValueError(f"Provider with alias '{alias}' already exists.")
 
@@ -453,7 +453,7 @@ class ChannelHandler:
     async def update_provider(self, alias: ProviderAlias, url: M3UURL, max_streams: MaxStreams) -> bool:
         """Updates an existing provider's configuration asynchronously."""
         if not url: raise ValueError("Provider URL cannot be empty.")
-        if max_streams < 1: raise ValueError("Max concurrent streams must be at least 1.")
+        if max_streams < 0: raise ValueError("Max concurrent streams must be at least 0.")
         if alias not in self.providers_data: raise ValueError(f"Provider with alias '{alias}' not found.")
 
         original_data = self.providers_data[alias].copy()

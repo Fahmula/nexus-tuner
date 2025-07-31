@@ -203,10 +203,13 @@ class CreateStream:
         """Creates streams for a provider by launching concurrent worker tasks."""
         provider_slots = self.handler.slots.get(provider_alias)
         if not provider_slots:
-            self.config.critical(Label.HANDLER, f"{self.logical_channel_name}: Provider '{provider_alias}' does not exist.")
+            self.config.error(Label.HANDLER, f"{self.logical_channel_name}: Provider '{provider_alias}' does not exist.")
+            return
+        if provider_slots.get_total_slots() <= 0:
+            self.config.warn(Label.HANDLER, f"{self.logical_channel_name}: Provider '{provider_alias}' is configured with 0 slots, skipping stream creation.")
             return
 
-        if provider_sources and not await provider_slots.get_available_slots():
+        if len(provider_sources) > await provider_slots.get_available_slots():
             provider_slots.cancel_background_tasks()
             run_bg(self.stream_manager.prune_ffmpeg_processes(provider_alias))
 
@@ -214,12 +217,12 @@ class CreateStream:
         max_streams = status[provider_alias]["max_concurrent_streams"]
         
         worker_tasks = [
-            asyncio.create_task(self._provider_worker_task(provider_alias, provider_slots, provider_sources))
+            asyncio.create_task(self._provider_worker_task(provider_alias, provider_sources))
             for _ in range(max_streams)
         ]
         await asyncio.gather(*worker_tasks, return_exceptions=False)
 
-    async def _provider_worker_task(self, provider_alias: ProviderAlias, provider_slots: ProviderSlots, provider_sources: list[SourceInfo]) -> None:
+    async def _provider_worker_task(self, provider_alias: ProviderAlias, provider_sources: list[SourceInfo]) -> None:
         """Tries sources for a provider until a stream is created or sources are exhausted."""
         source = await self._pop_source(provider_sources, None)
         if not source:
@@ -246,6 +249,14 @@ class CreateStream:
             if to_sleep:
                 await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
                 continue
+
+            provider_slots = self.handler.slots.get(provider_alias)
+            if not provider_slots:
+                self.config.error(Label.HANDLER, f"{self.logical_channel_name}: Provider '{provider_alias}' not found in slots manager.")
+                return
+            if provider_slots.get_total_slots() <= 0:
+                self.config.warn(Label.HANDLER, f"{self.logical_channel_name}: Provider '{provider_alias}' is configured with 0 slots, skipping stream creation.")
+                return
 
             new_active_count = await provider_slots.try_acquire()
             if new_active_count is False:

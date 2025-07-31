@@ -592,7 +592,7 @@ async def ui_provider_add() -> Response | str:
         form_data = cast(ImmutableMultiDict[str, str], await request.form)  # type: ignore
         alias = ProviderAlias(form_data.get("alias", "").strip())
         url = M3UURL(form_data.get("url", "").strip())
-        max_streams_str = form_data.get("max_concurrent_streams", "1")
+        max_streams_str = form_data.get("max_concurrent_streams", "0")
         try:
             max_streams = MaxStreams(int(max_streams_str))
             if await handler.add_provider(alias, url, max_streams):
@@ -623,7 +623,7 @@ async def ui_provider_edit(alias: ProviderAlias) -> Response | str:
 
     form_data = cast(ImmutableMultiDict[str, str], await request.form)  # type: ignore
     url = M3UURL(form_data.get("url", "").strip())
-    max_streams_str = form_data.get("max_concurrent_streams", "1")
+    max_streams_str = form_data.get("max_concurrent_streams", "0")
     try:
         max_streams = MaxStreams(int(max_streams_str))
         if await handler.update_provider(alias, url, max_streams):

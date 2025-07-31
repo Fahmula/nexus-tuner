@@ -17,7 +17,7 @@
                 <div class="col-md-2">
                     <label for="edit-max-streams-{{ provider.alias }}" class="form-label visually-hidden">Max Streams</label>
                     <input type="number" class="form-control form-control-sm" id="edit-max-streams-{{ provider.alias }}" name="max_concurrent_streams"
-                           value="{{ provider.max_concurrent_streams }}" min="1" required>
+                           value="{{ provider.max_concurrent_streams }}" min="0" required>
                 </div>
                 <div class="col-md-1 text-end">
                     <button type="submit" class="btn btn-success btn-sm w-100" title="Save Changes">

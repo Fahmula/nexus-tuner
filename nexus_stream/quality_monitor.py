@@ -132,13 +132,7 @@ class QualityMonitor:
         """
         Probes a single stream, persistently trying to acquire a slot, and ensures
         all resources are cleaned up upon completion, failure, or cancellation.
-        """
-        provider_slots = self.handler.slots.get(provider_alias)
-        if not provider_slots:
-            msg = f"Provider slot manager for {provider_alias} not found."
-            self.config.error(Label.QUALITY, msg)
-            raise RuntimeError(msg)
-            
+        """          
         current_task = asyncio.current_task()
         if not current_task:
             msg = "Current task is None, cannot run probe without a task context"
@@ -158,6 +152,15 @@ class QualityMonitor:
                     self.config.debug(Label.QUALITY, f"Resuming probe for {service_id} after pending user streams.")
                     paused = False
 
+                provider_slots = self.handler.slots.get(provider_alias)
+                if not provider_slots:
+                    msg = f"Provider slot manager for {provider_alias} not found, cannot run probe for {service_id}."
+                    self.config.error(Label.QUALITY, msg)
+                    raise RuntimeError(msg)
+                if provider_slots.get_total_slots() <= 0:
+                    msg = f"Provider {provider_alias} is configured with 0 slots, cannot run probe for {service_id}."
+                    self.config.warn(Label.QUALITY, msg)
+                    raise ValueError(msg)
                 if not await provider_slots.try_acquire():
                     await asyncio.sleep(BACKGROUND_SLOT_WAIT_INTERVAL)
                     continue
@@ -225,11 +228,18 @@ class QualityMonitor:
                 if not service_details:
                     self.config.debug(Label.QUALITY, f"Service {service_id} not found in discovered services.")
                     continue
+                provider_slots = self.handler.slots.get(service_details["provider_alias"])
+                if not provider_slots:
+                    self.config.error(Label.QUALITY, f"Provider slots for {service_details['provider_alias']} not found.")
+                    continue
+                if provider_slots.get_total_slots() <= 0:
+                    self.config.warn(Label.QUALITY, f"Provider {provider_slots.get_alias()} is configured with 0 slots, skipping probing for service {service_id}.")
+                    continue
                 tasks.append(
                     self._run_single_probe(
                         service_id, 
                         service_details["actual_stream_url"], 
-                        ProviderAlias(service_details["provider_alias"])
+                        service_details["provider_alias"]
                     )
                 )
             if not tasks:

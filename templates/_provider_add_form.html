@@ -16,7 +16,7 @@
             <div class="col-md-2">
                 <label for="max_concurrent_streams" class="form-label visually-hidden">Max Streams</label>
                 <input type="number" class="form-control" id="max_concurrent_streams" name="max_concurrent_streams" placeholder="Max Streams"
-                       value="{{ max_concurrent_streams if max_concurrent_streams is not none else 1 }}" min="1" required>
+                       value="{{ max_concurrent_streams if max_concurrent_streams is not none else 0 }}" min="0" required>
             </div>
             <div class="col-md-1 text-end">
                 <button type="submit" class="btn btn-primary w-100" title="Add Provider">

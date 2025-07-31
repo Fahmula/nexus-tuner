@@ -61,6 +61,7 @@ class StreamManager:
         async with self.stream_process_lock:
             if video_key in self.ffmpeg_processes:
                 cast(FFmpegProcessInfoMutable, self.ffmpeg_processes[video_key])['is_long_term'] = long_term
+                cast(FFmpegProcessInfoMutable, self.ffmpeg_processes[video_key])['last_access'] = datetime.now()  # Prevent immediate pruning
 
     async def get_ffmpeg_processes_from_logical_id(self, logical_channel_id: LogicalChannelId, *, video_type: VideoType, long_term_only: bool) -> FFmpegProcessInfosMutable:
         """
