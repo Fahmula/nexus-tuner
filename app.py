@@ -198,7 +198,7 @@ async def serve_hls_preview(logical_channel_id: LogicalChannelId) -> Response:
         config.error(VideoType.HLS, msg)
         abort(404, msg)
 
-    priority = DEFAULT_PRIORITY
+    priority = Priority(DEFAULT_PRIORITY)
     for channels in handler.channel_mappings_data.values():
         for channel in channels:
             if channel['source_service_id'] == source_service_id:
@@ -206,7 +206,7 @@ async def serve_hls_preview(logical_channel_id: LogicalChannelId) -> Response:
                 break
 
     sources: list[SourceInfo] = [{
-        'source_service_id': source_service['id'], 'priority': Priority(priority),
+        'source_service_id': source_service['id'], 'priority': priority,
         'provider_alias': source_service['provider_alias'],
         'actual_stream_url': source_service['actual_stream_url']
     }]

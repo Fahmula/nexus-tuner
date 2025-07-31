@@ -132,7 +132,7 @@ class StreamManager:
                     self.config.debug(VideoType.HLS, f"Cleanup: Removing latest HLS segment number cache ({data[0]}) for logical channel ID '{lc_id}'.")
                     self.hls_latest_segments.pop(lc_id, None)    
                 
-                providers_to_kill = await self.handler.reset_kill_provider_streams()
+                providers_to_kill = self.handler.reset_kill_provider_streams()
                 
                 current_processes = list(self.ffmpeg_processes.items())
 
@@ -210,7 +210,7 @@ class StreamManager:
 
         video_type: VideoType = data_to_cleanup['video_type']
         process: Process = data_to_cleanup['process']
-        provider = ProviderAlias(data_to_cleanup['provider_alias'])
+        provider = data_to_cleanup['provider_alias']
         hls_dir: Path | None = data_to_cleanup['channel_hls_dir']
         log_file: aiofiles.threadpool.text.AsyncTextIOWrapper | None = data_to_cleanup.get('stderr_log_file_obj')
 

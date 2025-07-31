@@ -161,7 +161,7 @@ class QualityMonitor:
                     msg = f"Provider {provider_alias} is configured with 0 slots, cannot run probe for {service_id}."
                     self.config.warn(Label.QUALITY, msg)
                     raise ValueError(msg)
-                if not await provider_slots.try_acquire(timeout=0.01):
+                if not await provider_slots.try_acquire():
                     await asyncio.sleep(BACKGROUND_SLOT_WAIT_INTERVAL)
                     continue
 
