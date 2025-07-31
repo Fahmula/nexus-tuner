@@ -172,7 +172,7 @@ class QualityMonitor:
                         continue  # Retry since we cancelled for a user stream
                     raise
                 finally:
-                    provider_slots.release()
+                    run_bg(provider_slots.release())
                 if not stream_info:
                     return service_id, {"status": "offline", "reason": "No stream info available"}
                 return service_id, stream_info

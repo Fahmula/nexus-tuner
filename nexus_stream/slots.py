@@ -4,7 +4,7 @@ import os
 import sys
 from typing import Any, Final, Literal
 
-from nexus_stream.utils import M3UURL, ActiveStreams, AvailableStreams, MaxStreams, ProviderAlias, run_bg
+from nexus_stream.utils import M3UURL, ActiveStreams, AvailableStreams, MaxStreams, ProviderAlias
 
 GRACE_PERIOD: Final[float] = 0.01
 
@@ -69,10 +69,6 @@ class ProviderSlots:
         async with self._lock:
             return ActiveStreams(self._total_slots - self._semaphore._value)
 
-    async def get_status(self) -> str:
-        async with self._lock:
-            return f"{self._total_slots - self._semaphore._value}/{self._total_slots}"
-
     def add_background_task(self, task: asyncio.Task[Any]) -> None:
         """Add a background task to the provider slots."""
         self._background_tasks.add(task)
@@ -105,10 +101,9 @@ class ProviderSlots:
                     return False
                 raise e
 
-    async def _release(self) -> None:
+    async def release(self) -> str:
+        """Cancel the release. WARNING: This method must be called with run_bg() or
+        in a context where cancellation is not possibe.
+        """
         async with self._lock:
-            self._semaphore.release()
-
-    def release(self) -> None:
-        """Cancel the release"""
-        run_bg(self._release())
+            return self._semaphore.release()

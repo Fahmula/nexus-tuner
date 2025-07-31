@@ -10,7 +10,7 @@ from asyncio.subprocess import Process
 from nexus_stream.config import Config
 from nexus_stream.handler import ChannelHandler
 from nexus_stream.utils import (CREATE_STREAM_DEADLINE, FFMPEG_TERMINATE_TIMEOUT, NEW_DEADLINE_NON_BEST, FFmpegProcessInfo, FFmpegProcessInfoMutable, FFmpegProcessInfos, FFmpegProcessInfosMutable,
-                                Label, LogicalChannelId, LogicalChannelName, ProviderAlias, SegmentNum, VideoKey, VideoName, VideoType, get_segment_number)
+                                Label, LogicalChannelId, LogicalChannelName, ProviderAlias, SegmentNum, VideoKey, VideoName, VideoType, get_segment_number, run_bg)
 
 
 # --- Constants ---
@@ -140,7 +140,7 @@ class StreamManager:
                     provider_keys_to_kill = [video_key for video_key, data in current_processes if data['provider_alias'] in providers_to_kill]
                     for video_key in provider_keys_to_kill:
                         data = cast(FFmpegProcessInfosMutable, self.ffmpeg_processes).pop(video_key)
-                        await self._stop_ffmpeg_process(video_key, data['logical_channel_name'], data_to_cleanup=data)
+                        run_bg(self._stop_ffmpeg_process(video_key, data['logical_channel_name'], data_to_cleanup=data))  # Prevents process from being cancelled
 
                 now = datetime.now()
                 for video_key, data in current_processes:
@@ -186,7 +186,7 @@ class StreamManager:
 
     async def stop_ffmpeg_process(self, video_key: VideoKey, name: LogicalChannelName | VideoName) -> None:
         """Stops an FFmpeg process and cleans up resources asynchronously."""
-        await self._stop_ffmpeg_process(video_key, name, data_to_cleanup=None)
+        run_bg(self._stop_ffmpeg_process(video_key, name, data_to_cleanup=None))  # Prevents process from being cancelled
 
     async def stop_ffmpeg_processes_with_logical_channel_id(self, logical_channel_id: LogicalChannelId, video_type: VideoType) -> None:
         """Stops FFmpeg processes by logical channel ID and video type, and cleans up resources asynchronously."""
@@ -195,6 +195,7 @@ class StreamManager:
 
     async def _stop_ffmpeg_process(self, video_key: VideoKey, name: str, *, data_to_cleanup: FFmpegProcessInfo | None) -> None:
         """
+        MUST BE CALLED WITH run_bg() TO PREVENT CANCELLATION.
         Stops a single FFmpeg process and cleans its resources asynchronously.
         If data_to_cleanup is provided, it will NOT release the slot or pop from ffmpeg_processes.
         """
@@ -234,8 +235,7 @@ class StreamManager:
         provider_slots = self.handler.slots.get(provider)
         if provider_slots:
             if should_release_slot:
-                provider_slots.release()
-                new_active_count = await provider_slots.get_status()
+                new_active_count = await provider_slots.release()
             else:
                 new_active_count = f"0/{provider_slots.get_total_slots()}"
         else:

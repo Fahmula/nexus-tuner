@@ -184,7 +184,7 @@ class CreateStream:
         # This cannot be an async method as cancelled asyncio.CancelledError prevents cleanup
         if video_key in self._slots_acquired:
             self._slots_acquired.remove(video_key)
-            provider_slots.release()
+            run_bg(provider_slots.release())
 
     async def _remove_active_video_key(self, video_key: VideoKey) -> None:
         async with self._mutex:
