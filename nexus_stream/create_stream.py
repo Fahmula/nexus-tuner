@@ -127,7 +127,7 @@ class CreateStream:
         self._deadline = loop.time() + CREATE_STREAM_DEADLINE
         self._sources = self.handler.get_sources_for_client_facing_channel(self.logical_channel_id) if self._input_sources is None else deepcopy(self._input_sources)
         for source in self._sources.copy():
-            discovered_source = self.handler.discovered_source_services_data.get(source["source_service_id"])
+            discovered_source = await self.handler.get_discovered_source(source["source_service_id"])
             if not discovered_source:
                 self.config.warn(Label.HANDLER, f"{self.logical_channel_name}: Source '{source['source_service_id']}' not found in discovered sources, skipping use for stream creation.")
                 self._sources.remove(source)

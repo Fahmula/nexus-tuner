@@ -14,6 +14,7 @@ from datetime import datetime
 from enum import StrEnum
 import os
 from pathlib import Path
+import re
 from typing import Any, Coroutine, Final, Literal, Mapping, NewType, ReadOnly, TypedDict
 
 import aiofiles
@@ -29,6 +30,13 @@ CREATE_STREAM_POLL_INTERVAL: Final[float] = 0.01  # Polling interval for stream 
 MPEGTS_PACKET_SIZE: Final[int] = 188              # Size of a single MPEG-TS packet in bytes
 DEFAULT_PRIORITY: Final[int] = 5                  # Default priority for sources
 FFMPEG_TERMINATE_TIMEOUT: Final[int] = 5          # Timeout for terminating FFmpeg processes
+URL_REGEX: Final[re.Pattern[str]] = re.compile(
+    r'^(?:http|ftp)s?://' # http:// or https://
+    r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|' #domain...
+    r'localhost|' #localhost...
+    r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})' # ...or ip
+    r'(?::\d+)?' # optional port
+    r'(?:/?|[/?]\S+)$', re.IGNORECASE)  # Django: https://github.com/django/django/blob/6726d750979a7c29e0dd866b4ea367eef7c8a420/django/core/validators.py#L45
 
 
 # --- Types ---
@@ -128,8 +136,9 @@ class M3USource(TypedDict):
 class DiscoveredSource(M3USource):
     id: ReadOnly[SourceServiceId]
     provider_alias: ReadOnly[ProviderAlias]
-DiscoveredSourcesData = NewType("DiscoveredSourcesData", Mapping[SourceServiceId, DiscoveredSource])
-DiscoveredSourcesDataMutable = NewType("DiscoveredSourcesDataMutable", dict[SourceServiceId, DiscoveredSource])
+DiscoveredSourcesDataImpl = NewType("DiscoveredSourcesDataImpl", dict[SourceServiceId, DiscoveredSource])
+_DiscoveredSourcesDataReadOnly = NewType("_DiscoveredSourcesDataReadOnly", Mapping[SourceServiceId, DiscoveredSource])
+type DiscoveredSourcesData = DiscoveredSourcesDataImpl | _DiscoveredSourcesDataReadOnly
 
 class LogicalChannelInfo(TypedDict):
     logical_channel_id: ReadOnly[LogicalChannelId]
@@ -291,6 +300,11 @@ def get_segment_format() -> str:
 def get_segment_number(segment_filename: str) -> SegmentNum:
     """Extracts the segment number from the segment filename."""
     return SegmentNum(int(segment_filename.split('_')[1].split('.')[0]))
+
+
+def is_valid_url(url: str) -> bool:
+    """Check if the given URL is valid."""
+    return bool(URL_REGEX.match(url))
 
 
 def relative_time(dt: datetime, reference_time: datetime | None = None) -> str:
