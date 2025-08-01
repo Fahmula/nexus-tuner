@@ -1,4 +1,12 @@
-
+"""The goal is for every long running value to be uniquely typed so that they cannot be used incorrectly.
+For example, LogicalChannelId cannot be used instead of SourceServiceId as it will fail type checking.
+Futher more these types are then used in TypedDicts to model the data structures used in the application.
+All the TypedDicts have all fields marked as ReadOnly and uses Mapping and Tuple instead of dict and list
+to signal immutability, the underlying data structures are likely still dict or lists. This ensures that 99%
+of the application sees these data as immutable as they should, only in the select few areas were we perform
+CRUD operations do we use the Mutable versions of these types by using typing.cast(). This design allows the
+the most dangerous operations to be clearly marked and the rest of the code to be type safe and const safe.
+"""
 
 
 import asyncio
@@ -24,15 +32,7 @@ FFMPEG_TERMINATE_TIMEOUT: Final[int] = 5          # Timeout for terminating FFmp
 
 
 # --- Types ---
-"""The goal is for every long running value to be uniquely typed so that they cannot be used incorrectly.
-For example, LogicalChannelId cannot be used instead of SourceServiceId as it will fail type checking.
-Futher more these types are then used in TypedDicts to model the data structures used in the application.
-All the TypedDicts have all fields marked as ReadOnly and uses Mapping and Tuple instead of dict and list
-to signal immutability, the underlying data structures are likely still dict or lists. This ensures that 99%
-of the application sees these data as immutable as they should, only in the select few areas were we perform
-CRUD operations do we use the Mutable versions of these types by using typing.cast(). This design allows the
-the most dangerous operations to be clearly marked and the rest of the code to be type safe and const safe.
-"""
+
 
 DateTimeISO = NewType("DateTimeISO", str)
 Percent = NewType("Percent", float)
@@ -110,13 +110,12 @@ class ProviderInfo(TypedDict):
     url: ReadOnly[M3UURL]
     max_concurrent_streams: ReadOnly[MaxStreams]
     updated_at: ReadOnly[DateTimeISO | None]
-class ProviderInfoMutable(TypedDict):
-    url: M3UURL
-    max_concurrent_streams: MaxStreams
-    updated_at: DateTimeISO | None
-ProvidersData = NewType("ProvidersData", Mapping[ProviderAlias, ProviderInfo])
-ProvidersDataMutable = NewType("ProvidersDataMutable", dict[ProviderAlias, ProviderInfo])
-ProvidersSourceData = NewType("ProvidersSourceData", Mapping[Literal["source_m3u_providers"], ProvidersData])
+ProvidersDataImpl = NewType("ProvidersDataImpl", dict[ProviderAlias, ProviderInfo])
+_ProvidersDataReadOnly = NewType("_ProvidersDataReadOnly", Mapping[ProviderAlias, ProviderInfo])
+type ProvidersData = ProvidersDataImpl | _ProvidersDataReadOnly
+ProvidersSourceDataImpl = NewType("ProvidersSourceDataImpl", dict[Literal["source_m3u_providers"], ProvidersData])
+_ProvidersSourceDataReadOnly = NewType("_ProvidersSourceDataReadOnly", Mapping[Literal["source_m3u_providers"], ProvidersData])
+type ProvidersSourceData = ProvidersSourceDataImpl | _ProvidersSourceDataReadOnly
 
 class M3USource(TypedDict):
     original_tvg_name: ReadOnly[TVGName]

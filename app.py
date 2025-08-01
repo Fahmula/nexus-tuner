@@ -361,7 +361,7 @@ async def ui_flash_messages() -> str:
 async def ui_main_dashboard() -> str:
     """Renders the main dashboard page."""
     return await render_template("ui_dashboard.html",
-                           provider_count=len(handler.providers_data),
+                           provider_count=await handler.get_num_providers(),
                            discovered_services_count=len(handler.discovered_source_services_data),
                            logical_channels_count=len(handler.logical_channels_data))
 
@@ -592,7 +592,7 @@ async def ui_provider_add() -> Response | str:
         form_data = cast(ImmutableMultiDict[str, str], await request.form)  # type: ignore
         alias = ProviderAlias(form_data.get("alias", "").strip())
         url = M3UURL(form_data.get("url", "").strip())
-        max_streams_str = form_data.get("max_concurrent_streams", "0")
+        max_streams_str = form_data.get("max_concurrent_streams", "")
         try:
             max_streams = MaxStreams(int(max_streams_str))
             if await handler.add_provider(alias, url, max_streams):
@@ -623,7 +623,7 @@ async def ui_provider_edit(alias: ProviderAlias) -> Response | str:
 
     form_data = cast(ImmutableMultiDict[str, str], await request.form)  # type: ignore
     url = M3UURL(form_data.get("url", "").strip())
-    max_streams_str = form_data.get("max_concurrent_streams", "0")
+    max_streams_str = form_data.get("max_concurrent_streams", "")
     try:
         max_streams = MaxStreams(int(max_streams_str))
         if await handler.update_provider(alias, url, max_streams):
@@ -792,7 +792,7 @@ async def hdhomerun_discover() -> Response:
 async def hdhomerun_lineup_status() -> Response:
     """Returns the status of the lineup."""
     response_dict: dict[str, int | str | list[str]] = {
-        "ScanInProgress": 1 if handler.is_loading() else 0,
+        "ScanInProgress": 0,
         "ScanPossible": 0,
         "Source": "Cable",
         "SourceList": ["Cable"]

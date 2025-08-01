@@ -14,7 +14,7 @@ import aiofiles.os
 import aioshutil
 
 from nexus_stream.utils import (NEXUS_STREAM_PORT, NEXUS_STREAM_VERSION, ChannelListData, ChannelMappingsData, DiscoveredSourcesData, JobsData,
-                                Label, LogicalChannelsData, ProvidersData, ProvidersSourceData, ServiceQualityCacheData, VideoKey, VideoType)
+                                Label, LogicalChannelsData, ProvidersDataImpl, ProvidersSourceData, ProvidersSourceDataImpl, ServiceQualityCacheData, VideoKey, VideoType)
 
 
 NOT_ALPHANUM_REGEX: Final[re.Pattern[str]] = re.compile(r'[^a-zA-Z0-9_-]')
@@ -56,7 +56,7 @@ class Config:
         config_dir_str: str | None = os.getenv("NEXUS_CONFIG_DIR")
         if not config_dir_str:
             raise ValueError("NEXUS_CONFIG_DIR environment variable is not set on docker container or system.")
-        self.config_dir: Path = Path(config_dir_str)
+        self.config_dir: Final[Path] = Path(config_dir_str)
         env_file: Path = self.config_dir / ".env"
         if env_file.exists():
             load_dotenv(env_file)
@@ -64,65 +64,65 @@ class Config:
         nexus_url: str | None = os.getenv("NEXUS_URL")
         if not nexus_url:
             raise ValueError("NEXUS_URL environment variable is not set.")
-        self.nexus_url: str = nexus_url
-        self.nexus_port: int = NEXUS_STREAM_PORT
+        self.nexus_url: Final[str] = nexus_url
+        self.nexus_port: Final[int] = NEXUS_STREAM_PORT
         
         # --- Logging ---
-        self.logs_dir: Path = self.config_dir / "logs"
+        self.logs_dir: Final[Path] = self.config_dir / "logs"
         self._logger: logging.Logger
-        self.log_level: str = os.getenv("NEXUS_LOG_LEVEL", "INFO").upper()
-        self.log_backup_count: int = int(os.getenv("NEXUS_LOG_BACKUP_COUNT", 7))
-        self.ffmpeg_logs_retention_seconds: int = int(os.getenv("NEXUS_FFMPEG_LOGS_RETENTION_SECONDS", 86400))
+        self.log_level: Final[str] = os.getenv("NEXUS_LOG_LEVEL", "INFO").upper()
+        self.log_backup_count: Final[int] = int(os.getenv("NEXUS_LOG_BACKUP_COUNT", 7))
+        self.ffmpeg_logs_retention_seconds: Final[int] = int(os.getenv("NEXUS_FFMPEG_LOGS_RETENTION_SECONDS", 86400))
 
         # --- JSON Data Paths ---
-        self.providers_name: str = "providers.json"
-        self.providers_path: Path = self.config_dir / self.providers_name
+        self.providers_name: Final[str] = "providers.json"
+        self.providers_path: Final[Path] = self.config_dir / self.providers_name
         
-        self.discovered_source_services_name: str = "discovered_source_services.json"
-        self.discovered_source_services_path: Path = self.config_dir / self.discovered_source_services_name
+        self.discovered_source_services_name: Final[str] = "discovered_source_services.json"
+        self.discovered_source_services_path: Final[Path] = self.config_dir / self.discovered_source_services_name
         
-        self.logical_channels_name: str = "logical_channels.json"
-        self.logical_channels_path: Path = self.config_dir / self.logical_channels_name
+        self.logical_channels_name: Final[str] = "logical_channels.json"
+        self.logical_channels_path: Final[Path] = self.config_dir / self.logical_channels_name
         
-        self.channel_mappings_name: str = "channel_mappings.json"
-        self.channel_mappings_path: Path = self.config_dir / self.channel_mappings_name
+        self.channel_mappings_name: Final[str] = "channel_mappings.json"
+        self.channel_mappings_path: Final[Path] = self.config_dir / self.channel_mappings_name
         
-        self.channel_list_name: str = "channel_list.json"
-        self.channel_list_path: Path = self.config_dir / self.channel_list_name
+        self.channel_list_name: Final[str] = "channel_list.json"
+        self.channel_list_path: Final[Path] = self.config_dir / self.channel_list_name
         
-        self.service_quality_cache_name: str = "service_quality_cache.json"
-        self.service_quality_cache_path: Path = self.config_dir / self.service_quality_cache_name
+        self.service_quality_cache_name: Final[str] = "service_quality_cache.json"
+        self.service_quality_cache_path: Final[Path] = self.config_dir / self.service_quality_cache_name
 
-        self.jobs_name: str = "jobs.json"
-        self.jobs_path: Path = self.config_dir / self.jobs_name
+        self.jobs_name: Final[str] = "jobs.json"
+        self.jobs_path: Final[Path] = self.config_dir / self.jobs_name
 
         # --- Backup Config ---
-        self.backups_base_path: Path = self.config_dir / "backups"
-        self.backups_scheduled_path: Path = self.backups_base_path / "scheduled"
-        self.backups_manual_path: Path = self.backups_base_path / "manual"
-        self.backup_count: int = int(os.getenv("NEXUS_BACKUP_COUNT", 7))
+        self.backups_base_path: Final[Path] = self.config_dir / "backups"
+        self.backups_scheduled_path: Final[Path] = self.backups_base_path / "scheduled"
+        self.backups_manual_path: Final[Path] = self.backups_base_path / "manual"
+        self.backup_count: Final[int] = int(os.getenv("NEXUS_BACKUP_COUNT", 7))
 
         # --- HLS Segment Directory ---
-        self.hls_base_segment_dir: Path = self.config_dir / "hls_segments"
+        self.hls_base_segment_dir: Final[Path] = self.config_dir / "hls_segments"
         
         # --- FFmpeg & HLS Configs ---
-        self.hls_segment_duration: int = 1
-        self.segment_prune_timeout: float = 3
-        self.latest_segment_timeout: float = 60
-        self.hls_playlist_length: int = 30
-        self.ffmpeg_start_timeout: float = 5
-        self.ffmpeg_inactivity_timeout: int = int(os.getenv("NEXUS_FFMPEG_INACTIVITY_TIMEOUT", 900))
-        self.ffmpeg_path: str = os.getenv("FFMPEG_PATH", "/usr/bin/ffmpeg")
-        self.ffmpeg_logs_dir: Path = self.logs_dir / "ffmpeg_logs"
+        self.hls_segment_duration: Final[int] = 1
+        self.segment_prune_timeout: Final[float] = 3
+        self.latest_segment_timeout: Final[float] = 60
+        self.hls_playlist_length: Final[int] = 30
+        self.ffmpeg_start_timeout: Final[float] = 5
+        self.ffmpeg_inactivity_timeout: Final[int] = int(os.getenv("NEXUS_FFMPEG_INACTIVITY_TIMEOUT", 900))
+        self.ffmpeg_path: Final[str] = os.getenv("FFMPEG_PATH", "/usr/bin/ffmpeg")
+        self.ffmpeg_logs_dir: Final[Path] = self.logs_dir / "ffmpeg_logs"
 
         # --- Media Server Monitoring Configs ---
-        self.emby_url: str | None = os.getenv("NEXUS_EMBY_URL")
-        self.emby_api_key: str | None = os.getenv("NEXUS_EMBY_API_KEY")
-        self.jellyfin_url: str | None = os.getenv("NEXUS_JELLYFIN_URL")
-        self.jellyfin_api_key: str | None = os.getenv("NEXUS_JELLYFIN_API_KEY")
-        self.ghost_check_interval: int = int(os.getenv("NEXUS_GHOST_SESSION_CHECK_INTERVAL", 60))
+        self.emby_url: Final[str | None] = os.getenv("NEXUS_EMBY_URL")
+        self.emby_api_key: Final[str | None] = os.getenv("NEXUS_EMBY_API_KEY")
+        self.jellyfin_url: Final[str | None] = os.getenv("NEXUS_JELLYFIN_URL")
+        self.jellyfin_api_key: Final[str | None] = os.getenv("NEXUS_JELLYFIN_API_KEY")
+        self.ghost_check_interval: Final[int] = int(os.getenv("NEXUS_GHOST_SESSION_CHECK_INTERVAL", 60))
 
-        self.file_lock: asyncio.Lock = asyncio.Lock()
+        self.file_lock: Final[asyncio.Lock] = asyncio.Lock()
         self._cleaning_up_ffmpeg_logs: bool = False
 
     @classmethod
@@ -305,33 +305,35 @@ class Config:
                             await wf.write(json.dumps(default_content, indent=2))
                          return default_content
                     return json.loads(content)
-            except (json.JSONDecodeError, OSError) as e:
-                self.error(Label.CONFIG, f"Could not load or parse {file_path}: {e}. Returning default.")
-                return default_content_factory()
+            except BaseException as e:
+                self.critical(Label.CONFIG, f"Could not load or parse {file_path}: {e}")
+                raise
 
     async def _save_json_file[K: str, V](self, file_path: Path, data: Mapping[K, V] | list[V] | tuple[V, ...]) -> bool:
         """
         Saves data to a JSON file atomically and asynchronously.
         """
-        async with self.file_lock:
-            temp_file_path = file_path.with_suffix(file_path.suffix + '.tmp')
-            try:
+        temp_file_path = file_path.with_suffix(file_path.suffix + '.tmp')
+        try:
+            async with self.file_lock:
                 async with aiofiles.open(temp_file_path, "w") as f:
                     await f.write(json.dumps(data, indent=2))
                 await aiofiles.os.replace(temp_file_path, file_path)
                 return True
-            except Exception as e:
-                self.error(Label.CONFIG, f"Could not write to {file_path}: {e}")
-                if await aiofiles.os.path.exists(temp_file_path):
-                    try:
-                        await aiofiles.os.remove(temp_file_path)
-                    except Exception as remove_error:
-                        self.error(Label.CONFIG, f"Error removing temporary file {temp_file_path}: {remove_error}")
+        except BaseException as e:
+            self.error(Label.CONFIG, f"Could not write to {file_path}: {e}")
+            if await aiofiles.os.path.exists(temp_file_path):
+                try:
+                    await aiofiles.os.remove(temp_file_path)
+                except Exception as remove_error:
+                    self.error(Label.CONFIG, f"Error removing temporary file {temp_file_path}: {remove_error}")
+            if isinstance(e, Exception):
                 return False
+            raise
 
     async def get_providers_config(self) -> ProvidersSourceData:
         """Loads the providers configuration from providers.json asynchronously."""
-        return await self._load_json_file(self.providers_path, lambda: ProvidersSourceData({"source_m3u_providers": ProvidersData({})}))
+        return await self._load_json_file(self.providers_path, lambda: ProvidersSourceDataImpl({"source_m3u_providers": ProvidersDataImpl({})}))
 
     async def save_providers_config(self, data: ProvidersSourceData) -> bool:
         """Saves the providers configuration to providers.json asynchronously."""
