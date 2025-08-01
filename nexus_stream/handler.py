@@ -3,12 +3,12 @@ import re
 import html
 import hashlib
 import asyncio
-from typing import Callable, Final, Self, cast
+from typing import Callable, Final, Self
 
 import aiohttp
 from nexus_stream.config import Config
 from nexus_stream.slots import ProviderSlots
-from nexus_stream.utils import (DEFAULT_PRIORITY, M3UURL, NEXUS_STREAM_USER_AGENT, ChannelInfos, ChannelInfosMutable, ChannelListData, ChannelListDataImpl,
+from nexus_stream.utils import (DEFAULT_PRIORITY, M3UURL, NEXUS_STREAM_USER_AGENT, ChannelInfos, ChannelInfosImpl, ChannelListData, ChannelListDataImpl,
                                 ChannelListGroup, ChannelListInfo, ChannelMappingsData, ChannelMappingsDataImpl, ChannelNum, DateTimeISO,
                                 DiscoveredSource, DiscoveredSourcesData, DiscoveredSourcesDataImpl, LogicalChannelInfo, LogicalChannelName, LogicalChannelsDataImpl, Priority, ProviderInfo,
                                 ProviderStatuses, ProvidersSourceDataImpl, SourceInfo, SourcePriority, SourceServiceId, StreamURL, TVGGroupTitle, Label, LogicalChannelId,
@@ -40,7 +40,7 @@ class ChannelHandler:
     __slots__ = (
         'label', 'config', '_mutex', '_providers_data', '_discovered_source_services_data',
         '_logical_channels_data', '_channel_mappings_data', '_channel_list_data',
-        'client_facing_channels', '_main_m3u_playlist',
+        '_client_facing_channels', '_main_m3u_playlist',
         '_slots', '_kill_provider_streams', '_pending_streams',
     )
     
@@ -60,7 +60,7 @@ class ChannelHandler:
         self._channel_list_data: ChannelListData = ChannelListDataImpl({})
 
         # In-memory processed data
-        self.client_facing_channels: ChannelInfos = ChannelInfos({})
+        self._client_facing_channels: ChannelInfos = ChannelInfosImpl({})
         self._main_m3u_playlist: MainM3UPlaylist = MainM3UPlaylist("#EXTM3U\n")
 
         # Slots management
@@ -125,7 +125,7 @@ class ChannelHandler:
             
             self.config.info(self.label,
                 f"ChannelHandler ready. Discovered: {len(self._discovered_source_services_data)}, "
-                f"Client-Facing: {len(self.client_facing_channels)}"
+                f"Client-Facing: {len(self._client_facing_channels)}"
             )
         finally:
             self._mutex.release()
@@ -226,10 +226,9 @@ class ChannelHandler:
         self.config.info(self.label, f"Finished parsing. Total discovered source services: {len(self._discovered_source_services_data)}")
 
     def _build_client_facing_channels(self, prev_discovered_source_services: DiscoveredSourcesData) -> None:
-        """Builds the final list of channels exposed to clients. (Sync - CPU-bound)"""
+        """Builds the final list of channels exposed to clients."""
         self.config.info(self.label, "Building client-facing channels...")
-        cast(ChannelInfosMutable, self.client_facing_channels).clear()
-
+        new_client_facing_channels = ChannelInfosImpl({})
         for lc_def in self._logical_channels_data:
             logical_channel_id = lc_def["logical_channel_id"]
 
@@ -256,7 +255,7 @@ class ChannelHandler:
                     self.config.warn(self.label, f"Mapped source {source_name} for '{lc_def.get('display_name', logical_channel_id)}'{f' ({lc_def['channel_num']})' if 'channel_num' in lc_def else ''} not found in discovered services.")
 
             if processed_sources:
-                cast(ChannelInfosMutable, self.client_facing_channels)[logical_channel_id] = {
+                new_client_facing_channels[logical_channel_id] = {
                     "logical_channel_id": logical_channel_id,
                     "display_name": lc_def["display_name"] or LogicalChannelName(logical_channel_id),
                     "group_title": lc_def["group_title"] or TVGGroupTitle("Uncategorized"),
@@ -267,7 +266,8 @@ class ChannelHandler:
                 }
             else:
                 self.config.warn(self.label, f"No valid mapped sources for logical channel '{logical_channel_id}'. It will not be included in the client M3U.")
-        self.config.info(self.label, f"Built {len(self.client_facing_channels)} client-facing channels.")
+        self._client_facing_channels = new_client_facing_channels
+        self.config.info(self.label, f"Built {len(self._client_facing_channels)} client-facing channels.")
 
     async def get_num_providers(self) -> int:
         """Returns the number of configured providers."""
@@ -330,7 +330,7 @@ class ChannelHandler:
             self._main_m3u_playlist = MainM3UPlaylist("\n".join(m3u_lines) + "\n")
             return
 
-        sorted_channels = sorted(self.client_facing_channels.values(), key=lambda item: (item.get("group_title", "zzz").lower(), item.get("display_name", "zzz").lower()))
+        sorted_channels = sorted(self._client_facing_channels.values(), key=lambda item: (item.get("group_title", "zzz").lower(), item.get("display_name", "zzz").lower()))
 
         for lc_data in sorted_channels:
             name = lc_data.get("display_name", "")
@@ -344,11 +344,11 @@ class ChannelHandler:
             m3u_lines.append(f"{self.config.nexus_url}/{VideoType.HLS}/{lc_data['logical_channel_id']}/playlist.m3u8")
         
         self._main_m3u_playlist = MainM3UPlaylist("\n".join(m3u_lines) + "\n")
-        self.config.info(self.label, f"Generated main client M3U with {len(self.client_facing_channels)} channels.")
+        self.config.info(self.label, f"Generated main client M3U with {len(self._client_facing_channels)} channels.")
 
     def get_sources_for_client_facing_channel(self, logical_channel_id: LogicalChannelId) -> list[SourceInfo]:
         """Retrieves source stream URLs for a channel."""
-        return self.client_facing_channels.get(logical_channel_id, {}).get("sources", [])
+        return self._client_facing_channels.get(logical_channel_id, {}).get("sources", [])
 
     def _update_providers_slots(self) -> None:
         """Initializes or updates provider slots based on config asynchronously."""
@@ -622,6 +622,11 @@ class ChannelHandler:
         """Returns the provider slots configuration."""
         async with self._mutex:
             return self._slots.get(alias)
+
+    async def copy_client_facing_channels(self) -> ChannelInfos:
+        """Returns a copy of the client-facing channels."""
+        async with self._mutex:
+            return ChannelInfosImpl({k: v for k, v in self._client_facing_channels.items()})
 
     async def get_main_m3u_playlist(self) -> MainM3UPlaylist:
         """Returns the main M3U playlist."""

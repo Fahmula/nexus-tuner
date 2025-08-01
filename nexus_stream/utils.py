@@ -4,8 +4,8 @@ Futher more these types are then used in TypedDicts to model the data structures
 All the TypedDicts have all fields marked as ReadOnly and uses Mapping and Tuple instead of dict and list
 to signal immutability, the underlying data structures are likely still dict or lists. This ensures that 99%
 of the application sees these data as immutable as they should, only in the select few areas were we perform
-CRUD operations do we use the Mutable versions of these types by using typing.cast(). This design allows the
-the most dangerous operations to be clearly marked and the rest of the code to be type safe and const safe.
+CRUD operations do we use the mutable versions of these types by contructing a new object or copying the previous.
+This design allows the most dangerous operations to be clearly marked and the rest of the code to be type safe and const safe.
 """
 
 
@@ -176,8 +176,9 @@ class SourceInfo(TypedDict):
 
 class ChannelInfo(LogicalChannelInfo):
     sources: ReadOnly[list[SourceInfo]]
-ChannelInfos = NewType("ChannelInfos", Mapping[LogicalChannelId, ChannelInfo])
-ChannelInfosMutable = NewType("ChannelInfosMutable", dict[LogicalChannelId, ChannelInfo])
+ChannelInfosImpl = NewType("ChannelInfosImpl", dict[LogicalChannelId, ChannelInfo])
+_ChannelInfosReadOnly = NewType("_ChannelInfosReadOnly", Mapping[LogicalChannelId, ChannelInfo])
+type ChannelInfos = ChannelInfosImpl | _ChannelInfosReadOnly
 
 class QualityInfo(TypedDict):
     statuses: ReadOnly[tuple[Literal["online", "offline"], ...]]

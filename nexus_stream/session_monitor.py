@@ -49,14 +49,11 @@ class GhostSessionMonitor:
         instance.ghost_monitor_task = asyncio.create_task(instance._run())
         return instance
 
-    def _build_name_to_id_map(self) -> None:
-        """
-        Creates a mapping from a channel's display name to its logical_channel_id.
-        This is a synchronous, CPU-bound operation on in-memory data.
-        """
+    async def _build_name_to_id_map(self) -> None:
+        """Creates a mapping from a channel's display name to its logical_channel_id."""
         self.config.debug(Label.SESSION, "Building channel name to stream ID map...")
         name_map = {channel_data["display_name"]: lc_id
-                    for lc_id, channel_data in self.handler.client_facing_channels.items()}
+                    for lc_id, channel_data in (await self.handler.copy_client_facing_channels()).items()}
         self.display_name_to_lc_id_map = name_map
         self.config.debug(Label.SESSION, f"Built map with {len(self.display_name_to_lc_id_map)} entries.")
 
@@ -106,7 +103,7 @@ class GhostSessionMonitor:
     async def _check_for_ghost_sessions(self) -> None:
         """The main logic loop to find and terminate ghost streams asynchronously."""
         self.config.debug(Label.SESSION, "Running check for ghost sessions...")
-        self._build_name_to_id_map()
+        await self._build_name_to_id_map()
 
         try:
             legitimately_active_lc_ids = await self._get_legitimate_stream_ids()
