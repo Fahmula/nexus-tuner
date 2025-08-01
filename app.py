@@ -108,6 +108,16 @@ async def calculate_channel_metrics(mapped_services: list[SourcePriority], all_q
         "discovered_mappings": discovered_mappings,
     })
 
+def filter_sources(raw_query: str, service: DiscoveredSource) -> bool:
+    """Filters sources based on a query. (Sync - pure function)"""
+    tvg_name = service.get('original_tvg_name', '').lower()
+    display_name = service.get('original_display_name_extinf', '').lower()
+    for raw_q in raw_query.split(" OR "):
+        words = raw_q.strip().lower().split()
+        if all(word in tvg_name or word in display_name for word in words):
+            return True
+    return False
+
 
 @app.context_processor
 def inject_global_vars() -> Dict[str, datetime | str]:
@@ -209,15 +219,9 @@ async def serve_hls_preview(logical_channel_id: LogicalChannelId) -> Response:
         config.error(VideoType.HLS, msg)
         abort(404, msg)
 
-    priority = Priority(DEFAULT_PRIORITY)
-    for channels in handler.channel_mappings_data.values():
-        for channel in channels:
-            if channel['source_service_id'] == source_service_id:
-                priority = channel['priority']
-                break
-
     sources: list[SourceInfo] = [{
-        'source_service_id': source_service['id'], 'priority': priority,
+        'source_service_id': source_service['id'],
+        'priority': await handler.get_source_priority(source_service_id) or Priority(DEFAULT_PRIORITY),
         'provider_alias': source_service['provider_alias'],
         'actual_stream_url': source_service['actual_stream_url']
     }]
@@ -497,7 +501,7 @@ async def ui_logical_channels_list() -> str:
 
     all_channel_metrics: dict[LogicalChannelId, LogicalChannelMetrics] = {}
     for channel in channels:
-        mapped_services = handler.get_mappings_for_logical_channel(channel['logical_channel_id'])
+        mapped_services = await handler.copy_mappings_for_logical_channel(channel['logical_channel_id'])
         sort_sources(mapped_services, all_quality_scores, reverse=False)
         all_channel_metrics[channel["logical_channel_id"]] = await calculate_channel_metrics(mapped_services, all_quality_scores)
 
@@ -550,8 +554,10 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
             if not await handler.update_logical_channel(lc_data):
                 await flash(f"Failed to update channel {channel_log}.", "error")
                 return redirect(request.url)
-            await handler.update_mappings_for_logical_channel(lc_data["logical_channel_id"], mappings_to_save)
-            await flash(f"Channel {channel_log} updated.", "success")
+            if await handler.update_mappings_for_logical_channel(lc_data["logical_channel_id"], mappings_to_save):
+                await flash(f"Channel {channel_log} updated with {len(mappings_to_save)} mappings.", "success")
+            else:
+                await flash(f"Successfully updated channel {channel_log}, but failed to update {len(mappings_to_save)} mappings.", "warning")
             await handler.reload_handler_config()
             return redirect(url_for('ui_logical_channel_form', logical_channel_id=submitted_id))
         else:
@@ -568,8 +574,12 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
                 await flash(f"Failed to create channel {channel_log}.", "error")
                 return redirect(request.url)
             if mappings_to_save:
-                await handler.update_mappings_for_logical_channel(new_id, mappings_to_save)
-            await flash(f"Channel {channel_log} created.", "success")
+                if await handler.update_mappings_for_logical_channel(new_id, mappings_to_save):
+                    await flash(f"Channel {channel_log} created with {len(mappings_to_save)} mappings.", "success")
+                else:
+                    await flash(f"Successfully created channel {channel_log}, but failed to add {len(mappings_to_save)} mappings.", "warning")
+            else:
+                await flash(f"Channel {channel_log} created with no mappings.", "success")
             await handler.reload_handler_config()
             return redirect(url_for('ui_logical_channel_form', logical_channel_id=new_id))
 
@@ -593,16 +603,16 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     all_services = await handler.get_all_discovered_source_services_for_ui()
     all_quality_scores = await quality_monitor.get_quality_scores()
     
-    other_mappings = handler.copy_mappings_channel_mappings()
-    current_mappings = other_mappings.pop(logical_channel_id, []) if logical_channel_id else []
-    sort_sources(current_mappings, all_quality_scores, reverse=False)
-    services_mapped_elsewhere: set[SourceServiceId] = {mapping['source_service_id'] for mappings in other_mappings.values() for mapping in mappings}
     all_services_map = {s['id']: s for s in all_services}
     mapped_services: list[DiscoveredSource] = []
     all_mapped_service_ids: set[SourceServiceId] = set()
     source_metrics: dict[SourceServiceId, SourceMetrics] = {}
+    current_mappings = await handler.copy_mappings_for_logical_channel(logical_channel_id) if logical_channel_id else []
+    sort_sources(current_mappings, all_quality_scores, reverse=False)
+    services_mapped_elsewhere = await handler.get_all_mapped_service_ids()
     for mapping in current_mappings:
         service_id = mapping['source_service_id']
+        services_mapped_elsewhere.discard(service_id)
         all_mapped_service_ids.add(service_id)
         if service_id in all_services_map:
             service_details = all_services_map[service_id].copy()
@@ -617,7 +627,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     unmapped_suggestions: list[DiscoveredSource] = []
     if filter_query and search_query:
         for service in all_services:
-            if service['id'] not in all_mapped_service_ids and handler.filter_sources(search_query, service):
+            if service['id'] not in all_mapped_service_ids and filter_sources(search_query, service):
                 service_id = service['id']
                 raw_score = all_quality_scores.get(service_id, {}).get('uptime', None)
                 source_metrics[service_id] = SourceMetrics({
@@ -666,7 +676,7 @@ async def ui_analyze_mappings(logical_channel_id: LogicalChannelId) -> Response:
     if not channel:
         await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
         return Response("", 404)
-    services = handler.get_mappings_for_logical_channel(logical_channel_id)
+    services = await handler.copy_mappings_for_logical_channel(logical_channel_id)
     if not services:
         await flash(f"No mappings found for logical channel '{logical_channel_id}'.", "info")
         return Response("", 204)
@@ -690,13 +700,17 @@ async def ui_remove_dead_mappings(logical_channel_id: LogicalChannelId) -> Respo
         return Response("", 404)
     discovered_mappings: list[SourcePriority] = []
     removed_count = 0
-    for service in handler.get_mappings_for_logical_channel(logical_channel_id):
+    for service in await handler.copy_mappings_for_logical_channel(logical_channel_id):
         if await handler.get_discovered_source(service['source_service_id']):
             discovered_mappings.append(service)
         else:
-            await quality_monitor.remove_source_service(service['source_service_id'])
+            if not await quality_monitor.remove_source_service(service['source_service_id']):
+                await flash(f"Failed to remove dead service {service['source_service_id']} from quality monitor.", "error")
+                return Response("", 500)
             removed_count += 1
-    await handler.update_mappings_for_logical_channel(logical_channel_id, discovered_mappings)
+    if not await handler.update_mappings_for_logical_channel(logical_channel_id, discovered_mappings):
+        await flash(f"Failed to update mappings for logical channel '{logical_channel_id}' after removing dead services.", "error")
+        return Response("", 500)
 
     channel_log = f"'{channel['display_name']}' ({channel['channel_num']})"
     if removed_count > 0:
@@ -731,7 +745,7 @@ async def ui_channel_populate_from_suggestion() -> str:
     # 2. Pre-filter services based on the suggested name
     filter_query = prefilled_data['display_name'].strip().lower()
     all_services = await handler.get_all_discovered_source_services_for_ui()
-    services_mapped_elsewhere: set[str] = {mapping['source_service_id'] for mappings in handler.channel_mappings_data.values() for mapping in mappings}
+    services_mapped_elsewhere = await handler.get_all_mapped_service_ids()
     unmapped_suggestions: list[DiscoveredSource] = []
 
     search_query = prefilled_data['display_name']
@@ -743,7 +757,7 @@ async def ui_channel_populate_from_suggestion() -> str:
 
     if filter_query:
         for service in all_services:
-            if handler.filter_sources(search_query, service):
+            if filter_sources(search_query, service):
                 unmapped_suggestions.append(service)
 
     # 3. Paginate the pre-filtered results
@@ -852,7 +866,7 @@ async def hdhomerun_lineup() -> Response:
         if not channel_number:
             continue
         is_hd = 1
-        for mapping in handler.channel_mappings_data.get(channel['logical_channel_id'], []):
+        for mapping in await handler.copy_mappings_for_logical_channel(channel['logical_channel_id']):
             if quality_scores.get(mapping['source_service_id'], {}).get('height', 0) >= 720:
                 break
         else:

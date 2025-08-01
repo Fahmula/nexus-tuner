@@ -160,8 +160,9 @@ class LogicalChannelMetrics(TypedDict):
 class SourcePriority(TypedDict):
     source_service_id: ReadOnly[SourceServiceId]
     priority: ReadOnly[Priority]
-ChannelMappingsData = NewType("ChannelMappingsData", Mapping[LogicalChannelId, tuple[SourcePriority, ...]])
-ChannelMappingsDataMutable = NewType("ChannelMappingsDataMutable", dict[LogicalChannelId, list[SourcePriority]])
+ChannelMappingsDataImpl = NewType("ChannelMappingsDataImpl", dict[LogicalChannelId, list[SourcePriority]])
+ChannelMappingsDataReadOnly = NewType("ChannelMappingsDataReadOnly", Mapping[LogicalChannelId, tuple[SourcePriority, ...]])
+type ChannelMappingsData = ChannelMappingsDataImpl | ChannelMappingsDataReadOnly
 
 class SourceMetrics(TypedDict):
     priority: ReadOnly[Priority]

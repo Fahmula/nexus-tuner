@@ -9,8 +9,8 @@ import aiohttp
 from nexus_stream.config import Config
 from nexus_stream.slots import ProviderSlots
 from nexus_stream.utils import (DEFAULT_PRIORITY, M3UURL, NEXUS_STREAM_USER_AGENT, ChannelInfos, ChannelInfosMutable, ChannelListData,
-                                ChannelListGroup, ChannelListInfo, ChannelMappingsData, ChannelMappingsDataMutable, ChannelNum, DateTimeISO,
-                                DiscoveredSource, DiscoveredSourcesData, DiscoveredSourcesDataImpl, LogicalChannelInfo, LogicalChannelName, LogicalChannelsDataImpl, ProviderInfo,
+                                ChannelListGroup, ChannelListInfo, ChannelMappingsData, ChannelMappingsDataImpl, ChannelNum, DateTimeISO,
+                                DiscoveredSource, DiscoveredSourcesData, DiscoveredSourcesDataImpl, LogicalChannelInfo, LogicalChannelName, LogicalChannelsDataImpl, Priority, ProviderInfo,
                                 ProviderStatuses, ProvidersSourceDataImpl, SourceInfo, SourcePriority, SourceServiceId, StreamURL, TVGGroupTitle, Label, LogicalChannelId,
                                 LogicalChannelsData, M3USource, MainM3UPlaylist, MaxStreams, ProviderAlias, ProvidersData, ProvidersDataImpl,
                                 ProvidersSourceData, StreamKey, TVGDisplayName, TVGId, TVGLogo, TVGName, VideoType, create_stream_key)
@@ -39,7 +39,7 @@ class ChannelHandler:
     """
     __slots__ = (
         'label', 'config', '_mutex', '_providers_data', '_discovered_source_services_data',
-        '_logical_channels_data', 'channel_mappings_data', 'channel_list_data',
+        '_logical_channels_data', '_channel_mappings_data', 'channel_list_data',
         'client_facing_channels', 'main_m3u_playlist',
         'slots', '_kill_provider_streams', '_pending_streams',
     )
@@ -56,7 +56,7 @@ class ChannelHandler:
         self._providers_data: ProvidersData = ProvidersDataImpl({})
         self._discovered_source_services_data: DiscoveredSourcesData = DiscoveredSourcesDataImpl({})
         self._logical_channels_data: LogicalChannelsData = LogicalChannelsDataImpl([])
-        self.channel_mappings_data: ChannelMappingsData = ChannelMappingsData({})
+        self._channel_mappings_data: ChannelMappingsData = ChannelMappingsDataImpl({})
         self.channel_list_data: ChannelListData = ChannelListData({})
 
         # In-memory processed data
@@ -94,7 +94,7 @@ class ChannelHandler:
 
             self._discovered_source_services_data = await self.config.get_discovered_source_services_config()
             self._logical_channels_data = await self.config.get_logical_channels_config()
-            self.channel_mappings_data = await self.config.get_channel_mappings_config()
+            self._channel_mappings_data = await self.config.get_channel_mappings_config()
             self.channel_list_data = await self.config.get_channel_list_config()
 
             if update_providers:
@@ -233,7 +233,7 @@ class ChannelHandler:
         for lc_def in self._logical_channels_data:
             logical_channel_id = lc_def["logical_channel_id"]
 
-            mapped_sources_for_lc = self.get_mappings_for_logical_channel(logical_channel_id)
+            mapped_sources_for_lc = [mapping for mapping in self._channel_mappings_data.get(logical_channel_id, [])]
             mapped_sources_for_lc.sort(key=lambda x: x.get("priority", DEFAULT_PRIORITY))
             processed_sources: list[SourceInfo] = []
             for mapping in mapped_sources_for_lc:
@@ -393,6 +393,7 @@ class ChannelHandler:
                                 for alias, provider_slots in self.slots.items()})
 
     # --- UI Interaction Methods ---
+
     def search_predefined_channels(self, raw_query: str) -> list[ChannelListGroup]:
         """Searches the predefined channel list. (Sync - CPU-bound)"""
         if not raw_query: return []
@@ -437,23 +438,6 @@ class ChannelHandler:
                     if channel_name in pre_channel_name: return pre_channel
                     if pre_channel_name in channel_name: return pre_channel
         return None
-
-    def filter_sources(self, raw_query: str, service: DiscoveredSource) -> bool:
-        """Filters sources based on a query. (Sync - pure function)"""
-        tvg_name = service.get('original_tvg_name', '').lower()
-        display_name = service.get('original_display_name_extinf', '').lower()
-        for raw_q in raw_query.split(" OR "):
-            words = raw_q.strip().lower().split()
-            if all(word in tvg_name or word in display_name for word in words):
-                return True
-        return False
-
-    def _generate_next_logical_channel_id(self) -> LogicalChannelId:
-        """Generates the next available ID. (Sync - CPU-bound)"""
-        existing_id_strings = [lc['logical_channel_id'] for lc in self._logical_channels_data]
-        if not existing_id_strings: return INITIAL_LOGICAL_CHANNEL_ID
-        numeric_ids = [int(id_str) for id_str in existing_id_strings]
-        return LogicalChannelId(str(max(numeric_ids) + 1))
 
     async def _save_providers_for_ui(self, new_providers_data: ProvidersSourceData, *, update_slots: bool) -> bool:
         """Saves the provider configuration and updates internal state asynchronously."""
@@ -520,6 +504,13 @@ class ChannelHandler:
         async with self._mutex:
             return next((lc for lc in self._logical_channels_data if lc.get("logical_channel_id") == logical_channel_id), None)
 
+    def _generate_next_logical_channel_id(self) -> LogicalChannelId:
+        """Generates the next available ID. (Sync - CPU-bound)"""
+        existing_id_strings = [lc['logical_channel_id'] for lc in self._logical_channels_data]
+        if not existing_id_strings: return INITIAL_LOGICAL_CHANNEL_ID
+        numeric_ids = [int(id_str) for id_str in existing_id_strings]
+        return LogicalChannelId(str(max(numeric_ids) + 1))
+
     async def add_logical_channel(self, raw_lc_data: LogicalChannelInfo) -> LogicalChannelId | None:
         """Adds a new logical channel to the configuration."""
         async with self._mutex:
@@ -553,13 +544,13 @@ class ChannelHandler:
             if not any(lc["logical_channel_id"] == logical_channel_id for lc in self._logical_channels_data):
                 self.config.error(self.label, f"Failed to delete logical channel {logical_channel_id}: not found.")
                 return False
-            if logical_channel_id in self.channel_mappings_data:
-                new_mappings = {k: v for k, v in self.channel_mappings_data.items()}
+            if logical_channel_id in self._channel_mappings_data:
+                new_mappings = ChannelMappingsDataImpl({k: [m for m in v] for k, v in self._channel_mappings_data.items()})
                 del new_mappings[logical_channel_id]
-                if not await self.config.save_channel_mappings_config(ChannelMappingsData(new_mappings)):
+                if not await self.config.save_channel_mappings_config(new_mappings):
                     self.config.error(self.label, f"Failed to save channel mappings when deleting logical channel {logical_channel_id}. Restoring original mappings.")
                     return False
-                del cast(ChannelMappingsDataMutable, self.channel_mappings_data)[logical_channel_id]
+                self._channel_mappings_data = new_mappings
 
             new_data = LogicalChannelsDataImpl([lc for lc in self._logical_channels_data
                                                 if lc["logical_channel_id"] != logical_channel_id])
@@ -569,18 +560,40 @@ class ChannelHandler:
             self._logical_channels_data = new_data
             return True
 
-    def get_mappings_for_logical_channel(self, logical_channel_id: LogicalChannelId) -> list[SourcePriority]:
+    async def get_source_priority(self, source_service_id: SourceServiceId) -> Priority | None:
+        """Retrieves the priority of a source service."""
+        async with self._mutex:
+            for mappings in self._channel_mappings_data.values():
+                for mapping in mappings:
+                    if mapping.get("source_service_id") == source_service_id:
+                        return mapping["priority"]
+            return None
+
+    async def get_all_mapped_service_ids(self) -> set[SourceServiceId]:
+        """Returns a set of all source service IDs that are mapped to logical channels."""
+        async with self._mutex:
+            return {mapping["source_service_id"] for mappings in self._channel_mappings_data.values() for mapping in mappings}
+
+    async def copy_channel_mappings_data(self) -> ChannelMappingsDataImpl:
+        """Returns a copy of the channel mappings data."""
+        async with self._mutex:
+            return ChannelMappingsDataImpl({k: [m for m in v] for k, v in self._channel_mappings_data.items()})
+
+    async def copy_mappings_for_logical_channel(self, logical_channel_id: LogicalChannelId) -> list[SourcePriority]:
         """Retrieves mappings for a logical channel."""
-        return [mapping for mapping in self.channel_mappings_data.get(logical_channel_id, [])]
+        async with self._mutex:
+            return [mapping for mapping in self._channel_mappings_data.get(logical_channel_id, [])]
 
     async def update_mappings_for_logical_channel(self, logical_channel_id: LogicalChannelId, new_mappings_list: list[SourcePriority]) -> bool:
         """Updates mappings for a logical channel."""
-        cast(ChannelMappingsDataMutable, self.channel_mappings_data)[logical_channel_id] = new_mappings_list
-        return await self.config.save_channel_mappings_config(self.channel_mappings_data)
-
-    def copy_mappings_channel_mappings(self) -> ChannelMappingsDataMutable:
-        """Returns a copy of the channel mappings data."""
-        return ChannelMappingsDataMutable(cast(ChannelMappingsDataMutable, self.channel_mappings_data).copy())
+        async with self._mutex:
+            new_mappings = ChannelMappingsDataImpl({k: [m for m in v] for k, v in self._channel_mappings_data.items()})
+            new_mappings[logical_channel_id] = new_mappings_list
+            if not await self.config.save_channel_mappings_config(new_mappings):
+                self.config.error(self.label, f"Failed to save updated channel mappings for logical channel {logical_channel_id}.")
+                return False
+            self._channel_mappings_data = new_mappings
+            return True
 
     async def get_all_discovered_source_services_for_ui(self) -> list[DiscoveredSource]:
         """Gets a list of discovered services."""

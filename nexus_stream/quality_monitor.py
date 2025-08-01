@@ -51,15 +51,18 @@ class QualityMonitor:
         async with self._mutex:
             return QualityScores(cast(QualityScoresMutable, self._quality_scores).copy())
 
-    async def remove_source_service(self, service_id: SourceServiceId) -> None:
+    async def remove_source_service(self, service_id: SourceServiceId) -> bool:
         """Removes a source service from the quality scores and cache."""
         async with self._mutex:
-            if service_id in self._quality_scores:
-                del cast(QualityScoresMutable, self._quality_scores)[service_id]
             quality_cache = await self.config.get_service_quality_cache()
             if service_id in quality_cache:
                 del cast(ServiceQualityCacheDataMutable, quality_cache)[service_id]
-                await self.config.save_service_quality_cache(quality_cache)
+                if not await self.config.save_service_quality_cache(quality_cache):
+                    self.config.error(Label.QUALITY, f"Failed to save service quality cache after removing {service_id}.")
+                    return False
+            if service_id in self._quality_scores:
+                del cast(QualityScoresMutable, self._quality_scores)[service_id]
+            return True
 
     async def _get_stream_info(self, service_id: SourceServiceId, stream_url: StreamURL) -> ProbeSuccess | None:
         """
@@ -192,14 +195,14 @@ class QualityMonitor:
         valid_mappings: list[tuple[LogicalChannelId, list[SourceServiceId], DateTimeISO]] = []
         if input_lc_id:
             self.config.info(Label.QUALITY, f"Starting stream quality analysis for Logical Channel ID {input_lc_id}.")
-            services = self.handler.get_mappings_for_logical_channel(input_lc_id)
+            services = await self.handler.copy_mappings_for_logical_channel(input_lc_id)
             if not services:
                 self.config.error(Label.QUALITY, f"No mapped services found for Logical Channel ID {input_lc_id}.")
                 return
             valid_mappings.append((input_lc_id, [service["source_service_id"] for service in services], DateTimeISO("0001-01-01")))
         else:
             self.config.info(Label.QUALITY, "Starting stream quality analysis cycle.")
-            all_mappings = self.handler.channel_mappings_data
+            all_mappings = await self.handler.copy_channel_mappings_data()
             if not all_mappings:
                 self.config.warn(Label.QUALITY, "No mapped services to analyze.")
                 return

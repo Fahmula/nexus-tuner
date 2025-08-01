@@ -13,8 +13,8 @@ import asyncio
 import aiofiles.os
 import aioshutil
 
-from nexus_stream.utils import (NEXUS_STREAM_PORT, NEXUS_STREAM_VERSION, ChannelListData, ChannelMappingsData, DiscoveredSourcesData, JobsData,
-                                Label, LogicalChannelsData, ProvidersDataImpl, ProvidersSourceData, ProvidersSourceDataImpl, ServiceQualityCacheData, VideoKey, VideoType)
+from nexus_stream.utils import (NEXUS_STREAM_PORT, NEXUS_STREAM_VERSION, ChannelListData, ChannelMappingsData, ChannelMappingsDataImpl, DiscoveredSourcesData, DiscoveredSourcesDataImpl, JobsData,
+                                Label, LogicalChannelsData, LogicalChannelsDataImpl, ProvidersDataImpl, ProvidersSourceData, ProvidersSourceDataImpl, ServiceQualityCacheData, VideoKey, VideoType)
 
 
 NOT_ALPHANUM_REGEX: Final[re.Pattern[str]] = re.compile(r'[^a-zA-Z0-9_-]')
@@ -100,7 +100,7 @@ class Config:
         self.backups_base_path: Final[Path] = self.config_dir / "backups"
         self.backups_scheduled_path: Final[Path] = self.backups_base_path / "scheduled"
         self.backups_manual_path: Final[Path] = self.backups_base_path / "manual"
-        self.backup_count: Final[int] = int(os.getenv("NEXUS_BACKUP_COUNT", 7))
+        self.backup_count: Final[int] = int(os.getenv("NEXUS_BACKUP_COUNT", 30))
 
         # --- HLS Segment Directory ---
         self.hls_base_segment_dir: Final[Path] = self.config_dir / "hls_segments"
@@ -341,7 +341,7 @@ class Config:
 
     async def get_discovered_source_services_config(self) -> DiscoveredSourcesData:
         """Loads the discovered source services from discovered_source_services.json asynchronously."""
-        return await self._load_json_file(self.discovered_source_services_path, lambda: DiscoveredSourcesData({}))
+        return await self._load_json_file(self.discovered_source_services_path, lambda: DiscoveredSourcesDataImpl({}))
 
     async def save_discovered_source_services_config(self, data: DiscoveredSourcesData) -> bool:
         """Saves the discovered source services to discovered_source_services.json asynchronously."""
@@ -349,7 +349,7 @@ class Config:
 
     async def get_logical_channels_config(self) -> LogicalChannelsData:
         """Loads the logical channels configuration from logical_channels.json asynchronously."""
-        return await self._load_json_file(self.logical_channels_path, lambda: LogicalChannelsData(()))
+        return await self._load_json_file(self.logical_channels_path, lambda: LogicalChannelsDataImpl([]))
 
     async def save_logical_channels_config(self, data: LogicalChannelsData) -> bool:
         """Saves the logical channels configuration to logical_channels.json asynchronously."""
@@ -357,7 +357,7 @@ class Config:
 
     async def get_channel_mappings_config(self) -> ChannelMappingsData:
         """Loads the channel mappings from channel_mappings.json asynchronously."""
-        return await self._load_json_file(self.channel_mappings_path, lambda: ChannelMappingsData({}))
+        return await self._load_json_file(self.channel_mappings_path, lambda: ChannelMappingsDataImpl({}))
 
     async def save_channel_mappings_config(self, data: ChannelMappingsData) -> bool:
         """Saves the channel mappings to channel_mappings.json asynchronously."""
