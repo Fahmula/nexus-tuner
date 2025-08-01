@@ -40,10 +40,11 @@ from nexus_stream.utils import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTER
                                 SourcePriority, SourceServiceId, TVGGroupTitle, TVGId, TVGLogo, VideoType, is_valid_url, run_bg, sort_sources)
 
 # --- Constants ---
-PLAYLIST_POLL_INTERVAL: Final[float] = 0.2    # Seconds to wait between checking for a new playlist
-UI_SEARCH_MIN_CHARS: Final[int] = 3           # Minimum characters for a UI search
-UI_SEARCH_MAX_RESULTS: Final[int] = 50        # Max results to return in a UI search
-HIGHEST_PRIORITY_SOURCES_NUM: Final[int] = 8  # Maximum number of sources to consider for quality metrics
+PLAYLIST_POLL_INTERVAL: Final[float] = 0.2         # Seconds to wait between checking for a new playlist
+UI_SEARCH_MIN_CHARS: Final[int] = 3                # Minimum characters for a UI search
+UI_SEARCH_MAX_RESULTS: Final[int] = 50             # Max results to return in a UI search
+HIGHEST_PRIORITY_SOURCES_NUM: Final[int] = 8       # Maximum number of sources to consider for quality metrics
+MULTI_SEARCH_QUERY_DELIMITER: Final[str] = " OR "  # Delimiter for multi-word search queries
 
 # --- App Initialization ---
 app = Quart(__name__)
@@ -112,7 +113,7 @@ def filter_sources(raw_query: str, service: DiscoveredSource) -> bool:
     """Filters sources based on a query. (Sync - pure function)"""
     tvg_name = service.get('original_tvg_name', '').lower()
     display_name = service.get('original_display_name_extinf', '').lower()
-    for raw_q in raw_query.split(" OR "):
+    for raw_q in raw_query.split(MULTI_SEARCH_QUERY_DELIMITER):
         words = raw_q.strip().lower().split()
         if all(word in tvg_name or word in display_name for word in words):
             return True
@@ -595,9 +596,9 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     
     search_query = request.args.get('search_query')
     if channel and search_query is None and not is_htmx_service_list_request:
-        predefined_channel = handler.find_matching_predefined_channel(channel['display_name'], channel['channel_num'])
+        predefined_channel = await handler.find_matching_predefined_channel(channel['display_name'], channel['channel_num'])
         if predefined_channel:
-            search_query = " OR ".join(predefined_channel['names']) if predefined_channel.get('names') else predefined_channel.get('title', channel.get('display_name'))
+            search_query = MULTI_SEARCH_QUERY_DELIMITER.join(predefined_channel['names']) if predefined_channel.get('names') else predefined_channel.get('title', channel.get('display_name'))
 
     filter_query = search_query.strip().lower() if search_query else None
     all_services = await handler.get_all_discovered_source_services_for_ui()
@@ -749,10 +750,10 @@ async def ui_channel_populate_from_suggestion() -> str:
     unmapped_suggestions: list[DiscoveredSource] = []
 
     search_query = prefilled_data['display_name']
-    for channel_list in handler.channel_list_data.values():
+    for channel_list in await handler.get_channel_lists():
         for pre_channel in channel_list:
             if search_query == pre_channel.get('title'):  # Only need this check since we are populating this
-                search_query = " OR ".join(pre_channel.get('names', []))
+                search_query = MULTI_SEARCH_QUERY_DELIMITER.join(pre_channel.get('names', []))
                 break
 
     if filter_query:
@@ -792,7 +793,7 @@ async def ui_channel_populate_from_suggestion() -> str:
 async def ui_channel_suggest() -> str:
     query = request.args.get('display_name', '')
     if len(query) < 2: return ""
-    suggestions = handler.search_predefined_channels(query)
+    suggestions = await handler.search_predefined_channels(query)
     return await render_template("_channel_suggestions.html", suggestions=suggestions)
 
 

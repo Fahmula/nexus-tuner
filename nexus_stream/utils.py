@@ -214,7 +214,9 @@ class ChannelListInfo(TypedDict):
     num: ReadOnly[ChannelNum]
     title: ReadOnly[ChannelTitle]
     names: ReadOnly[tuple[ChannelAliases, ...]]
-ChannelListData = NewType("ChannelListData", Mapping[TVGGroupTitle, list[ChannelListInfo]])
+ChannelListDataImpl = NewType("ChannelListDataImpl", dict[TVGGroupTitle, list[ChannelListInfo]])
+_ChannelListDataReadOnly = NewType("_ChannelListDataReadOnly", Mapping[TVGGroupTitle, tuple[ChannelListInfo, ...]])
+type ChannelListData = ChannelListDataImpl | _ChannelListDataReadOnly
 
 class ChannelListGroup(ChannelListInfo):
     group: ReadOnly[TVGGroupTitle]

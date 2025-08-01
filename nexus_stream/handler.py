@@ -8,7 +8,7 @@ from typing import Callable, Final, Self, cast
 import aiohttp
 from nexus_stream.config import Config
 from nexus_stream.slots import ProviderSlots
-from nexus_stream.utils import (DEFAULT_PRIORITY, M3UURL, NEXUS_STREAM_USER_AGENT, ChannelInfos, ChannelInfosMutable, ChannelListData,
+from nexus_stream.utils import (DEFAULT_PRIORITY, M3UURL, NEXUS_STREAM_USER_AGENT, ChannelInfos, ChannelInfosMutable, ChannelListData, ChannelListDataImpl,
                                 ChannelListGroup, ChannelListInfo, ChannelMappingsData, ChannelMappingsDataImpl, ChannelNum, DateTimeISO,
                                 DiscoveredSource, DiscoveredSourcesData, DiscoveredSourcesDataImpl, LogicalChannelInfo, LogicalChannelName, LogicalChannelsDataImpl, Priority, ProviderInfo,
                                 ProviderStatuses, ProvidersSourceDataImpl, SourceInfo, SourcePriority, SourceServiceId, StreamURL, TVGGroupTitle, Label, LogicalChannelId,
@@ -39,7 +39,7 @@ class ChannelHandler:
     """
     __slots__ = (
         'label', 'config', '_mutex', '_providers_data', '_discovered_source_services_data',
-        '_logical_channels_data', '_channel_mappings_data', 'channel_list_data',
+        '_logical_channels_data', '_channel_mappings_data', '_channel_list_data',
         'client_facing_channels', 'main_m3u_playlist',
         'slots', '_kill_provider_streams', '_pending_streams',
     )
@@ -57,7 +57,7 @@ class ChannelHandler:
         self._discovered_source_services_data: DiscoveredSourcesData = DiscoveredSourcesDataImpl({})
         self._logical_channels_data: LogicalChannelsData = LogicalChannelsDataImpl([])
         self._channel_mappings_data: ChannelMappingsData = ChannelMappingsDataImpl({})
-        self.channel_list_data: ChannelListData = ChannelListData({})
+        self._channel_list_data: ChannelListData = ChannelListDataImpl({})
 
         # In-memory processed data
         self.client_facing_channels: ChannelInfos = ChannelInfos({})
@@ -95,7 +95,7 @@ class ChannelHandler:
             self._discovered_source_services_data = await self.config.get_discovered_source_services_config()
             self._logical_channels_data = await self.config.get_logical_channels_config()
             self._channel_mappings_data = await self.config.get_channel_mappings_config()
-            self.channel_list_data = await self.config.get_channel_list_config()
+            self._channel_list_data = await self.config.get_channel_list_config()
 
             if update_providers:
                 self._providers_data = (await self.config.get_providers_config()).get("source_m3u_providers", ProvidersDataImpl({}))
@@ -394,51 +394,6 @@ class ChannelHandler:
 
     # --- UI Interaction Methods ---
 
-    def search_predefined_channels(self, raw_query: str) -> list[ChannelListGroup]:
-        """Searches the predefined channel list. (Sync - CPU-bound)"""
-        if not raw_query: return []
-        query = raw_query.strip().lower()
-        matches: list[ChannelListGroup] = []
-        found_with: dict[str, str] = {}
-        for group, channels in self.channel_list_data.items():
-            for channel in channels:
-                title = channel.get('title', '').lower()
-                words = query.split()
-                if all(word in title for word in words):
-                    matches.append({**channel, 'group': group})
-                    found_with[channel['title']] = channel['title']
-                    continue
-                for name in channel.get('names', []):
-                    title = name.lower()
-                    if all(word in title for word in words):
-                        matches.append({**channel, 'group': group})
-                        found_with[channel.get('title', channel.get('num', ''))] = name
-                        break
-        matches.sort(key=lambda x: found_with[x.get('title', x.get('num', ''))].lower().find(query))
-        return matches[:10]
-
-    def find_matching_predefined_channel(self, channel_name: LogicalChannelName, channel_num: ChannelNum) -> ChannelListInfo | None:
-        """Finds a matching predefined channel. (Sync - CPU-bound)"""
-        predefined_channel_lists = list(self.channel_list_data.values())
-        for channel_list in predefined_channel_lists:
-            for pre_channel in channel_list:
-                if channel_name == pre_channel.get('title'): return pre_channel
-        for channel_list in predefined_channel_lists:
-            for pre_channel in channel_list:
-                if channel_name in pre_channel.get('names', []): return pre_channel
-        for channel_list in predefined_channel_lists:
-            for pre_channel in channel_list:
-                if channel_num == pre_channel.get('num'): return pre_channel
-        for channel_list in predefined_channel_lists:
-            for pre_channel in channel_list:
-                pre_channel_title = pre_channel.get('title', '')
-                if channel_name in pre_channel_title: return pre_channel
-                if pre_channel_title and pre_channel_title in channel_name: return pre_channel
-                for pre_channel_name in pre_channel.get('names', []):
-                    if channel_name in pre_channel_name: return pre_channel
-                    if pre_channel_name in channel_name: return pre_channel
-        return None
-
     async def _save_providers_for_ui(self, new_providers_data: ProvidersSourceData, *, update_slots: bool) -> bool:
         """Saves the provider configuration and updates internal state asynchronously."""
         if "source_m3u_providers" not in new_providers_data:
@@ -498,6 +453,12 @@ class ChannelHandler:
                 return False
             self._providers_data = new_providers_data
             return True
+
+    async def get_all_discovered_source_services_for_ui(self) -> list[DiscoveredSource]:
+        """Gets a list of discovered services."""
+        async with self._mutex:
+            all_services = list(self._discovered_source_services_data.values())
+            return sorted(all_services, key=lambda x: (x["provider_alias"], (x.get("original_tvg_name","") or x.get("original_display_name_extinf","")).lower()))
 
     async def get_logical_channel_by_id(self, logical_channel_id: LogicalChannelId) -> LogicalChannelInfo | None:
         """Gets a logical channel by its ID."""
@@ -595,8 +556,60 @@ class ChannelHandler:
             self._channel_mappings_data = new_mappings
             return True
 
-    async def get_all_discovered_source_services_for_ui(self) -> list[DiscoveredSource]:
-        """Gets a list of discovered services."""
+    async def copy_channel_list_data(self) -> ChannelListData:
+        """Returns a copy of the channel list data."""
         async with self._mutex:
-            all_services = list(self._discovered_source_services_data.values())
-            return sorted(all_services, key=lambda x: (x["provider_alias"], (x.get("original_tvg_name","") or x.get("original_display_name_extinf","")).lower()))
+            return ChannelListDataImpl({k: [c for c in v] for k, v in self._channel_list_data.items()})
+
+    async def get_channel_lists(self) -> tuple[tuple[ChannelListInfo, ...], ...]:
+        """Returns a tuple of tuples containing channel list groups."""
+        async with self._mutex:
+            return tuple(tuple(c for c in v) for v in self._channel_list_data.values())
+
+    async def find_matching_predefined_channel(self, channel_name: LogicalChannelName, channel_num: ChannelNum) -> ChannelListInfo | None:
+        """Finds a matching predefined channel based on name or number."""
+        async with self._mutex:
+            predefined_channel_lists = await self.get_channel_lists()
+        for channel_list in predefined_channel_lists:
+            for pre_channel in channel_list:
+                if channel_name == pre_channel.get('title'): return pre_channel
+        for channel_list in predefined_channel_lists:
+            for pre_channel in channel_list:
+                if channel_name in pre_channel.get('names', []): return pre_channel
+        for channel_list in predefined_channel_lists:
+            for pre_channel in channel_list:
+                pre_channel_title = pre_channel.get('title', '')
+                if channel_name in pre_channel_title: return pre_channel
+                if pre_channel_title and pre_channel_title in channel_name: return pre_channel
+                for pre_channel_name in pre_channel.get('names', []):
+                    if channel_name in pre_channel_name: return pre_channel
+                    if pre_channel_name in channel_name: return pre_channel
+        for channel_list in predefined_channel_lists:
+            for pre_channel in channel_list:
+                if channel_num == pre_channel.get('num'): return pre_channel
+        return None
+
+    async def search_predefined_channels(self, raw_query: str) -> list[ChannelListGroup]:
+        """Searches the predefined channel lists for channels matching the query."""
+        if not raw_query:
+            return []
+        query = raw_query.strip().lower()
+        matches: list[ChannelListGroup] = []
+        found_with: dict[str, str] = {}
+        for group, channels in (await self.copy_channel_list_data()).items():
+            for channel in channels:
+                title = channel.get('title', '').lower()
+                words = query.split()
+                if all(word in title for word in words):
+                    matches.append({**channel, 'group': group})
+                    found_with[channel['title']] = channel['title']
+                    continue
+                for name in channel.get('names', []):
+                    title = name.lower()
+                    if all(word in title for word in words):
+                        matches.append({**channel, 'group': group})
+                        found_with[channel.get('title', channel.get('num', ''))] = name
+                        break
+        matches.sort(key=lambda x: found_with[x.get('title', x.get('num', ''))].lower().find(query))
+        return matches[:10]
+
