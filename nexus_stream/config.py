@@ -321,12 +321,12 @@ class Config:
                 await aiofiles.os.replace(temp_file_path, file_path)
                 return True
         except BaseException as e:
-            self.error(Label.CONFIG, f"Could not write to {file_path}: {e}")
+            self.critical(Label.CONFIG, f"Could not write to {file_path}: {e}")
             if await aiofiles.os.path.exists(temp_file_path):
                 try:
                     await aiofiles.os.remove(temp_file_path)
                 except Exception as remove_error:
-                    self.error(Label.CONFIG, f"Error removing temporary file {temp_file_path}: {remove_error}")
+                    self.critical(Label.CONFIG, f"Error removing temporary file {temp_file_path}: {remove_error}")
             if isinstance(e, Exception):
                 return False
             raise

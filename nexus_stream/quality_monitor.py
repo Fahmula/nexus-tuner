@@ -55,7 +55,7 @@ class QualityMonitor:
             if service_id in quality_cache:
                 del quality_cache[service_id]
                 if not await self.config.save_service_quality_cache(quality_cache):
-                    self.config.error(Label.QUALITY, f"Failed to save service quality cache after removing {service_id}.")
+                    self.config.critical(Label.QUALITY, f"Failed to save service quality cache after removing {service_id}.")
                     return False
             if service_id in self._quality_scores:
                 new_quality_scores = QualityScoresImpl({k: v for k, v in self._quality_scores.items()})
@@ -289,7 +289,9 @@ class QualityMonitor:
                         service_entry["bitrates"] = service_entry["bitrates"][-MAX_HISTORY_PER_SERVICE:]
                         service_entry["framerates"] = service_entry["framerates"][-MAX_HISTORY_PER_SERVICE:]
                     modified_cache[service_id] = service_entry
-                await self.config.save_service_quality_cache(quality_cache)
+                if not await self.config.save_service_quality_cache(quality_cache):
+                    self.config.critical(Label.QUALITY, f"Failed to save service quality cache after analyzing Logical Channel ID {logical_channel_id}.")
+                    continue
                 self._build_quality_scores(modified_cache)
         if input_lc_id:
             self.config.info(Label.QUALITY, f"Completed analysis for {len(valid_mappings[0][1])} mappings(s) in Logical Channel ID {input_lc_id}.")

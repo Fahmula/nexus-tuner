@@ -110,7 +110,8 @@ class Scheduler:
                 jobs_data[job_name]["last_run"] = DateTimeISO(last_run.isoformat())
             else:
                 jobs_data[job_name] = {"last_run": DateTimeISO(last_run.isoformat())}
-            await self.config.save_jobs_config(jobs_data)
+            if not await self.config.save_jobs_config(jobs_data):
+                self.config.critical(Label.SCHEDULER, f"Failed to save last run time for job {job_name}.")
 
     async def _run(self) -> NoReturn:
         """The main execution loop for the scheduler, run as an asyncio task."""

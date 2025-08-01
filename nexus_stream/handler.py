@@ -424,6 +424,7 @@ class ChannelHandler:
                 "updated_at": None
             })})
             if not await self._save_providers_for_ui(ProvidersSourceDataImpl({"source_m3u_providers": new_providers_data}), update_slots=True):
+                self.config.critical(self.label, f"Failed to save new provider configuration for '{alias}'.")
                 return False
             self._providers_data = new_providers_data
             return True
@@ -443,6 +444,7 @@ class ChannelHandler:
                 "updated_at": self._providers_data[alias]["updated_at"]
             })
             if not await self._save_providers_for_ui(ProvidersSourceDataImpl({"source_m3u_providers": new_providers_data}), update_slots=True):
+                self.config.critical(self.label, f"Failed to save updated provider configuration for '{alias}'.")
                 return False
             self._providers_data = new_providers_data
             return True
@@ -455,6 +457,7 @@ class ChannelHandler:
             new_providers_data = ProvidersDataImpl({**self._providers_data})
             del new_providers_data[alias]
             if not await self._save_providers_for_ui(ProvidersSourceDataImpl({"source_m3u_providers": new_providers_data}), update_slots=True):
+                self.config.critical(self.label, f"Failed to save updated provider configuration after deleting '{alias}'.")
                 return False
             self._providers_data = new_providers_data
             return True
@@ -484,7 +487,7 @@ class ChannelHandler:
             new_lc_data = LogicalChannelInfo({**raw_lc_data, "logical_channel_id": new_lc_id})
             new_data = LogicalChannelsDataImpl([*self._logical_channels_data, new_lc_data])
             if not await self.config.save_logical_channels_config(new_data):
-                self.config.error(self.label, f"Failed to save new logical channel configuration: {new_lc_data}")
+                self.config.critical(self.label, f"Failed to save new logical channel configuration: {new_lc_data}")
                 return
             self._logical_channels_data = new_data
             return new_lc_id
@@ -497,12 +500,11 @@ class ChannelHandler:
                 return False
             new_data = LogicalChannelsDataImpl([updated_lc_data if lc["logical_channel_id"] == updated_lc_data["logical_channel_id"]
                                                                 else lc for lc in self._logical_channels_data])
-            res = await self.config.save_logical_channels_config(new_data)
-            if res:
-                self._logical_channels_data = new_data
-            else:
-                self.config.error(self.label, f"Failed to save updated logical channel configuration: {updated_lc_data}")
-            return res
+            if not await self.config.save_logical_channels_config(new_data):
+                self.config.critical(self.label, f"Failed to save updated logical channel configuration: {updated_lc_data}")
+                return False
+            self._logical_channels_data = new_data
+            return True
 
     async def delete_logical_channel(self, logical_channel_id: LogicalChannelId) -> bool:
         """Deletes a logical channel from the configuration."""
@@ -514,14 +516,14 @@ class ChannelHandler:
                 new_mappings = ChannelMappingsDataImpl({k: [m for m in v] for k, v in self._channel_mappings_data.items()})
                 del new_mappings[logical_channel_id]
                 if not await self.config.save_channel_mappings_config(new_mappings):
-                    self.config.error(self.label, f"Failed to save channel mappings when deleting logical channel {logical_channel_id}. Restoring original mappings.")
+                    self.config.critical(self.label, f"Failed to save channel mappings when deleting logical channel {logical_channel_id}. Restoring original mappings.")
                     return False
                 self._channel_mappings_data = new_mappings
 
             new_data = LogicalChannelsDataImpl([lc for lc in self._logical_channels_data
                                                 if lc["logical_channel_id"] != logical_channel_id])
             if not await self.config.save_logical_channels_config(new_data):
-                self.config.error(self.label, f"Failed to save updated logical channels configuration after deleting {logical_channel_id}.")
+                self.config.critical(self.label, f"Failed to save updated logical channels configuration after deleting {logical_channel_id}.")
                 return False
             self._logical_channels_data = new_data
             return True
@@ -556,7 +558,7 @@ class ChannelHandler:
             new_mappings = ChannelMappingsDataImpl({k: [m for m in v] for k, v in self._channel_mappings_data.items()})
             new_mappings[logical_channel_id] = new_mappings_list
             if not await self.config.save_channel_mappings_config(new_mappings):
-                self.config.error(self.label, f"Failed to save updated channel mappings for logical channel {logical_channel_id}.")
+                self.config.critical(self.label, f"Failed to save updated channel mappings for logical channel {logical_channel_id}.")
                 return False
             self._channel_mappings_data = new_mappings
             return True
