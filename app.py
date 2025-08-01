@@ -56,6 +56,7 @@ ghost_monitor: GhostSessionMonitor | None
 quality_monitor: QualityMonitor
 scheduler: Scheduler
 
+
 @app.before_serving
 async def startup() -> None:
     """
@@ -74,6 +75,7 @@ async def startup() -> None:
         print(f"FATAL: Could not initialize application: {e}", file=sys.stderr)
         sys.exit(1)
 
+
 @app.after_serving
 async def shutdown() -> None:
     """Handles graceful shutdown of the application."""
@@ -83,6 +85,7 @@ async def shutdown() -> None:
         await stream_manager.stop_ffmpeg_processes()
     if "config" in globals():
         await config.clean_up_hls_segments()
+
 
 async def calculate_channel_metrics(mapped_services: list[SourcePriority], all_quality_scores: QualityScores) -> LogicalChannelMetrics:
     """Calculates uptime metrics for a channel. (Sync, CPU-bound logic)."""
@@ -105,6 +108,7 @@ async def calculate_channel_metrics(mapped_services: list[SourcePriority], all_q
         "discovered_mappings": discovered_mappings,
     })
 
+
 @app.context_processor
 def inject_global_vars() -> Dict[str, datetime | str]:
     """Injects global variables into the context of all templates."""
@@ -113,7 +117,9 @@ def inject_global_vars() -> Dict[str, datetime | str]:
         'app_version': NEXUS_STREAM_VERSION
     }
 
+
 # --- Core Streaming and Playlist Endpoints ---
+
 
 @app.route(f'/{VideoType.MPEGTS}/<string:logical_channel_id>')
 async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_response: bool = True) -> Response:
@@ -191,6 +197,7 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
         if added_pending_stream:
             await handler.remove_pending_stream(logical_channel_id, VideoType.MPEGTS)
 
+
 @app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/preview.m3u8')
 async def serve_hls_preview(logical_channel_id: LogicalChannelId) -> Response:
     """Serves a preview HLS playlist for a channel asynchronously."""
@@ -216,6 +223,7 @@ async def serve_hls_preview(logical_channel_id: LogicalChannelId) -> Response:
     }]
 
     return await serve_hls_playlist(logical_channel_id, logical_channel_name=LogicalChannelName('Preview'), sources=sources)
+
 
 @app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/playlist.m3u8')
 async def serve_hls_playlist(logical_channel_id: LogicalChannelId, logical_channel_name: LogicalChannelName | None = None, sources: list[SourceInfo] | None = None) -> Response:
@@ -291,6 +299,7 @@ async def serve_hls_playlist(logical_channel_id: LogicalChannelId, logical_chann
         if added_pending_stream:
             await handler.remove_pending_stream(logical_channel_id, VideoType.HLS)
 
+
 @app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/<path:segment_filename>')
 async def serve_hls_segment(logical_channel_id: LogicalChannelId, segment_filename: str) -> Response:
     """Serves an HLS video segment (.ts file) asynchronously."""
@@ -304,16 +313,19 @@ async def serve_hls_segment(logical_channel_id: LogicalChannelId, segment_filena
 
     return await send_from_directory(str(segment_path.parent), segment_path.name, mimetype="video/mp2t")
 
+
 @app.route("/<string:video_type>/<string:logical_channel_id>/stop", methods=["POST"])
 async def stop_stream(video_type: VideoType, logical_channel_id: LogicalChannelId) -> Response:
     """Stops the stream for a logical channel asynchronously."""
     await stream_manager.stop_ffmpeg_processes_with_logical_channel_id(logical_channel_id, video_type)
     return Response(status=204)
 
+
 @app.route("/playlist.m3u")
 async def serve_main_playlist() -> Response:
     """Serves the main M3U playlist for clients."""
     return Response(handler.main_m3u_playlist, mimetype="application/x-mpegurl")
+
 
 @app.route("/reload", methods=["POST"])
 async def reload_configuration() -> Response:
@@ -337,6 +349,7 @@ async def reload_configuration() -> Response:
     response.headers["HX-Trigger"] = "flashMessagesUpdated"
     return response
 
+
 @app.route("/backup", methods=["POST"])
 async def backup_configuration() -> Response:
     """Triggers an async backup of the current configuration files."""
@@ -354,12 +367,16 @@ async def backup_configuration() -> Response:
     response.headers["HX-Trigger"] = "flashMessagesUpdated"
     return response
 
+
 @app.route("/ui/flash-messages")
 async def ui_flash_messages() -> str:
     """Renders just the flash messages partial for HTMX updates."""
     return await render_template("_flash_messages.html")
 
+
 # --- UI Endpoints ---
+
+
 @app.route("/")
 @app.route("/ui")
 async def ui_main_dashboard() -> str:
@@ -368,6 +385,109 @@ async def ui_main_dashboard() -> str:
                            provider_count=await handler.get_num_providers(),
                            discovered_services_count=await handler.get_num_discovered_sources(),
                            logical_channels_count=await handler.get_num_logical_channels())
+
+
+@app.route("/ui/providers", methods=["GET"])
+async def ui_providers_manage() -> str:
+    all_providers = sorted((await handler.get_provider_stream_status()).values(), key=lambda p: p['alias'])
+    return await render_template("ui_providers.html", providers=all_providers)
+
+
+@app.route("/ui/providers/add", methods=["GET", "POST"])
+async def ui_provider_add() -> Response | str:
+    if request.method == "POST":
+        form_data = cast(ImmutableMultiDict[str, str], await request.form)  # type: ignore
+        alias = ProviderAlias(form_data.get("alias", "").strip())
+        url = M3UURL(form_data.get("url", "").strip())
+        max_streams_str = form_data.get("max_concurrent_streams", "")
+        try:
+            max_streams = MaxStreams(int(max_streams_str))
+            if not is_valid_url(url):
+                raise ValueError(f"Invalid URL format: {url}")
+            if await handler.add_provider(alias, url, max_streams):
+                await flash(f"Provider '{alias}' added successfully.", "success")
+                all_providers = sorted((await handler.get_provider_stream_status()).values(), key=lambda p: p['alias'])
+                table_body_html = await render_template("_providers_table_body.html", providers=all_providers)
+                form_removal_html = '<div id="add-provider-form-wrapper" hx-swap-oob="true"></div>'
+                response = Response(table_body_html + form_removal_html)
+            else:
+                raise ValueError(f"Failed to add provider '{alias}'.")
+        except ValueError as e:
+            await flash(f"Failed to add provider '{alias}`: {e}", "error")
+            response = Response(await render_template("_provider_add_form.html", alias=alias, url=url, max_concurrent_streams=max_streams_str))
+        response.headers["HX-Trigger"] = "flashMessagesUpdated"
+        return response
+    return await render_template("_provider_add_form.html")
+
+
+@app.route("/ui/providers/edit/<string:alias>", methods=["GET", "PUT"])
+async def ui_provider_edit(alias: ProviderAlias) -> Response | str:
+    provider = (await handler.get_provider_stream_status()).get(alias)
+    if not provider:
+        return ""
+
+    if request.method == "GET":
+        if request.args.get('cancel') == 'true':
+            return await render_template("_provider_row.html", provider=provider)
+        return await render_template("_provider_edit_form.html", provider=provider)
+
+    form_data = cast(ImmutableMultiDict[str, str], await request.form)  # type: ignore
+    url = M3UURL(form_data.get("url", "").strip())
+    max_streams_str = form_data.get("max_concurrent_streams", "")
+    try:
+        max_streams = MaxStreams(int(max_streams_str))
+        if not is_valid_url(url):
+            raise ValueError(f"Invalid URL format: {url}")
+        if await handler.update_provider(alias, url, max_streams):
+            await flash(f"Provider '{alias}' updated successfully.", "success")
+            updated_provider_data = ProviderStatus({**provider, "url": url, "max_concurrent_streams": max_streams})
+            response = Response(await render_template("_provider_row.html", provider=updated_provider_data))
+        else:
+            raise ValueError(f"Failed to update provider '{alias}'.")
+    except ValueError as e:
+        await flash(f"Failed to update provider '{alias}': {e}", "error")
+        response = Response(await render_template("_provider_edit_form.html", provider={**provider, "url": url, "max_concurrent_streams": max_streams_str}))
+    response.headers["HX-Trigger"] = "flashMessagesUpdated"
+    return response
+
+
+@app.route("/ui/providers/delete/<string:alias>", methods=["DELETE"])
+async def ui_provider_delete(alias: ProviderAlias) -> Response:
+    try:
+        if await handler.delete_provider(alias):
+            await flash(f"Provider '{alias}' deleted successfully.", "success")
+            response = Response("", 200)
+        else:
+            raise ValueError(f"Failed to delete provider '{alias}'.")
+    except ValueError as e:
+        await flash(f"Failed to delete provider '{alias}': {e}", "error")
+        response = Response("", 400)
+    response.headers["HX-Trigger"] = "flashMessagesUpdated"
+    return response
+
+
+@app.route("/ui/provider-status")
+async def ui_provider_status() -> str:
+    statues = await handler.get_provider_stream_status()
+    active_streams = sum(status['active_streams'] for status in statues.values())
+    max_total_streams = sum(status['max_concurrent_streams'] for status in statues.values())
+    return await render_template("_provider_status_bar.html", active_streams=active_streams, max_total_streams=max_total_streams)
+
+
+@app.route("/ui/source-services")
+async def ui_source_services_list() -> str:
+    per_page = request.args.get('per_page', 100, type=int)
+    page = request.args.get('page', 1, type=int)
+    services_unfiltered = await handler.get_all_discovered_source_services_for_ui()
+    providers = sorted(list(set(s['provider_alias'] for s in services_unfiltered)))
+    filter_provider = request.args.get('provider_alias', '')
+    filter_name = request.args.get('name_filter', '').lower()
+    services_filtered = [s for s in services_unfiltered if (not filter_provider or s['provider_alias'] == filter_provider) and (not filter_name or filter_name in s.get('original_tvg_name', '').lower() or filter_name in s.get('original_display_name_extinf', '').lower())]
+    total_items = len(services_filtered)
+    total_pages = math.ceil(total_items / per_page)
+    services_for_page = services_filtered[(page - 1) * per_page:page * per_page]
+    return await render_template("ui_source_services.html", services=services_for_page, providers=providers, current_provider=filter_provider, current_name_filter=filter_name, current_page=page, total_pages=total_pages, total_items=total_items, per_page=per_page)
+
 
 @app.route("/ui/logical-channels")
 async def ui_logical_channels_list() -> str:
@@ -382,6 +502,7 @@ async def ui_logical_channels_list() -> str:
         all_channel_metrics[channel["logical_channel_id"]] = await calculate_channel_metrics(mapped_services, all_quality_scores)
 
     return await render_template("ui_logical_channels.html", channels=channels, all_channel_metrics=all_channel_metrics)
+
 
 @app.route("/ui/logical-channels/form/", methods=["GET", "POST"])
 @app.route("/ui/logical-channels/form/<string:logical_channel_id>", methods=["GET", "POST"])
@@ -522,6 +643,22 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
         search_query=search_query, filter_query=filter_query,
     )
 
+
+@app.route("/ui/logical-channels/delete/<string:logical_channel_id>", methods=["POST"])
+async def ui_logical_channel_delete(logical_channel_id: LogicalChannelId) -> Response | WerkzeugResponse:
+    channel = await handler.get_logical_channel_by_id(logical_channel_id)
+    if channel:
+        channel_log = f"'{channel['display_name']}' ({channel['channel_num']})"
+        if await handler.delete_logical_channel(logical_channel_id):
+            await flash(f"Channel {channel_log} deleted.", "success")
+            await handler.reload_handler_config()
+        else:
+            await flash(f"Error deleting channel {channel_log}.", "error")
+    else:
+        await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "warning")
+    return redirect(url_for('ui_logical_channels_list'))
+
+
 @app.route("/ui/logical-channels/analyze-mappings/<string:logical_channel_id>", methods=["POST"])
 async def ui_analyze_mappings(logical_channel_id: LogicalChannelId) -> Response:
     """Analyzes the mappings for a logical channel asynchronously."""
@@ -542,6 +679,7 @@ async def ui_analyze_mappings(logical_channel_id: LogicalChannelId) -> Response:
     response.headers["HX-Refresh"] = "true"
     response.headers["HX-Trigger"] = "flashMessagesUpdated"
     return response
+
 
 @app.route("/ui/logical-channels/remove-dead-mappings/<string:logical_channel_id>", methods=["DELETE"])
 async def ui_remove_dead_mappings(logical_channel_id: LogicalChannelId) -> Response:
@@ -571,101 +709,6 @@ async def ui_remove_dead_mappings(logical_channel_id: LogicalChannelId) -> Respo
     response.headers["HX-Trigger"] = "flashMessagesUpdated"
     return response
 
-@app.route("/ui/source-services")
-async def ui_source_services_list() -> str:
-    per_page = request.args.get('per_page', 100, type=int)
-    page = request.args.get('page', 1, type=int)
-    services_unfiltered = await handler.get_all_discovered_source_services_for_ui()
-    providers = sorted(list(set(s['provider_alias'] for s in services_unfiltered)))
-    filter_provider = request.args.get('provider_alias', '')
-    filter_name = request.args.get('name_filter', '').lower()
-    services_filtered = [s for s in services_unfiltered if (not filter_provider or s['provider_alias'] == filter_provider) and (not filter_name or filter_name in s.get('original_tvg_name', '').lower() or filter_name in s.get('original_display_name_extinf', '').lower())]
-    total_items = len(services_filtered)
-    total_pages = math.ceil(total_items / per_page)
-    services_for_page = services_filtered[(page - 1) * per_page:page * per_page]
-    return await render_template("ui_source_services.html", services=services_for_page, providers=providers, current_provider=filter_provider, current_name_filter=filter_name, current_page=page, total_pages=total_pages, total_items=total_items, per_page=per_page)
-
-@app.route("/ui/providers", methods=["GET"])
-async def ui_providers_manage() -> str:
-    all_providers = sorted((await handler.get_provider_stream_status()).values(), key=lambda p: p['alias'])
-    return await render_template("ui_providers.html", providers=all_providers)
-
-@app.route("/ui/providers/add", methods=["GET", "POST"])
-async def ui_provider_add() -> Response | str:
-    if request.method == "POST":
-        form_data = cast(ImmutableMultiDict[str, str], await request.form)  # type: ignore
-        alias = ProviderAlias(form_data.get("alias", "").strip())
-        url = M3UURL(form_data.get("url", "").strip())
-        max_streams_str = form_data.get("max_concurrent_streams", "")
-        try:
-            max_streams = MaxStreams(int(max_streams_str))
-            if not is_valid_url(url):
-                raise ValueError(f"Invalid URL format: {url}")
-            if await handler.add_provider(alias, url, max_streams):
-                await flash(f"Provider '{alias}' added successfully.", "success")
-                all_providers = sorted((await handler.get_provider_stream_status()).values(), key=lambda p: p['alias'])
-                table_body_html = await render_template("_providers_table_body.html", providers=all_providers)
-                form_removal_html = '<div id="add-provider-form-wrapper" hx-swap-oob="true"></div>'
-                response = Response(table_body_html + form_removal_html)
-            else:
-                raise ValueError(f"Failed to add provider '{alias}'.")
-        except ValueError as e:
-            await flash(f"Failed to add provider '{alias}`: {e}", "error")
-            response = Response(await render_template("_provider_add_form.html", alias=alias, url=url, max_concurrent_streams=max_streams_str))
-        response.headers["HX-Trigger"] = "flashMessagesUpdated"
-        return response
-    return await render_template("_provider_add_form.html")
-
-@app.route("/ui/providers/edit/<string:alias>", methods=["GET", "PUT"])
-async def ui_provider_edit(alias: ProviderAlias) -> Response | str:
-    provider = (await handler.get_provider_stream_status()).get(alias)
-    if not provider:
-        return ""
-
-    if request.method == "GET":
-        if request.args.get('cancel') == 'true':
-            return await render_template("_provider_row.html", provider=provider)
-        return await render_template("_provider_edit_form.html", provider=provider)
-
-    form_data = cast(ImmutableMultiDict[str, str], await request.form)  # type: ignore
-    url = M3UURL(form_data.get("url", "").strip())
-    max_streams_str = form_data.get("max_concurrent_streams", "")
-    try:
-        max_streams = MaxStreams(int(max_streams_str))
-        if not is_valid_url(url):
-            raise ValueError(f"Invalid URL format: {url}")
-        if await handler.update_provider(alias, url, max_streams):
-            await flash(f"Provider '{alias}' updated successfully.", "success")
-            updated_provider_data = ProviderStatus({**provider, "url": url, "max_concurrent_streams": max_streams})
-            response = Response(await render_template("_provider_row.html", provider=updated_provider_data))
-        else:
-            raise ValueError(f"Failed to update provider '{alias}'.")
-    except ValueError as e:
-        await flash(f"Failed to update provider '{alias}': {e}", "error")
-        response = Response(await render_template("_provider_edit_form.html", provider={**provider, "url": url, "max_concurrent_streams": max_streams_str}))
-    response.headers["HX-Trigger"] = "flashMessagesUpdated"
-    return response
-
-@app.route("/ui/providers/delete/<string:alias>", methods=["DELETE"])
-async def ui_provider_delete(alias: ProviderAlias) -> Response:
-    try:
-        if await handler.delete_provider(alias):
-            await flash(f"Provider '{alias}' deleted successfully.", "success")
-            response = Response("", 200)
-        else:
-            raise ValueError(f"Failed to delete provider '{alias}'.")
-    except ValueError as e:
-        await flash(f"Failed to delete provider '{alias}': {e}", "error")
-        response = Response("", 400)
-    response.headers["HX-Trigger"] = "flashMessagesUpdated"
-    return response
-
-@app.route("/ui/provider-status")
-async def ui_provider_status() -> str:
-    statues = await handler.get_provider_stream_status()
-    active_streams = sum(status['active_streams'] for status in statues.values())
-    max_total_streams = sum(status['max_concurrent_streams'] for status in statues.values())
-    return await render_template("_provider_status_bar.html", active_streams=active_streams, max_total_streams=max_total_streams)
 
 @app.route("/ui/channels/populate-from-suggestion")
 async def ui_channel_populate_from_suggestion() -> str:
@@ -730,6 +773,7 @@ async def ui_channel_populate_from_suggestion() -> str:
 
     return form_html + oob_search_card + clear_suggestions_html
 
+
 @app.route("/ui/channels/suggest", methods=["GET"])
 async def ui_channel_suggest() -> str:
     query = request.args.get('display_name', '')
@@ -737,19 +781,6 @@ async def ui_channel_suggest() -> str:
     suggestions = handler.search_predefined_channels(query)
     return await render_template("_channel_suggestions.html", suggestions=suggestions)
 
-@app.route("/ui/logical-channels/delete/<string:logical_channel_id>", methods=["POST"])
-async def ui_logical_channel_delete(logical_channel_id: LogicalChannelId) -> Response | WerkzeugResponse:
-    channel = await handler.get_logical_channel_by_id(logical_channel_id)
-    if channel:
-        channel_log = f"'{channel['display_name']}' ({channel['channel_num']})"
-        if await handler.delete_logical_channel(logical_channel_id):
-            await flash(f"Channel {channel_log} deleted.", "success")
-            await handler.reload_handler_config()
-        else:
-            await flash(f"Error deleting channel {channel_log}.", "error")
-    else:
-        await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "warning")
-    return redirect(url_for('ui_logical_channels_list'))
 
 @app.route("/ui/logs/modal")
 async def ui_logs_modal() -> str:
@@ -764,6 +795,7 @@ async def ui_logs_modal() -> str:
         log_lines = [f"An error occurred while reading the log file: {e}"]
     return await render_template("_logs_modal_content.html", log_lines=log_lines)
 
+
 @app.route("/ui/service-preview/<path:service_id>")
 async def ui_player_for_service(service_id: SourceServiceId) -> str:
     source_service = await handler.get_discovered_source(service_id)
@@ -775,7 +807,9 @@ async def ui_player_for_service(service_id: SourceServiceId) -> str:
     playlist_url = url_for('serve_hls_preview', logical_channel_id=logical_channel_id)
     return await render_template("_video_player_modal.html", playlist_url=playlist_url, logical_channel_id=logical_channel_id, service_name=service_name)
 
+
 # --- HDHomeRun Emulation Endpoints ---
+
 
 @app.route('/discover.json')
 async def hdhomerun_discover() -> Response:
@@ -830,6 +864,15 @@ async def hdhomerun_lineup() -> Response:
             "URL": f"{config.nexus_url}/{VideoType.MPEGTS}/{channel['logical_channel_id']}"
         })
     return Response(json.dumps(lineup), mimetype="application/json")
+
+
+# --- Miscellaneous Endpoints ---
+
+
+@app.route('/ping')
+async def ping() -> Response:
+    """Simple endpoint to check if the server is running."""
+    return Response(status=200)
 
 
 if __name__ == "__main__":
