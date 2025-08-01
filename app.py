@@ -329,7 +329,7 @@ async def stop_stream(video_type: VideoType, logical_channel_id: LogicalChannelI
 @app.route("/playlist.m3u")
 async def serve_main_playlist() -> Response:
     """Serves the main M3U playlist for clients."""
-    return Response(handler.main_m3u_playlist, mimetype="application/x-mpegurl")
+    return Response(await handler.get_main_m3u_playlist(), mimetype="application/x-mpegurl")
 
 
 @app.route("/reload", methods=["POST"])

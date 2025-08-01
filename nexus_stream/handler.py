@@ -40,8 +40,8 @@ class ChannelHandler:
     __slots__ = (
         'label', 'config', '_mutex', '_providers_data', '_discovered_source_services_data',
         '_logical_channels_data', '_channel_mappings_data', '_channel_list_data',
-        'client_facing_channels', 'main_m3u_playlist',
-        'slots', '_kill_provider_streams', '_pending_streams',
+        'client_facing_channels', '_main_m3u_playlist',
+        '_slots', '_kill_provider_streams', '_pending_streams',
     )
     
     def __init__(self, config: Config) -> None:
@@ -61,10 +61,10 @@ class ChannelHandler:
 
         # In-memory processed data
         self.client_facing_channels: ChannelInfos = ChannelInfos({})
-        self.main_m3u_playlist: MainM3UPlaylist = MainM3UPlaylist("#EXTM3U\n")
+        self._main_m3u_playlist: MainM3UPlaylist = MainM3UPlaylist("#EXTM3U\n")
 
         # Slots management
-        self.slots: dict[ProviderAlias, ProviderSlots] = {}
+        self._slots: dict[ProviderAlias, ProviderSlots] = {}
         self._kill_provider_streams: set[ProviderAlias] = set()
         self._pending_streams: set[StreamKey] = set()
 
@@ -85,7 +85,7 @@ class ChannelHandler:
         while self.get_pending_stream_count():
             self._mutex.release()
             if not logged_waiting:
-                self.config.warn(self.label, "Waiting for streams being created before reloading configurations...")
+                self.config.warn(self.label, "Waiting for streams to finish being created before reloading configurations...")
                 logged_waiting = True
             await asyncio.sleep(0.01)
             await self._mutex.acquire()
@@ -309,8 +309,8 @@ class ChannelHandler:
         return len(self._pending_streams)
 
     async def add_pending_stream(self, logical_channel_id: LogicalChannelId, video_type: VideoType) -> bool:
+        stream_key = create_stream_key(video_type, logical_channel_id)
         async with self._mutex:
-            stream_key = create_stream_key(video_type, logical_channel_id)
             if stream_key in self._pending_streams:
                 return False
             self._pending_streams.add(stream_key)
@@ -327,7 +327,7 @@ class ChannelHandler:
         if not self.config.nexus_url:
             self.config.error(self.label, "NEXUS_URL not set. Client M3U URLs will be incorrect.")
             m3u_lines.extend(["#EXTINF:-1,Error: NEXUS_URL not configured", "http://error.invalid/stream"])
-            self.main_m3u_playlist = MainM3UPlaylist("\n".join(m3u_lines) + "\n")
+            self._main_m3u_playlist = MainM3UPlaylist("\n".join(m3u_lines) + "\n")
             return
 
         sorted_channels = sorted(self.client_facing_channels.values(), key=lambda item: (item.get("group_title", "zzz").lower(), item.get("display_name", "zzz").lower()))
@@ -343,7 +343,7 @@ class ChannelHandler:
             m3u_lines.append(f"#EXTINF:-1 {' '.join(extinf_parts)},{name}")
             m3u_lines.append(f"{self.config.nexus_url}/{VideoType.HLS}/{lc_data['logical_channel_id']}/playlist.m3u8")
         
-        self.main_m3u_playlist = MainM3UPlaylist("\n".join(m3u_lines) + "\n")
+        self._main_m3u_playlist = MainM3UPlaylist("\n".join(m3u_lines) + "\n")
         self.config.info(self.label, f"Generated main client M3U with {len(self.client_facing_channels)} channels.")
 
     def get_sources_for_client_facing_channel(self, logical_channel_id: LogicalChannelId) -> list[SourceInfo]:
@@ -353,7 +353,7 @@ class ChannelHandler:
     def _update_providers_slots(self) -> None:
         """Initializes or updates provider slots based on config asynchronously."""
         providers_to_delete: set[ProviderAlias] = set()
-        for alias, curr_details in self.slots.items():
+        for alias, curr_details in self._slots.items():
             if alias not in self._providers_data:
                 self.config.info(self.label, f"Removing slots for provider '{alias}' as it no longer exists in configuration.")
                 providers_to_delete.add(alias)
@@ -364,19 +364,19 @@ class ChannelHandler:
             if curr_details.get_m3u_url() == m3u_url and curr_details.get_total_slots() == max_streams:
                 continue
             self.config.info(self.label, f"Updating slots for provider '{alias}' with new URL or max streams.")
-            self.slots[alias] = ProviderSlots(
+            self._slots[alias] = ProviderSlots(
                 alias=alias,
                 m3u_url=m3u_url,
                 total_slots=max_streams
             )
             self._kill_provider_streams.add(alias)
         for alias in providers_to_delete:
-            del self.slots[alias]
+            del self._slots[alias]
         for alias, details in self._providers_data.items():
-            if alias in self.slots:
+            if alias in self._slots:
                 continue
             max_streams = details["max_concurrent_streams"]
-            self.slots[alias] = ProviderSlots(
+            self._slots[alias] = ProviderSlots(
                 alias=alias,
                 m3u_url=details["url"],
                 total_slots=max_streams
@@ -389,8 +389,13 @@ class ChannelHandler:
 
     async def get_provider_stream_status(self) -> ProviderStatuses:
         """Calculates current stream usage for each provider asynchronously."""
-        return ProviderStatuses({alias: {"alias": alias, "url": provider_slots.get_m3u_url(), "active_streams": await provider_slots.get_active_slots(), "max_concurrent_streams": provider_slots.get_total_slots()}
-                                for alias, provider_slots in self.slots.items()})
+        async with self._mutex:
+            return ProviderStatuses({alias: {
+                "alias": alias,
+                "url": provider_slots.get_m3u_url(),
+                "active_streams": await provider_slots.get_active_slots(),
+                "max_concurrent_streams": provider_slots.get_total_slots()
+            } for alias, provider_slots in self._slots.items()})
 
     # --- UI Interaction Methods ---
 
@@ -613,3 +618,12 @@ class ChannelHandler:
         matches.sort(key=lambda x: found_with[x.get('title', x.get('num', ''))].lower().find(query))
         return matches[:10]
 
+    async def get_provider_slots(self, alias: ProviderAlias) -> ProviderSlots | None:
+        """Returns the provider slots configuration."""
+        async with self._mutex:
+            return self._slots.get(alias)
+
+    async def get_main_m3u_playlist(self) -> MainM3UPlaylist:
+        """Returns the main M3U playlist."""
+        async with self._mutex:
+            return self._main_m3u_playlist

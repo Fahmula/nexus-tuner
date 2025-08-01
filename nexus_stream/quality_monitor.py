@@ -154,7 +154,7 @@ class QualityMonitor:
                     self.config.debug(Label.QUALITY, f"Resuming probe for {service_id} after pending user streams.")
                     paused = False
 
-                provider_slots = self.handler.slots.get(provider_alias)
+                provider_slots = await self.handler.get_provider_slots(provider_alias)
                 if not provider_slots:
                     msg = f"Provider slot manager for {provider_alias} not found, cannot run probe for {service_id}."
                     self.config.error(Label.QUALITY, msg)
@@ -230,7 +230,7 @@ class QualityMonitor:
                 if not service_details:
                     self.config.debug(Label.QUALITY, f"Logical Channel ID {logical_channel_id} service {service_id} not found in discovered services.")
                     continue
-                provider_slots = self.handler.slots.get(service_details["provider_alias"])
+                provider_slots = await self.handler.get_provider_slots(service_details["provider_alias"])
                 if not provider_slots:
                     self.config.error(Label.QUALITY, f"Provider slots for {service_details['provider_alias']} not found while probing service {service_id} for Logical Channel ID {logical_channel_id}.")
                     continue

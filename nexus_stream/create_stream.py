@@ -15,7 +15,7 @@ from nexus_stream.handler import ChannelHandler
 from nexus_stream.stream import StreamManager
 from nexus_stream.utils import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL, FFMPEG_TERMINATE_TIMEOUT,
                                 MPEGTS_PACKET_SIZE, NEW_DEADLINE_NON_BEST, NEXUS_STREAM_USER_AGENT, FFmpegProcessInfosMutable, Label,
-                                LogicalChannelId, LogicalChannelName, Priority, ProviderAlias, QualityScores, SourceInfo, SourceServiceId, TVGDisplayName, TVGName, VideoKey, VideoName,
+                                LogicalChannelId, LogicalChannelName, Priority, ProviderAlias, QualityScores, QualityScoresImpl, SourceInfo, SourceServiceId, TVGDisplayName, TVGName, VideoKey, VideoName,
                                 VideoType, create_stream_key, create_video_key, create_video_name, get_segment_format, run_bg, sort_sources)
 
 
@@ -96,7 +96,7 @@ class CreateStream:
 
         self._sources: list[SourceInfo] = []
         self._source_names: dict[SourceServiceId, TVGDisplayName | TVGName] = {}
-        self._quality_scores: QualityScores = QualityScores({})
+        self._quality_scores: QualityScores = QualityScoresImpl({})
         self._remaining_priorities: dict[SourceServiceId, Priority] = {}
         self._input_sources: list[SourceInfo] | None = input_sources
 
@@ -189,7 +189,7 @@ class CreateStream:
 
     async def _create_provider_stream(self, provider_alias: ProviderAlias, provider_sources: list[SourceInfo]) -> None:
         """Creates streams for a provider by launching concurrent worker tasks."""
-        provider_slots = self.handler.slots.get(provider_alias)
+        provider_slots = await self.handler.get_provider_slots(provider_alias)
         if not provider_slots:
             self.config.error(Label.HANDLER, f"{self.logical_channel_name}: Provider '{provider_alias}' does not exist.")
             return
@@ -238,7 +238,7 @@ class CreateStream:
                 await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
                 continue
 
-            provider_slots = self.handler.slots.get(provider_alias)
+            provider_slots = await self.handler.get_provider_slots(provider_alias)
             if not provider_slots:
                 self.config.error(Label.HANDLER, f"{self.logical_channel_name}: Provider '{provider_alias}' not found in slots manager.")
                 return

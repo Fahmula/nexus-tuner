@@ -210,7 +210,7 @@ class StreamManager:
 
         video_type: VideoType = data_to_cleanup['video_type']
         process: Process = data_to_cleanup['process']
-        provider = data_to_cleanup['provider_alias']
+        alias = data_to_cleanup['provider_alias']
         hls_dir: Path | None = data_to_cleanup['channel_hls_dir']
         log_file: aiofiles.threadpool.text.AsyncTextIOWrapper | None = data_to_cleanup.get('stderr_log_file_obj')
 
@@ -233,23 +233,23 @@ class StreamManager:
             except Exception as e:
                 self.config.error(video_type, f"{name} [{video_key}]: Error closing FFmpeg log file: {e}")
 
-        provider_slots = self.handler.slots.get(provider)
+        provider_slots = await self.handler.get_provider_slots(alias)
         if provider_slots:
             if should_release_slot:
                 new_active_count = await provider_slots.release()
             else:
                 new_active_count = f"0/{provider_slots.get_total_slots()}"
         else:
-            self.config.error(video_type, f"{name} [{video_key}]: No slots found for provider '{provider}'.")
+            self.config.error(video_type, f"{name} [{video_key}]: No slots found for provider '{alias}'.")
             new_active_count = "N/A"
-        
+
         try:
             if hls_dir and await aiofiles.os.path.exists(hls_dir):
                 await aioshutil.rmtree(hls_dir)
         except OSError as e:
             self.config.error(video_type, f"{name} [{video_key}]: Failed to clean HLS directory {hls_dir}: {e}")
 
-        self.config.info(video_type, f"{name} [{video_key}]: Successfully stopped and cleaned up all resources {{{provider}:{new_active_count}}}")
+        self.config.info(video_type, f"{name} [{video_key}]: Successfully stopped and cleaned up all resources {{{alias}:{new_active_count}}}")
 
     async def stop_ffmpeg_processes(self, video_keys: Iterable[VideoKey] | None = None, video_names: dict[VideoKey, VideoName] | None = None) -> None:
         """Stops all (or a specified list of) active FFmpeg processes and cleans up resources asynchronously."""
