@@ -186,15 +186,16 @@ class QualityInfo(TypedDict):
     bitrates: ReadOnly[tuple[Bitrate, ...]]
     framerates: ReadOnly[tuple[Framerate, ...]]
     updated_at: ReadOnly[DateTimeISO]
-class QualityInfoMutable(TypedDict):
+class QualityInfoImpl(TypedDict):
     statuses: list[Literal["online", "offline"]]
     widths: list[Width]
     heights: list[Height]
     bitrates: list[Bitrate]
     framerates: list[Framerate]
     updated_at: DateTimeISO
-ServiceQualityCacheData = NewType("ServiceQualityCacheData", Mapping[SourceServiceId, QualityInfo])
-ServiceQualityCacheDataMutable = NewType("ServiceQualityCacheDataMutable", dict[SourceServiceId, QualityInfo])
+ServiceQualityCacheDataImpl = NewType("ServiceQualityCacheDataImpl", dict[SourceServiceId, QualityInfoImpl])
+_ServiceQualityCacheDataReadOnly = NewType("_ServiceQualityCacheDataReadOnly", Mapping[SourceServiceId, QualityInfo])
+type ServiceQualityCacheData = ServiceQualityCacheDataImpl | _ServiceQualityCacheDataReadOnly
 
 class QualityScore(TypedDict):
     width: ReadOnly[Width]
@@ -207,8 +208,9 @@ class QualityScore(TypedDict):
     framerate_score: ReadOnly[FramerateScore]
     uptime_score: ReadOnly[UptimeScore]
     total_score: ReadOnly[TotalScore]
-QualityScores = NewType("QualityScores", Mapping[SourceServiceId, QualityScore])
-QualityScoresMutable = NewType("QualityScoresMutable", dict[SourceServiceId, QualityScore])
+QualityScoresImpl = NewType("QualityScoresImpl", dict[SourceServiceId, QualityScore])
+_QualityScoresReadOnly = NewType("_QualityScoresReadOnly", Mapping[SourceServiceId, QualityScore])
+type QualityScores = QualityScoresImpl | _QualityScoresReadOnly
 
 class ChannelListInfo(TypedDict):
     num: ReadOnly[ChannelNum]
@@ -223,10 +225,11 @@ class ChannelListGroup(ChannelListInfo):
 
 class JobInfo(TypedDict):
     last_run: ReadOnly[DateTimeISO | None]
-class JobInfoMutable(TypedDict):
+class JobInfoImpl(TypedDict):
     last_run: DateTimeISO | None
-JobsData = NewType("JobsData", Mapping[JobName, JobInfo])
-JobsDataMutable = NewType("JobsDataMutable", dict[JobName, JobInfo])
+JobsDataImpl = NewType("JobsDataImpl", dict[JobName, JobInfoImpl])
+_JobsDataReadOnly = NewType("_JobsDataReadOnly", Mapping[JobName, JobInfo])
+type JobsData = JobsDataImpl | _JobsDataReadOnly
 
 class MPEGTSProcessInfo(TypedDict):
     process: ReadOnly[asyncio.subprocess.Process]

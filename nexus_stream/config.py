@@ -13,8 +13,8 @@ import asyncio
 import aiofiles.os
 import aioshutil
 
-from nexus_stream.utils import (NEXUS_STREAM_PORT, NEXUS_STREAM_VERSION, ChannelListData, ChannelMappingsData, ChannelMappingsDataImpl, DiscoveredSourcesData, DiscoveredSourcesDataImpl, JobsData,
-                                Label, LogicalChannelsData, LogicalChannelsDataImpl, ProvidersDataImpl, ProvidersSourceData, ProvidersSourceDataImpl, ServiceQualityCacheData, VideoKey, VideoType)
+from nexus_stream.utils import (NEXUS_STREAM_PORT, NEXUS_STREAM_VERSION, ChannelListDataImpl, ChannelMappingsData, ChannelMappingsDataImpl, DiscoveredSourcesData, DiscoveredSourcesDataImpl, JobsData, JobsDataImpl,
+                                Label, LogicalChannelsData, LogicalChannelsDataImpl, ProvidersDataImpl, ProvidersSourceData, ProvidersSourceDataImpl, ServiceQualityCacheData, ServiceQualityCacheDataImpl, VideoKey, VideoType)
 
 
 NOT_ALPHANUM_REGEX: Final[re.Pattern[str]] = re.compile(r'[^a-zA-Z0-9_-]')
@@ -331,7 +331,7 @@ class Config:
                 return False
             raise
 
-    async def get_providers_config(self) -> ProvidersSourceData:
+    async def get_providers_config(self) -> ProvidersSourceDataImpl:
         """Loads the providers configuration from providers.json asynchronously."""
         return await self._load_json_file(self.providers_path, lambda: ProvidersSourceDataImpl({"source_m3u_providers": ProvidersDataImpl({})}))
 
@@ -339,7 +339,7 @@ class Config:
         """Saves the providers configuration to providers.json asynchronously."""
         return await self._save_json_file(self.providers_path, data)
 
-    async def get_discovered_source_services_config(self) -> DiscoveredSourcesData:
+    async def get_discovered_source_services_config(self) -> DiscoveredSourcesDataImpl:
         """Loads the discovered source services from discovered_source_services.json asynchronously."""
         return await self._load_json_file(self.discovered_source_services_path, lambda: DiscoveredSourcesDataImpl({}))
 
@@ -347,7 +347,7 @@ class Config:
         """Saves the discovered source services to discovered_source_services.json asynchronously."""
         return await self._save_json_file(self.discovered_source_services_path, data)
 
-    async def get_logical_channels_config(self) -> LogicalChannelsData:
+    async def get_logical_channels_config(self) -> LogicalChannelsDataImpl:
         """Loads the logical channels configuration from logical_channels.json asynchronously."""
         return await self._load_json_file(self.logical_channels_path, lambda: LogicalChannelsDataImpl([]))
 
@@ -355,7 +355,7 @@ class Config:
         """Saves the logical channels configuration to logical_channels.json asynchronously."""
         return await self._save_json_file(self.logical_channels_path, data)
 
-    async def get_channel_mappings_config(self) -> ChannelMappingsData:
+    async def get_channel_mappings_config(self) -> ChannelMappingsDataImpl:
         """Loads the channel mappings from channel_mappings.json asynchronously."""
         return await self._load_json_file(self.channel_mappings_path, lambda: ChannelMappingsDataImpl({}))
 
@@ -363,21 +363,21 @@ class Config:
         """Saves the channel mappings to channel_mappings.json asynchronously."""
         return await self._save_json_file(self.channel_mappings_path, data)
     
-    async def get_channel_list_config(self) -> ChannelListData:
+    async def get_channel_list_config(self) -> ChannelListDataImpl:
         """Loads the predefined channel list from channel_list.json asynchronously."""
-        return await self._load_json_file(self.channel_list_path, lambda: ChannelListData({}))
+        return await self._load_json_file(self.channel_list_path, lambda: ChannelListDataImpl({}))
 
-    async def get_service_quality_cache(self) -> ServiceQualityCacheData:
+    async def get_service_quality_cache(self) -> ServiceQualityCacheDataImpl:
         """Loads the service quality cache from service_quality_cache.json asynchronously."""
-        return await self._load_json_file(self.service_quality_cache_path, lambda: ServiceQualityCacheData({}))
+        return await self._load_json_file(self.service_quality_cache_path, lambda: ServiceQualityCacheDataImpl({}))
 
     async def save_service_quality_cache(self, data: ServiceQualityCacheData) -> bool:
         """Saves the service quality cache to service_quality_cache.json asynchronously."""
         return await self._save_json_file(self.service_quality_cache_path, data)
 
-    async def get_jobs_config(self) -> JobsData:
+    async def get_jobs_config(self) -> JobsDataImpl:
         """Loads the jobs configuration from jobs.json asynchronously."""
-        return await self._load_json_file(self.jobs_path, lambda: JobsData({}))
+        return await self._load_json_file(self.jobs_path, lambda: JobsDataImpl({}))
 
     async def save_jobs_config(self, data: JobsData) -> bool:
         """Saves the jobs configuration to jobs.json asynchronously."""
