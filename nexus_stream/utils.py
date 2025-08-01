@@ -147,7 +147,9 @@ class LogicalChannelInfo(TypedDict):
     group_title: ReadOnly[TVGGroupTitle]
     tvg_id: ReadOnly[TVGId]
     tvg_logo: ReadOnly[TVGLogo]
-LogicalChannelsData = NewType("LogicalChannelsData", tuple[LogicalChannelInfo, ...])
+LogicalChannelsDataImpl = NewType("LogicalChannelsDataImpl", list[LogicalChannelInfo])
+_LogicalChannelsDataReadOnly = NewType("_LogicalChannelsDataReadOnly", tuple[LogicalChannelInfo, ...])
+type LogicalChannelsData = LogicalChannelsDataImpl | _LogicalChannelsDataReadOnly
 
 class LogicalChannelMetrics(TypedDict):
     health_score: ReadOnly[PercentDisplay | None]

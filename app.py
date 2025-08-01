@@ -132,7 +132,7 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
             await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
         added_pending_stream = True
 
-        logical_channel = handler.get_logical_channel_by_id(logical_channel_id)
+        logical_channel = await handler.get_logical_channel_by_id(logical_channel_id)
         if not logical_channel:
             msg = f"Logical channel {logical_channel_id} not found for MPEGTS."
             config.error(VideoType.MPEGTS, msg)
@@ -234,7 +234,7 @@ async def serve_hls_playlist(logical_channel_id: LogicalChannelId, logical_chann
         added_pending_stream = True
 
         if logical_channel_name is None:
-            logical_channel = handler.get_logical_channel_by_id(logical_channel_id)
+            logical_channel = await handler.get_logical_channel_by_id(logical_channel_id)
             if not logical_channel:
                 msg = f"Logical channel {logical_channel_id} not found for HLS."
                 config.error(VideoType.HLS, msg)
@@ -367,12 +367,12 @@ async def ui_main_dashboard() -> str:
     return await render_template("ui_dashboard.html",
                            provider_count=await handler.get_num_providers(),
                            discovered_services_count=await handler.get_num_discovered_sources(),
-                           logical_channels_count=len(handler.logical_channels_data))
+                           logical_channels_count=await handler.get_num_logical_channels())
 
 @app.route("/ui/logical-channels")
 async def ui_logical_channels_list() -> str:
     """Renders the list of all configured logical channels."""
-    channels = handler.get_all_logical_channels_for_ui()
+    channels = await handler.copy_logical_channels_data(key=lambda x: x.get("display_name","").lower())
     all_quality_scores = await quality_monitor.get_quality_scores()
 
     all_channel_metrics: dict[LogicalChannelId, LogicalChannelMetrics] = {}
@@ -457,7 +457,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     is_htmx_service_list_request = (request.headers.get('HX-Request') and request.headers.get('HX-Target') == 'service-list-container')
     channel: LogicalChannelInfo | None = None
     if logical_channel_id:
-        channel = handler.get_logical_channel_by_id(logical_channel_id)
+        channel = await handler.get_logical_channel_by_id(logical_channel_id)
         if not channel:
             await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
             return redirect(url_for('ui_logical_channels_list'))
@@ -525,7 +525,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
 @app.route("/ui/logical-channels/analyze-mappings/<string:logical_channel_id>", methods=["POST"])
 async def ui_analyze_mappings(logical_channel_id: LogicalChannelId) -> Response:
     """Analyzes the mappings for a logical channel asynchronously."""
-    channel = handler.get_logical_channel_by_id(logical_channel_id)
+    channel = await handler.get_logical_channel_by_id(logical_channel_id)
     if not channel:
         await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
         return Response("", 404)
@@ -546,7 +546,7 @@ async def ui_analyze_mappings(logical_channel_id: LogicalChannelId) -> Response:
 @app.route("/ui/logical-channels/remove-dead-mappings/<string:logical_channel_id>", methods=["DELETE"])
 async def ui_remove_dead_mappings(logical_channel_id: LogicalChannelId) -> Response:
     """Removes dead mappings from logical channels asynchronously."""
-    channel = handler.get_logical_channel_by_id(logical_channel_id)
+    channel = await handler.get_logical_channel_by_id(logical_channel_id)
     if not channel:
         await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
         return Response("", 404)
@@ -739,7 +739,7 @@ async def ui_channel_suggest() -> str:
 
 @app.route("/ui/logical-channels/delete/<string:logical_channel_id>", methods=["POST"])
 async def ui_logical_channel_delete(logical_channel_id: LogicalChannelId) -> Response | WerkzeugResponse:
-    channel = handler.get_logical_channel_by_id(logical_channel_id)
+    channel = await handler.get_logical_channel_by_id(logical_channel_id)
     if channel:
         channel_log = f"'{channel['display_name']}' ({channel['channel_num']})"
         if await handler.delete_logical_channel(logical_channel_id):
@@ -813,7 +813,7 @@ async def hdhomerun_lineup() -> Response:
     """Returns the channel lineup in HDHomeRun format."""
     lineup: list[dict[str, str | int]] = []
     quality_scores = await quality_monitor.get_quality_scores()
-    for channel in handler.logical_channels_data:
+    for channel in await handler.copy_logical_channels_data():
         channel_number = channel.get('channel_num', '')
         if not channel_number:
             continue

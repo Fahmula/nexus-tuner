@@ -3,14 +3,14 @@ import re
 import html
 import hashlib
 import asyncio
-from typing import Final, Self, cast
+from typing import Callable, Final, Self, cast
 
 import aiohttp
 from nexus_stream.config import Config
 from nexus_stream.slots import ProviderSlots
 from nexus_stream.utils import (DEFAULT_PRIORITY, M3UURL, NEXUS_STREAM_USER_AGENT, ChannelInfos, ChannelInfosMutable, ChannelListData,
                                 ChannelListGroup, ChannelListInfo, ChannelMappingsData, ChannelMappingsDataMutable, ChannelNum, DateTimeISO,
-                                DiscoveredSource, DiscoveredSourcesData, DiscoveredSourcesDataImpl, LogicalChannelInfo, LogicalChannelName, ProviderInfo,
+                                DiscoveredSource, DiscoveredSourcesData, DiscoveredSourcesDataImpl, LogicalChannelInfo, LogicalChannelName, LogicalChannelsDataImpl, ProviderInfo,
                                 ProviderStatuses, ProvidersSourceDataImpl, SourceInfo, SourcePriority, SourceServiceId, StreamURL, TVGGroupTitle, Label, LogicalChannelId,
                                 LogicalChannelsData, M3USource, MainM3UPlaylist, MaxStreams, ProviderAlias, ProvidersData, ProvidersDataImpl,
                                 ProvidersSourceData, StreamKey, TVGDisplayName, TVGId, TVGLogo, TVGName, VideoType, create_stream_key)
@@ -39,7 +39,7 @@ class ChannelHandler:
     """
     __slots__ = (
         'label', 'config', '_mutex', '_providers_data', '_discovered_source_services_data',
-        'logical_channels_data', 'channel_mappings_data', 'channel_list_data',
+        '_logical_channels_data', 'channel_mappings_data', 'channel_list_data',
         'client_facing_channels', 'main_m3u_playlist',
         'slots', '_kill_provider_streams', '_pending_streams',
     )
@@ -55,7 +55,7 @@ class ChannelHandler:
         # Data loaded from configuration files
         self._providers_data: ProvidersData = ProvidersDataImpl({})
         self._discovered_source_services_data: DiscoveredSourcesData = DiscoveredSourcesDataImpl({})
-        self.logical_channels_data: LogicalChannelsData = LogicalChannelsData(())
+        self._logical_channels_data: LogicalChannelsData = LogicalChannelsDataImpl([])
         self.channel_mappings_data: ChannelMappingsData = ChannelMappingsData({})
         self.channel_list_data: ChannelListData = ChannelListData({})
 
@@ -93,7 +93,7 @@ class ChannelHandler:
             self.config.info(self.label, "Reloading ChannelHandler configurations")
 
             self._discovered_source_services_data = await self.config.get_discovered_source_services_config()
-            self.logical_channels_data = await self.config.get_logical_channels_config()
+            self._logical_channels_data = await self.config.get_logical_channels_config()
             self.channel_mappings_data = await self.config.get_channel_mappings_config()
             self.channel_list_data = await self.config.get_channel_list_config()
 
@@ -230,7 +230,7 @@ class ChannelHandler:
         self.config.info(self.label, "Building client-facing channels...")
         cast(ChannelInfosMutable, self.client_facing_channels).clear()
 
-        for lc_def in self.logical_channels_data:
+        for lc_def in self._logical_channels_data:
             logical_channel_id = lc_def["logical_channel_id"]
 
             mapped_sources_for_lc = self.get_mappings_for_logical_channel(logical_channel_id)
@@ -283,6 +283,19 @@ class ChannelHandler:
         """Returns the number of discovered sources."""
         async with self._mutex:
             return len(self._discovered_source_services_data)
+
+    async def get_num_logical_channels(self) -> int:
+        """Returns the number of logical channels."""
+        async with self._mutex:
+            return len(self._logical_channels_data)
+
+    async def copy_logical_channels_data(self, key: Callable[[LogicalChannelInfo], str] | None = None) -> LogicalChannelsData:
+        """Returns a copy of the logical channels data."""
+        async with self._mutex:
+            res = LogicalChannelsDataImpl([LogicalChannelInfo(**lc) for lc in self._logical_channels_data])
+        if key:
+            res.sort(key=key)
+        return res
 
     def reset_kill_provider_streams(self) -> set[ProviderAlias]:
         """Resets the kill_provider_streams, returns the aliases that should be killed."""
@@ -437,7 +450,7 @@ class ChannelHandler:
 
     def _generate_next_logical_channel_id(self) -> LogicalChannelId:
         """Generates the next available ID. (Sync - CPU-bound)"""
-        existing_id_strings = [lc['logical_channel_id'] for lc in self.logical_channels_data]
+        existing_id_strings = [lc['logical_channel_id'] for lc in self._logical_channels_data]
         if not existing_id_strings: return INITIAL_LOGICAL_CHANNEL_ID
         numeric_ids = [int(id_str) for id_str in existing_id_strings]
         return LogicalChannelId(str(max(numeric_ids) + 1))
@@ -502,52 +515,59 @@ class ChannelHandler:
             self._providers_data = new_providers_data
             return True
 
-    def get_all_logical_channels_for_ui(self) -> LogicalChannelsData:
-        """Gets a list of all logical channels."""
-        return LogicalChannelsData(tuple(sorted(self.logical_channels_data, key=lambda x: x.get("display_name","").lower())))
-
-    def get_logical_channel_by_id(self, logical_channel_id: LogicalChannelId) -> LogicalChannelInfo | None:
+    async def get_logical_channel_by_id(self, logical_channel_id: LogicalChannelId) -> LogicalChannelInfo | None:
         """Gets a logical channel by its ID."""
-        return next((lc for lc in self.logical_channels_data if lc.get("logical_channel_id") == logical_channel_id), None)
+        async with self._mutex:
+            return next((lc for lc in self._logical_channels_data if lc.get("logical_channel_id") == logical_channel_id), None)
 
     async def add_logical_channel(self, raw_lc_data: LogicalChannelInfo) -> LogicalChannelId | None:
         """Adds a new logical channel to the configuration."""
-        new_lc_id = self._generate_next_logical_channel_id()
-        new_lc_data = LogicalChannelInfo({**raw_lc_data, "logical_channel_id": new_lc_id})
-        new_data = LogicalChannelsData((*self.logical_channels_data, new_lc_data))
-        if not await self.config.save_logical_channels_config(new_data):
-            self.config.error(self.label, f"Failed to save new logical channel configuration: {new_lc_data}")
-            return
-        self.logical_channels_data = new_data
-        return new_lc_id
+        async with self._mutex:
+            new_lc_id = self._generate_next_logical_channel_id()
+            new_lc_data = LogicalChannelInfo({**raw_lc_data, "logical_channel_id": new_lc_id})
+            new_data = LogicalChannelsDataImpl([*self._logical_channels_data, new_lc_data])
+            if not await self.config.save_logical_channels_config(new_data):
+                self.config.error(self.label, f"Failed to save new logical channel configuration: {new_lc_data}")
+                return
+            self._logical_channels_data = new_data
+            return new_lc_id
 
     async def update_logical_channel(self, updated_lc_data: LogicalChannelInfo) -> bool:
         """Updates a logical channel in the configuration."""
-        if not any(lc["logical_channel_id"] == updated_lc_data["logical_channel_id"] for lc in self.logical_channels_data):
-            return False
-        new_data = LogicalChannelsData(tuple(updated_lc_data if lc["logical_channel_id"] == updated_lc_data["logical_channel_id"]
-                                                               else lc for lc in self.logical_channels_data))
-        res = await self.config.save_logical_channels_config(new_data)
-        if res:
-            self.logical_channels_data = new_data
-        else:
-            self.config.error(self.label, f"Failed to save updated logical channel configuration: {updated_lc_data}")
-        return res
+        async with self._mutex:
+            if not any(lc["logical_channel_id"] == updated_lc_data["logical_channel_id"] for lc in self._logical_channels_data):
+                self.config.error(self.label, f"Failed to update logical channel {updated_lc_data['logical_channel_id']}: not found.")
+                return False
+            new_data = LogicalChannelsDataImpl([updated_lc_data if lc["logical_channel_id"] == updated_lc_data["logical_channel_id"]
+                                                                else lc for lc in self._logical_channels_data])
+            res = await self.config.save_logical_channels_config(new_data)
+            if res:
+                self._logical_channels_data = new_data
+            else:
+                self.config.error(self.label, f"Failed to save updated logical channel configuration: {updated_lc_data}")
+            return res
 
     async def delete_logical_channel(self, logical_channel_id: LogicalChannelId) -> bool:
         """Deletes a logical channel from the configuration."""
-        if logical_channel_id in self.channel_mappings_data:
-            new_mappings = {k: v for k, v in self.channel_mappings_data.items()}
-            del new_mappings[logical_channel_id]
-            if not await self.config.save_channel_mappings_config(ChannelMappingsData(new_mappings)):
-                self.config.error(self.label, f"Failed to save channel mappings when deleting logical channel {logical_channel_id}. Restoring original mappings.")
+        async with self._mutex:
+            if not any(lc["logical_channel_id"] == logical_channel_id for lc in self._logical_channels_data):
+                self.config.error(self.label, f"Failed to delete logical channel {logical_channel_id}: not found.")
                 return False
-            del cast(ChannelMappingsDataMutable, self.channel_mappings_data)[logical_channel_id]
+            if logical_channel_id in self.channel_mappings_data:
+                new_mappings = {k: v for k, v in self.channel_mappings_data.items()}
+                del new_mappings[logical_channel_id]
+                if not await self.config.save_channel_mappings_config(ChannelMappingsData(new_mappings)):
+                    self.config.error(self.label, f"Failed to save channel mappings when deleting logical channel {logical_channel_id}. Restoring original mappings.")
+                    return False
+                del cast(ChannelMappingsDataMutable, self.channel_mappings_data)[logical_channel_id]
 
-        original_len = len(self.logical_channels_data)
-        self.logical_channels_data = LogicalChannelsData(tuple(lc for lc in self.logical_channels_data if lc["logical_channel_id"] != logical_channel_id))
-
-        return len(self.logical_channels_data) < original_len and await self.config.save_logical_channels_config(self.logical_channels_data)
+            new_data = LogicalChannelsDataImpl([lc for lc in self._logical_channels_data
+                                                if lc["logical_channel_id"] != logical_channel_id])
+            if not await self.config.save_logical_channels_config(new_data):
+                self.config.error(self.label, f"Failed to save updated logical channels configuration after deleting {logical_channel_id}.")
+                return False
+            self._logical_channels_data = new_data
+            return True
 
     def get_mappings_for_logical_channel(self, logical_channel_id: LogicalChannelId) -> list[SourcePriority]:
         """Retrieves mappings for a logical channel."""
