@@ -483,15 +483,15 @@ async def ui_provider_status() -> str:
 async def ui_sources_list() -> str:
     per_page = request.args.get('per_page', 100, type=int)
     page = request.args.get('page', 1, type=int)
-    services_unfiltered = await handler.get_discovered_sources_for_ui()
-    providers = sorted(list(set(s['provider_alias'] for s in services_unfiltered)))
+    sources_unfiltered = await handler.get_discovered_sources_for_ui()
+    providers = sorted(list(set(s['provider_alias'] for s in sources_unfiltered)))
     filter_provider = request.args.get('provider_alias', '')
     filter_name = request.args.get('name_filter', '').lower()
-    services_filtered = [s for s in services_unfiltered if (not filter_provider or s['provider_alias'] == filter_provider) and (not filter_name or filter_name in s.get('tvg_name', '').lower() or filter_name in s.get('display_title', '').lower())]
-    total_items = len(services_filtered)
+    sources_filtered = [s for s in sources_unfiltered if (not filter_provider or s['provider_alias'] == filter_provider) and (not filter_name or filter_name in s.get('tvg_name', '').lower() or filter_name in s.get('display_title', '').lower())]
+    total_items = len(sources_filtered)
     total_pages = math.ceil(total_items / per_page)
-    services_for_page = services_filtered[(page - 1) * per_page:page * per_page]
-    return await render_template("ui_sources.html", services=services_for_page, providers=providers, current_provider=filter_provider, current_name_filter=filter_name, current_page=page, total_pages=total_pages, total_items=total_items, per_page=per_page)
+    sources_for_page = sources_filtered[(page - 1) * per_page:page * per_page]
+    return await render_template("ui_sources.html", sources=sources_for_page, providers=providers, current_provider=filter_provider, current_name_filter=filter_name, current_page=page, total_pages=total_pages, total_items=total_items, per_page=per_page)
 
 
 @app.route("/ui/logical-channels")

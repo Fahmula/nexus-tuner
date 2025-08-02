@@ -1,10 +1,10 @@
 {% extends "layout.html" %}
 
-{% block title %}Discovered Source Services - NexusStream{% endblock %}
+{% block title %}Discovered Sources - NexusStream{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-    <h1 class="h2">Discovered Source Services</h1>
+    <h1 class="h2">Discovered Sources</h1>
 </div>
 
 <div class="card">
@@ -55,7 +55,7 @@
 
 <div class="table-responsive">
     <p class="text-muted">
-        Showing {{ services|length }} services on this page ({{ total_items }} total matching services).
+        Showing {{ sources|length }} sources on this page ({{ total_items }} total matching sources).
     </p>
     <table class="table table-striped table-hover table-sm">
         <thead class="table-light">
@@ -71,18 +71,18 @@
             </tr>
         </thead>
         <tbody>
-            {% if services %}
-            {% for service in services %}
+            {% if sources %}
+            {% for source in sources %}
             <tr>
-                <td><small class="text-muted">{{ service.source_id }}</small></td>
-                <td><span class="badge bg-secondary">{{ service.provider_alias }}</span></td>
-                <td>{{ service.tvg_name if service.tvg_name else '-' }}</td>
-                <td>{{ service.display_title if service.display_title else '-' }}</td>
-                <td>{{ service.group_title if service.group_title else '-' }}</td>
-                <td>{{ service.tvg_id if service.tvg_id else '-' }}</td>
+                <td><small class="text-muted">{{ source.source_id }}</small></td>
+                <td><span class="badge bg-secondary">{{ source.provider_alias }}</span></td>
+                <td>{{ source.tvg_name if source.tvg_name else '-' }}</td>
+                <td>{{ source.display_title if source.display_title else '-' }}</td>
+                <td>{{ source.group_title if source.group_title else '-' }}</td>
+                <td>{{ source.tvg_id if source.tvg_id else '-' }}</td>
                 <td>
-                    {% if service.tvg_log %}
-                    <img src="{{ service.tvg_log }}" alt="logo" style="max-height: 20px; max-width: 40px;"
+                    {% if source.tvg_log %}
+                    <img src="{{ source.tvg_log }}" alt="logo" style="max-height: 20px; max-width: 40px;"
                         onerror="this.style.display='none'" loading="lazy">
                     {% else %}
                     -
@@ -91,9 +91,9 @@
                 <td>
                     <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal"
                         data-bs-target="#previewModal"
-                        hx-get="{{ url_for('ui_player_for_service', source_id=service.source_id) }}"
+                        hx-get="{{ url_for('ui_player_for_source', source_id=source.source_id) }}"
                         hx-target="#preview-modal-body" hx-trigger="click"
-                        title="Preview Stream URL for {{ service.tvg_name }}">
+                        title="Preview Stream URL for {{ source.tvg_name }}">
                         <i class="fas fa-play"></i>
                     </button>
                 </td>
@@ -101,7 +101,7 @@
             {% endfor %}
             {% else %}
             <tr>
-                <td colspan="7" class="text-center">No source services found matching your criteria, or no providers
+                <td colspan="7" class="text-center">No source sources found matching your criteria, or no providers
                     configured/parsed.</td>
             </tr>
             {% endif %}
@@ -111,7 +111,7 @@
 
 {% if total_pages > 1 %}
 {# Add a top margin (mt-4) for better spacing #}
-<nav aria-label="Service list navigation" class="mt-4">
+<nav aria-label="Source list navigation" class="mt-4">
     <ul class="pagination justify-content-center">
         {# Previous Button #}
         <li class="page-item {% if current_page <= 1 %}disabled{% endif %}">

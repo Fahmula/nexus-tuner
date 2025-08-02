@@ -14,7 +14,7 @@ import aiofiles.os
 import aioshutil
 
 from nexus_stream.utils import (NEXUS_STREAM_PORT, NEXUS_STREAM_VERSION, ChannelListDataImpl, ChannelMappingsData, ChannelMappingsDataImpl, DiscoveredSourcesData, DiscoveredSourcesDataImpl, JobsData, JobsDataImpl,
-                                Label, LogicalChannelsData, LogicalChannelsDataImpl, ProvidersData, ProvidersDataImpl, ServiceQualityCacheData, ServiceQualityCacheDataImpl, VideoKey, VideoType)
+                                Label, LogicalChannelsData, LogicalChannelsDataImpl, ProvidersData, ProvidersDataImpl, QualityCacheData, QualityCacheDataImpl, VideoKey, VideoType)
 
 
 NOT_ALPHANUM_REGEX: Final[re.Pattern[str]] = re.compile(r'[^a-zA-Z0-9_-]')
@@ -367,11 +367,11 @@ class Config:
         """Loads the predefined channel list from channel_list.json asynchronously."""
         return await self._load_json_file(self.channel_list_path, lambda: ChannelListDataImpl({}))
 
-    async def get_quality_cache(self) -> ServiceQualityCacheDataImpl:
+    async def get_quality_cache(self) -> QualityCacheDataImpl:
         """Loads the service quality cache from quality_cache.json asynchronously."""
-        return await self._load_json_file(self.quality_cache_path, lambda: ServiceQualityCacheDataImpl({}))
+        return await self._load_json_file(self.quality_cache_path, lambda: QualityCacheDataImpl({}))
 
-    async def save_quality_cache(self, data: ServiceQualityCacheData) -> bool:
+    async def save_quality_cache(self, data: QualityCacheData) -> bool:
         """Saves the service quality cache to quality_cache.json asynchronously."""
         return await self._save_json_file(self.quality_cache_path, data)
 

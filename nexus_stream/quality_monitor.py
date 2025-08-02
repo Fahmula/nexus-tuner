@@ -7,7 +7,7 @@ from nexus_stream.config import Config
 from nexus_stream.handler import ChannelHandler
 from nexus_stream.utils import (NEXUS_STREAM_USER_AGENT, Bitrate, BitrateScore, DateTimeISO, Framerate, FramerateScore, Height,
                                 Label, LogicalChannelId, Percent, ProbeInfo, ProbeSuccess, ProviderAlias, QualityInfoImpl, QualityScores,
-                                QualityScoresImpl, ResolutionScore, ServiceQualityCacheData, ServiceQualityCacheDataImpl, SourceId,
+                                QualityScoresImpl, ResolutionScore, QualityCacheData, QualityCacheDataImpl, SourceId,
                                 StreamURL, TotalScore, UptimeScore, Width, run_bg)
 
 # --- Constants ---
@@ -259,7 +259,7 @@ class QualityMonitor:
 
             async with self._mutex:
                 quality_cache = await self.config.get_quality_cache()
-                modified_cache = ServiceQualityCacheDataImpl({})
+                modified_cache = QualityCacheDataImpl({})
                 for source_id, result in stream_infos:
                     if source_id not in quality_cache:
                         if not await self.handler.get_discovered_source(source_id):
@@ -296,7 +296,7 @@ class QualityMonitor:
         if input_lc_id:
             self.config.info(Label.QUALITY, f"Completed analysis for {len(valid_mappings[0][1])} mappings(s) in Logical Channel ID {input_lc_id}.")
 
-    def _build_quality_scores(self, quality_cache: ServiceQualityCacheData) -> None:
+    def _build_quality_scores(self, quality_cache: QualityCacheData) -> None:
         """Calculates quality scores and updates the internal state."""
         for source_id, cache_entry in quality_cache.items():
             avg_width = Width(sum(cache_entry.get("widths", [])) / len(cache_entry["widths"]) if cache_entry.get("widths") else 0)

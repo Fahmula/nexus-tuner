@@ -197,9 +197,9 @@ class QualityInfoImpl(TypedDict):
     bitrates: list[Bitrate]
     framerates: list[Framerate]
     updated_at: DateTimeISO
-ServiceQualityCacheDataImpl = NewType("ServiceQualityCacheDataImpl", dict[SourceId, QualityInfoImpl])
-_ServiceQualityCacheDataReadOnly = NewType("_ServiceQualityCacheDataReadOnly", Mapping[SourceId, QualityInfo])
-type ServiceQualityCacheData = ServiceQualityCacheDataImpl | _ServiceQualityCacheDataReadOnly
+QualityCacheDataImpl = NewType("QualityCacheDataImpl", dict[SourceId, QualityInfoImpl])
+_QualityCacheDataReadOnly = NewType("_QualityCacheDataReadOnly", Mapping[SourceId, QualityInfo])
+type QualityCacheData = QualityCacheDataImpl | _QualityCacheDataReadOnly
 
 class QualityScore(TypedDict):
     width: ReadOnly[Width]
