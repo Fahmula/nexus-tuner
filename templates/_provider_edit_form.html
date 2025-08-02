@@ -10,14 +10,14 @@
                            value="{{ provider.alias }}" readonly title="Alias is read-only.">
                 </div>
                 <div class="col-md-5">
-                    <label for="edit-url-{{ provider.alias }}" class="form-label visually-hidden">M3U URL</label>
-                    <input type="url" class="form-control form-control-sm" id="edit-url-{{ provider.alias }}" name="url"
-                           value="{{ provider.url }}" required>
+                    <label for="edit-m3u_url-{{ provider.alias }}" class="form-label visually-hidden">M3U URL</label>
+                    <input type="url" class="form-control form-control-sm" id="edit-m3u_url-{{ provider.alias }}" name="m3u_url"
+                           value="{{ provider.m3u_url }}" required>
                 </div>
                 <div class="col-md-2">
                     <label for="edit-max-streams-{{ provider.alias }}" class="form-label visually-hidden">Max Streams</label>
-                    <input type="number" class="form-control form-control-sm" id="edit-max-streams-{{ provider.alias }}" name="max_concurrent_streams"
-                           value="{{ provider.max_concurrent_streams }}" min="0" required>
+                    <input type="number" class="form-control form-control-sm" id="edit-max-streams-{{ provider.alias }}" name="max_streams"
+                           value="{{ provider.max_streams }}" min="0" required>
                 </div>
                 <div class="col-md-1 text-end">
                     <button type="submit" class="btn btn-success btn-sm w-100" title="Save Changes">

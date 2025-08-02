@@ -109,21 +109,18 @@ class Label(StrEnum):
 
 class ProviderStatus(TypedDict):
     alias: ReadOnly[ProviderAlias]
-    url: ReadOnly[M3UURL]
+    m3u_url: ReadOnly[M3UURL]
     active_streams: ReadOnly[ActiveStreams]
-    max_concurrent_streams: ReadOnly[MaxStreams]
+    max_streams: ReadOnly[MaxStreams]
 ProviderStatuses = NewType("ProviderStatuses", Mapping[ProviderAlias, ProviderStatus])
 
 class ProviderInfo(TypedDict):
-    url: ReadOnly[M3UURL]
-    max_concurrent_streams: ReadOnly[MaxStreams]
+    m3u_url: ReadOnly[M3UURL]
+    max_streams: ReadOnly[MaxStreams]
     updated_at: ReadOnly[DateTimeISO | None]
 ProvidersDataImpl = NewType("ProvidersDataImpl", dict[ProviderAlias, ProviderInfo])
 _ProvidersDataReadOnly = NewType("_ProvidersDataReadOnly", Mapping[ProviderAlias, ProviderInfo])
 type ProvidersData = ProvidersDataImpl | _ProvidersDataReadOnly
-ProvidersSourceDataImpl = NewType("ProvidersSourceDataImpl", dict[Literal["source_m3u_providers"], ProvidersData])
-_ProvidersSourceDataReadOnly = NewType("_ProvidersSourceDataReadOnly", Mapping[Literal["source_m3u_providers"], ProvidersData])
-type ProvidersSourceData = ProvidersSourceDataImpl | _ProvidersSourceDataReadOnly
 
 class M3USource(TypedDict):
     original_tvg_name: ReadOnly[TVGName]

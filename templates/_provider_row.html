@@ -6,9 +6,9 @@
         <strong>{{ provider.alias }}</strong>
     </td>
     <td><span class="text-muted"></i>***********</span></td>
-    <td>{{ provider.max_concurrent_streams }}</td>
+    <td>{{ provider.max_streams }}</td>
     <td>
-        <span class="badge {% if provider.active_streams >= provider.max_concurrent_streams %}bg-danger{% elif provider.active_streams > 0 %}bg-warning{% else %}bg-success{% endif %}">
+        <span class="badge {% if provider.active_streams >= provider.max_streams %}bg-danger{% elif provider.active_streams > 0 %}bg-warning{% else %}bg-success{% endif %}">
             {{ provider.active_streams }}
         </span>
     </td>

@@ -9,14 +9,14 @@
                        value="{{ alias if alias is not none else '' }}" required>
             </div>
             <div class="col-md-5">
-                <label for="url" class="form-label visually-hidden">M3U URL</label>
-                <input type="url" class="form-control" id="url" name="url" placeholder="M3U URL (e.g., http://example.com/playlist.m3u)"
-                       value="{{ url if url is not none else '' }}" required>
+                <label for="m3u_url" class="form-label visually-hidden">M3U URL</label>
+                <input type="url" class="form-control" id="m3u_url" name="m3u_url" placeholder="M3U URL (e.g., http://example.com/playlist.m3u)"
+                       value="{{ m3u_url if m3u_url is not none else '' }}" required>
             </div>
             <div class="col-md-2">
-                <label for="max_concurrent_streams" class="form-label visually-hidden">Max Streams</label>
-                <input type="number" class="form-control" id="max_concurrent_streams" name="max_concurrent_streams" placeholder="Max Streams"
-                       value="{{ max_concurrent_streams if max_concurrent_streams is not none else 0 }}" min="0" required>
+                <label for="max_streams" class="form-label visually-hidden">Max Streams</label>
+                <input type="number" class="form-control" id="max_streams" name="max_streams" placeholder="Max Streams"
+                       value="{{ max_streams if max_streams is not none else 0 }}" min="0" required>
             </div>
             <div class="col-md-1 text-end">
                 <button type="submit" class="btn btn-primary w-100" title="Add Provider">

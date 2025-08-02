@@ -403,13 +403,13 @@ async def ui_provider_add() -> Response | str:
     if request.method == "POST":
         form_data = cast(ImmutableMultiDict[str, str], await request.form)  # type: ignore
         alias = ProviderAlias(form_data.get("alias", "").strip())
-        url = M3UURL(form_data.get("url", "").strip())
-        max_streams_str = form_data.get("max_concurrent_streams", "")
+        m3u_url = M3UURL(form_data.get("m3u_url", "").strip())
+        max_streams_str = form_data.get("max_streams", "")
         try:
             max_streams = MaxStreams(int(max_streams_str))
-            if not is_valid_url(url):
-                raise ValueError(f"Invalid URL format: {url}")
-            if await handler.add_provider(alias, url, max_streams):
+            if not is_valid_url(m3u_url):
+                raise ValueError(f"Invalid URL format: {m3u_url}")
+            if await handler.add_provider(alias, m3u_url, max_streams):
                 await flash(f"Provider '{alias}' added successfully.", "success")
                 all_providers = sorted((await handler.get_provider_stream_status()).values(), key=lambda p: p['alias'])
                 table_body_html = await render_template("_providers_table_body.html", providers=all_providers)
@@ -419,7 +419,7 @@ async def ui_provider_add() -> Response | str:
                 raise ValueError(f"Failed to add provider '{alias}'.")
         except ValueError as e:
             await flash(f"Failed to add provider '{alias}`: {e}", "error")
-            response = Response(await render_template("_provider_add_form.html", alias=alias, url=url, max_concurrent_streams=max_streams_str))
+            response = Response(await render_template("_provider_add_form.html", alias=alias, m3u_url=m3u_url, max_streams=max_streams_str))
         response.headers["HX-Trigger"] = "flashMessagesUpdated"
         return response
     return await render_template("_provider_add_form.html")
@@ -437,21 +437,21 @@ async def ui_provider_edit(alias: ProviderAlias) -> Response | str:
         return await render_template("_provider_edit_form.html", provider=provider)
 
     form_data = cast(ImmutableMultiDict[str, str], await request.form)  # type: ignore
-    url = M3UURL(form_data.get("url", "").strip())
-    max_streams_str = form_data.get("max_concurrent_streams", "")
+    m3u_url = M3UURL(form_data.get("m3u_url", "").strip())
+    max_streams_str = form_data.get("max_streams", "")
     try:
         max_streams = MaxStreams(int(max_streams_str))
-        if not is_valid_url(url):
-            raise ValueError(f"Invalid URL format: {url}")
-        if await handler.update_provider(alias, url, max_streams):
+        if not is_valid_url(m3u_url):
+            raise ValueError(f"Invalid URL format: {m3u_url}")
+        if await handler.update_provider(alias, m3u_url, max_streams):
             await flash(f"Provider '{alias}' updated successfully.", "success")
-            updated_provider_data = ProviderStatus({**provider, "url": url, "max_concurrent_streams": max_streams})
+            updated_provider_data = ProviderStatus({**provider, "m3u_url": m3u_url, "max_streams": max_streams})
             response = Response(await render_template("_provider_row.html", provider=updated_provider_data))
         else:
             raise ValueError(f"Failed to update provider '{alias}'.")
     except ValueError as e:
         await flash(f"Failed to update provider '{alias}': {e}", "error")
-        response = Response(await render_template("_provider_edit_form.html", provider={**provider, "url": url, "max_concurrent_streams": max_streams_str}))
+        response = Response(await render_template("_provider_edit_form.html", provider={**provider, "m3u_url": m3u_url, "max_streams": max_streams_str}))
     response.headers["HX-Trigger"] = "flashMessagesUpdated"
     return response
 
@@ -475,7 +475,7 @@ async def ui_provider_delete(alias: ProviderAlias) -> Response:
 async def ui_provider_status() -> str:
     statues = await handler.get_provider_stream_status()
     active_streams = sum(status['active_streams'] for status in statues.values())
-    max_total_streams = sum(status['max_concurrent_streams'] for status in statues.values())
+    max_total_streams = sum(status['max_streams'] for status in statues.values())
     return await render_template("_provider_status_bar.html", active_streams=active_streams, max_total_streams=max_total_streams)
 
 
@@ -840,7 +840,7 @@ async def hdhomerun_discover() -> Response:
         "Manufacturer": "nexus-stream",
         "BaseURL": f"{config.nexus_url}",
         "LineupURL": f"{config.nexus_url}/lineup.json",
-        "TunerCount": sum(p["max_concurrent_streams"] for p in (await handler.get_provider_stream_status()).values())
+        "TunerCount": sum(p["max_streams"] for p in (await handler.get_provider_stream_status()).values())
     }
     return Response(json.dumps(response_dict), mimetype="application/json")
 

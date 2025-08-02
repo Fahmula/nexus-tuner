@@ -11,9 +11,9 @@ from nexus_stream.slots import ProviderSlots
 from nexus_stream.utils import (DEFAULT_PRIORITY, M3UURL, NEXUS_STREAM_USER_AGENT, ChannelInfos, ChannelInfosImpl, ChannelListData, ChannelListDataImpl,
                                 ChannelListGroup, ChannelListInfo, ChannelMappingsData, ChannelMappingsDataImpl, ChannelNum, DateTimeISO,
                                 DiscoveredSource, DiscoveredSourcesData, DiscoveredSourcesDataImpl, LogicalChannelInfo, LogicalChannelName, LogicalChannelsDataImpl, Priority, ProviderInfo,
-                                ProviderStatuses, ProvidersSourceDataImpl, SourceInfo, SourcePriority, SourceServiceId, StreamURL, TVGGroupTitle, Label, LogicalChannelId,
+                                ProviderStatuses, SourceInfo, SourcePriority, SourceServiceId, StreamURL, TVGGroupTitle, Label, LogicalChannelId,
                                 LogicalChannelsData, M3USource, MainM3UPlaylist, MaxStreams, ProviderAlias, ProvidersData, ProvidersDataImpl,
-                                ProvidersSourceData, StreamKey, TVGDisplayName, TVGId, TVGLogo, TVGName, VideoType, create_stream_key)
+                                StreamKey, TVGDisplayName, TVGId, TVGLogo, TVGName, VideoType, create_stream_key)
 
 # --- Constants ---
 INITIAL_LOGICAL_CHANNEL_ID: Final[LogicalChannelId] = LogicalChannelId("1000")
@@ -98,7 +98,7 @@ class ChannelHandler:
             self._channel_list_data = await self.config.get_channel_list_config()
 
             if update_providers:
-                self._providers_data = (await self.config.get_providers_config()).get("source_m3u_providers", ProvidersDataImpl({}))
+                self._providers_data = await self.config.get_providers_config()
                 self._update_providers_slots()
 
             prev_discovered_source_services = DiscoveredSourcesDataImpl({k: v for k, v in self._discovered_source_services_data.items()})
@@ -110,11 +110,11 @@ class ChannelHandler:
                 if not await self.config.save_discovered_source_services_config(self._discovered_source_services_data):
                     self.config.critical(self.label, "Failed to save discovered source services configuration.")
                 new_providers_data = ProvidersDataImpl({alias: {
-                    "url": details["url"],
-                    "max_concurrent_streams": details["max_concurrent_streams"],
+                    "m3u_url": details["m3u_url"],
+                    "max_streams": details["max_streams"],
                     "updated_at": DateTimeISO(now.isoformat())
                 } for alias, details in self._providers_data.items()})
-                if await self._save_providers_for_ui(ProvidersSourceDataImpl({"source_m3u_providers": new_providers_data}), update_slots=False):
+                if await self._save_providers_for_ui(new_providers_data, update_slots=False):
                     self._providers_data = new_providers_data
                 else:
                     self.config.critical(self.label, "Failed to save updated provider configuration after discovery.")
@@ -209,7 +209,7 @@ class ChannelHandler:
         self.config.info(self.label, "Starting to parse all provider M3Us...")
         async with aiohttp.ClientSession() as session:
             tasks = [
-                self._fetch_and_parse_provider(session, alias, details["url"])
+                self._fetch_and_parse_provider(session, alias, details["m3u_url"])
                 for alias, details in self._providers_data.items()
             ]
             if not tasks:
@@ -359,8 +359,8 @@ class ChannelHandler:
                 providers_to_delete.add(alias)
                 self._kill_provider_streams.add(alias)
                 continue
-            m3u_url = self._providers_data[alias]["url"]
-            max_streams = self._providers_data[alias]["max_concurrent_streams"]
+            m3u_url = self._providers_data[alias]["m3u_url"]
+            max_streams = self._providers_data[alias]["max_streams"]
             if curr_details.get_m3u_url() == m3u_url and curr_details.get_total_slots() == max_streams:
                 continue
             self.config.info(self.label, f"Updating slots for provider '{alias}' with new URL or max streams.")
@@ -375,10 +375,10 @@ class ChannelHandler:
         for alias, details in self._providers_data.items():
             if alias in self._slots:
                 continue
-            max_streams = details["max_concurrent_streams"]
+            max_streams = details["max_streams"]
             self._slots[alias] = ProviderSlots(
                 alias=alias,
-                m3u_url=details["url"],
+                m3u_url=details["m3u_url"],
                 total_slots=max_streams
             )
             self.config.info(self.label, f"Initialized slots for provider '{alias}' with capacity {max_streams}")
@@ -392,26 +392,24 @@ class ChannelHandler:
         async with self._mutex:
             return ProviderStatuses({alias: {
                 "alias": alias,
-                "url": provider_slots.get_m3u_url(),
+                "m3u_url": provider_slots.get_m3u_url(),
                 "active_streams": await provider_slots.get_active_slots(),
-                "max_concurrent_streams": provider_slots.get_total_slots()
+                "max_streams": provider_slots.get_total_slots()
             } for alias, provider_slots in self._slots.items()})
 
     # --- UI Interaction Methods ---
 
-    async def _save_providers_for_ui(self, new_providers_data: ProvidersSourceData, *, update_slots: bool) -> bool:
+    async def _save_providers_for_ui(self, new_providers_data: ProvidersData, *, update_slots: bool) -> bool:
         """Saves the provider configuration and updates internal state asynchronously."""
-        if "source_m3u_providers" not in new_providers_data:
-            return False 
         save_successful = await self.config.save_providers_config(new_providers_data)
         if save_successful and update_slots:
             self._update_providers_slots()
         return save_successful
     
-    async def add_provider(self, alias: ProviderAlias, url: M3UURL, max_streams: MaxStreams) -> bool:
+    async def add_provider(self, alias: ProviderAlias, m3u_url: M3UURL, max_streams: MaxStreams) -> bool:
         """Adds a new provider to the configuration asynchronously."""
         if not alias: raise ValueError("Provider alias cannot be empty.")
-        if not url: raise ValueError("Provider URL cannot be empty.")
+        if not m3u_url: raise ValueError("Provider URL cannot be empty.")
         if max_streams < 0: raise ValueError("Max concurrent streams must be at least 0.")
 
         async with self._mutex:
@@ -419,19 +417,19 @@ class ChannelHandler:
                 raise ValueError(f"Provider with alias '{alias}' already exists.")
 
             new_providers_data = ProvidersDataImpl({**self._providers_data, alias: ProviderInfo({
-                "url": url,
-                "max_concurrent_streams": max_streams,
+                "m3u_url": m3u_url,
+                "max_streams": max_streams,
                 "updated_at": None
             })})
-            if not await self._save_providers_for_ui(ProvidersSourceDataImpl({"source_m3u_providers": new_providers_data}), update_slots=True):
+            if not await self._save_providers_for_ui(new_providers_data, update_slots=True):
                 self.config.critical(self.label, f"Failed to save new provider configuration for '{alias}'.")
                 return False
             self._providers_data = new_providers_data
             return True
 
-    async def update_provider(self, alias: ProviderAlias, url: M3UURL, max_streams: MaxStreams) -> bool:
+    async def update_provider(self, alias: ProviderAlias, m3u_url: M3UURL, max_streams: MaxStreams) -> bool:
         """Updates an existing provider's configuration asynchronously."""
-        if not url: raise ValueError("Provider URL cannot be empty.")
+        if not m3u_url: raise ValueError("Provider URL cannot be empty.")
         if max_streams < 0: raise ValueError("Max concurrent streams must be at least 0.")
 
         async with self._mutex:
@@ -439,11 +437,11 @@ class ChannelHandler:
 
             new_providers_data = ProvidersDataImpl({**self._providers_data})
             new_providers_data[alias] = ProviderInfo({
-                "url": url,
-                "max_concurrent_streams": max_streams,
+                "m3u_url": m3u_url,
+                "max_streams": max_streams,
                 "updated_at": self._providers_data[alias]["updated_at"]
             })
-            if not await self._save_providers_for_ui(ProvidersSourceDataImpl({"source_m3u_providers": new_providers_data}), update_slots=True):
+            if not await self._save_providers_for_ui(new_providers_data, update_slots=True):
                 self.config.critical(self.label, f"Failed to save updated provider configuration for '{alias}'.")
                 return False
             self._providers_data = new_providers_data
@@ -456,7 +454,7 @@ class ChannelHandler:
 
             new_providers_data = ProvidersDataImpl({**self._providers_data})
             del new_providers_data[alias]
-            if not await self._save_providers_for_ui(ProvidersSourceDataImpl({"source_m3u_providers": new_providers_data}), update_slots=True):
+            if not await self._save_providers_for_ui(new_providers_data, update_slots=True):
                 self.config.critical(self.label, f"Failed to save updated provider configuration after deleting '{alias}'.")
                 return False
             self._providers_data = new_providers_data

@@ -202,7 +202,7 @@ class CreateStream:
             run_bg(self.stream_manager.prune_ffmpeg_processes(provider_alias))
 
         status = await self.handler.get_provider_stream_status()
-        max_streams = status[provider_alias]["max_concurrent_streams"]
+        max_streams = status[provider_alias]["max_streams"]
         
         worker_tasks = [
             asyncio.create_task(self._provider_worker_task(provider_alias, provider_sources))

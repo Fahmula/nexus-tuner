@@ -14,7 +14,7 @@ import aiofiles.os
 import aioshutil
 
 from nexus_stream.utils import (NEXUS_STREAM_PORT, NEXUS_STREAM_VERSION, ChannelListDataImpl, ChannelMappingsData, ChannelMappingsDataImpl, DiscoveredSourcesData, DiscoveredSourcesDataImpl, JobsData, JobsDataImpl,
-                                Label, LogicalChannelsData, LogicalChannelsDataImpl, ProvidersDataImpl, ProvidersSourceData, ProvidersSourceDataImpl, ServiceQualityCacheData, ServiceQualityCacheDataImpl, VideoKey, VideoType)
+                                Label, LogicalChannelsData, LogicalChannelsDataImpl, ProvidersData, ProvidersDataImpl, ServiceQualityCacheData, ServiceQualityCacheDataImpl, VideoKey, VideoType)
 
 
 NOT_ALPHANUM_REGEX: Final[re.Pattern[str]] = re.compile(r'[^a-zA-Z0-9_-]')
@@ -331,11 +331,11 @@ class Config:
                 return False
             raise
 
-    async def get_providers_config(self) -> ProvidersSourceDataImpl:
+    async def get_providers_config(self) -> ProvidersDataImpl:
         """Loads the providers configuration from providers.json asynchronously."""
-        return await self._load_json_file(self.providers_path, lambda: ProvidersSourceDataImpl({"source_m3u_providers": ProvidersDataImpl({})}))
+        return await self._load_json_file(self.providers_path, lambda: ProvidersDataImpl({}))
 
-    async def save_providers_config(self, data: ProvidersSourceData) -> bool:
+    async def save_providers_config(self, data: ProvidersData) -> bool:
         """Saves the providers configuration to providers.json asynchronously."""
         return await self._save_json_file(self.providers_path, data)
 
