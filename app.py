@@ -609,10 +609,10 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     source_metrics: dict[SourceId, SourceMetrics] = {}
     current_mappings = await handler.get_channel_mappings_for_ui(logical_channel_id) if logical_channel_id else []
     sort_sources(current_mappings, all_quality_scores, reverse=False)
-    services_mapped_elsewhere = await handler.get_all_mapped_source_ids()
+    sources_mapped_elsewhere = await handler.get_all_mapped_source_ids()
     for mapping in current_mappings:
         source_id = mapping['source_id']
-        services_mapped_elsewhere.discard(source_id)
+        sources_mapped_elsewhere.discard(source_id)
         all_mapped_source_ids.add(source_id)
         if source_id in all_services_map:
             service_details = all_services_map[source_id].copy()
@@ -648,7 +648,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     return await render_template(
         template_to_render, channel=channel, channel_metrics=channel_metrics, source_metrics=source_metrics,
         unmapped_suggestions_for_page=unmapped_suggestions_for_page,
-        mapped_sources=mapped_sources, services_mapped_elsewhere=services_mapped_elsewhere,
+        mapped_sources=mapped_sources, sources_mapped_elsewhere=sources_mapped_elsewhere,
         current_page=page, total_pages=total_pages, total_unmapped_items=total_unmapped_items,
         search_query=search_query, filter_query=filter_query,
     )
@@ -745,7 +745,7 @@ async def ui_channel_populate_from_suggestion() -> str:
     # 2. Pre-filter services based on the suggested name
     filter_query = prefilled_data['logical_channel_title'].strip().lower()
     all_services = await handler.get_discovered_sources_for_ui()
-    services_mapped_elsewhere = await handler.get_all_mapped_source_ids()
+    sources_mapped_elsewhere = await handler.get_all_mapped_source_ids()
     unmapped_suggestions: list[DiscoveredSource] = []
 
     search_query = prefilled_data['logical_channel_title']
@@ -774,7 +774,7 @@ async def ui_channel_populate_from_suggestion() -> str:
         channel={},
         unmapped_suggestions_for_page=unmapped_suggestions_for_page,
         mapped_sources=[], # New channel has no mapped services
-        services_mapped_elsewhere=services_mapped_elsewhere,
+        sources_mapped_elsewhere=sources_mapped_elsewhere,
         current_page=page,
         total_pages=total_pages,
         total_unmapped_items=total_unmapped_items,
@@ -810,12 +810,12 @@ async def ui_logs_modal() -> str:
     return await render_template("_logs_modal_content.html", log_lines=log_lines)
 
 
-@app.route("/ui/service-preview/<path:source_id>")
-async def ui_player_for_service(source_id: SourceId) -> str:
+@app.route("/ui/source-preview/<path:source_id>")
+async def ui_player_for_source(source_id: SourceId) -> str:
     source_service = await handler.get_discovered_source(source_id)
     if not source_service:
-        await flash(f"Error: source service ID not found.", "error")
-        abort(404, f"Source service ID '{source_id}' not found.")
+        await flash(f"Error: source ID not found.", "error")
+        abort(404, f"Source ID '{source_id}' not found.")
     source_name = source_service.get('display_title', source_service.get('tvg_name', 'Preview'))
     logical_channel_id = f"preview_{source_id}"
     playlist_url = url_for('serve_hls_preview', logical_channel_id=logical_channel_id)

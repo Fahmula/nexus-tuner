@@ -3,7 +3,7 @@
 <p class="small text-muted">
     Set priority for failover (0=highest, 5=default). Only change if you want to override
     the quality scores for specific sources based on factors like uptime or latency
-    (enabled service order reflects actual stream order).
+    (enabled source order reflects actual stream order).
 </p>
 
 <div class="table-responsive">
@@ -11,7 +11,7 @@
         <thead class="table-light">
             <tr>
                 <th style="width: 5%;" class="text-center">Enable</th>
-                <th>Service</th>
+                <th>Source</th>
                 <th style="width: 15%;" class="text-center">Uptime</th>
                 <th style="width: 15%;">Priority</th>
                 <th style="width: 10%;" class="text-end">Preview</th>
@@ -19,18 +19,18 @@
         </thead>
 
         <tbody>
-            {% for service in mapped_sources %}
-            {% set source_metrics = source_metrics.get(service.source_id, {}) %}
+            {% for source in mapped_sources %}
+            {% set source_metrics = source_metrics.get(source.source_id, {}) %}
             <tr>
                 <td class="text-center align-middle">
                     <input class="form-check-input" type="checkbox" name="mapping_source_id"
-                        value="{{ service.source_id }}" checked>
+                        value="{{ source.source_id }}" checked>
                 </td>
                 <td class="align-middle">
-                    {{ service.tvg_name }}
-                    <small class="text-muted">({{ service.provider_alias }})</small>
+                    {{ source.tvg_name }}
+                    <small class="text-muted">({{ source.provider_alias }})</small>
                     <span class="badge bg-success ms-2">Mapped</span>
-                    {% if service.source_id in services_mapped_elsewhere %}
+                    {% if source.source_id in sources_mapped_elsewhere %}
                     <span class="badge bg-warning ms-2">Duplicated</span>
                     {% endif %}
                 </td>
@@ -51,15 +51,15 @@
                     {% endif %}
                 </td>
                 <td class="align-middle">
-                    <input type="number" class="form-control form-control-sm" name="priority_{{ service.source_id }}"
+                    <input type="number" class="form-control form-control-sm" name="priority_{{ source.source_id }}"
                         value="{{ source_metrics.priority }}" min="0" max="10" required>
                 </td>
                 <td class="text-end align-middle">
                     <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal"
                         data-bs-target="#previewModal"
-                        hx-get="{{ url_for('ui_player_for_service', source_id=service.source_id) }}"
+                        hx-get="{{ url_for('ui_player_for_source', source_id=source.source_id) }}"
                         hx-target="#preview-modal-body" hx-trigger="click"
-                        title="Preview Stream URL for {{ service.tvg_name }}">
+                        title="Preview Stream URL for {{ source.tvg_name }}">
                         <i class="fas fa-play"></i>
                     </button>
                 </td>
@@ -68,17 +68,17 @@
         </tbody>
 
         <tbody>
-            {% for service in unmapped_suggestions_for_page %}
-            {% set source_metrics = source_metrics.get(service.source_id, {}) %}
+            {% for source in unmapped_suggestions_for_page %}
+            {% set source_metrics = source_metrics.get(source.source_id, {}) %}
             <tr>
                 <td class="text-center align-middle">
                     <input class="form-check-input" type="checkbox" name="mapping_source_id"
-                        value="{{ service.source_id }}">
+                        value="{{ source.source_id }}">
                 </td>
                 <td class="align-middle">
-                    {{ service.tvg_name }}
-                    <small class="text-muted">({{ service.provider_alias }})</small>
-                    {% if service.source_id in services_mapped_elsewhere %}
+                    {{ source.tvg_name }}
+                    <small class="text-muted">({{ source.provider_alias }})</small>
+                    {% if source.source_id in sources_mapped_elsewhere %}
                     <span class="badge bg-secondary ms-2">In Use</span>
                     {% endif %}
                 </td>
@@ -99,15 +99,15 @@
                     {% endif %}
                 </td>
                 <td class="align-middle">
-                    <input type="number" class="form-control form-control-sm" name="priority_{{ service.source_id }}"
+                    <input type="number" class="form-control form-control-sm" name="priority_{{ source.source_id }}"
                         value="{{ source_metrics.priority }}" min="0" max="10" required>
                 </td>
                 <td class="text-end align-middle">
                     <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal"
                         data-bs-target="#previewModal"
-                        hx-get="{{ url_for('ui_player_for_service', source_id=service.source_id) }}"
+                        hx-get="{{ url_for('ui_player_for_source', source_id=source.source_id) }}"
                         hx-target="#preview-modal-body" hx-trigger="click"
-                        title="Preview Stream URL for {{ service.tvg_name }}">
+                        title="Preview Stream URL for {{ source.tvg_name }}">
                         <i class="fas fa-play"></i>
                     </button>
                 </td>
@@ -117,14 +117,14 @@
             {# Helpful messages for different states #}
             {% if filter_query is not none and not unmapped_suggestions_for_page and not mapped_sources %}
             <tr>
-                <td colspan="5" class="text-center text-muted fst-italic py-3">No services found matching your criteria.
+                <td colspan="5" class="text-center text-muted fst-italic py-3">No sources found matching your criteria.
                 </td>
             </tr>
             {% elif not mapped_sources and filter_query is none %}
             <tr>
                 <td colspan="5" class="text-center text-muted fst-italic py-3">
-                    Type in the "Display Name" field on the left to automatically find matching services,
-                    or use the search bar above to search all available services.
+                    Type in the "Display Name" field on the left to automatically find matching sources,
+                    or use the search bar above to search all available sources.
                 </td>
             </tr>
             {% endif %}
@@ -133,7 +133,7 @@
 
     <p class="text-muted small mt-2">
         Showing {{ unmapped_suggestions_for_page|length }} of {{ total_unmapped_items }} total unmapped matching
-        services.
+        sources.
     </p>
     {% if total_pages > 1 %}
     <nav aria-label="Suggestions navigation" class="mt-2">
