@@ -479,8 +479,8 @@ async def ui_provider_status() -> str:
     return await render_template("_provider_status_bar.html", active_streams=active_streams, max_total_streams=max_total_streams)
 
 
-@app.route("/ui/source-services")
-async def ui_source_services_list() -> str:
+@app.route("/ui/sources")
+async def ui_sources_list() -> str:
     per_page = request.args.get('per_page', 100, type=int)
     page = request.args.get('page', 1, type=int)
     services_unfiltered = await handler.get_discovered_sources_for_ui()
@@ -491,7 +491,7 @@ async def ui_source_services_list() -> str:
     total_items = len(services_filtered)
     total_pages = math.ceil(total_items / per_page)
     services_for_page = services_filtered[(page - 1) * per_page:page * per_page]
-    return await render_template("ui_source_services.html", services=services_for_page, providers=providers, current_provider=filter_provider, current_name_filter=filter_name, current_page=page, total_pages=total_pages, total_items=total_items, per_page=per_page)
+    return await render_template("ui_sources.html", services=services_for_page, providers=providers, current_provider=filter_provider, current_name_filter=filter_name, current_page=page, total_pages=total_pages, total_items=total_items, per_page=per_page)
 
 
 @app.route("/ui/logical-channels")
@@ -585,7 +585,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
 
     # --- GET Request Handling ---
 
-    is_htmx_service_list_request = (request.headers.get('HX-Request') and request.headers.get('HX-Target') == 'service-list-container')
+    is_htmx_service_list_request = (request.headers.get('HX-Request') and request.headers.get('HX-Target') == 'source-list-container')
     channel: LogicalChannelInfo | None = None
     if logical_channel_id:
         channel = await handler.get_logical_channel_by_id(logical_channel_id)
@@ -643,7 +643,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     start_index = (page - 1) * per_page
     unmapped_suggestions_for_page = unmapped_suggestions[start_index:start_index + per_page]
 
-    template_to_render = "_service_list_content.html" if is_htmx_service_list_request else "ui_logical_channel_form.html"
+    template_to_render = "_source_list_content.html" if is_htmx_service_list_request else "ui_logical_channel_form.html"
 
     return await render_template(
         template_to_render, channel=channel, channel_metrics=channel_metrics, source_metrics=source_metrics,
@@ -769,7 +769,7 @@ async def ui_channel_populate_from_suggestion() -> str:
 
     # 4. OOB swap to update the entire service mapping card, now with data.
     search_card_html = await render_template(
-        "_service_mapping_card.html",
+        "_source_mapping_card.html",
         search_query=search_query,
         channel={},
         unmapped_suggestions_for_page=unmapped_suggestions_for_page,

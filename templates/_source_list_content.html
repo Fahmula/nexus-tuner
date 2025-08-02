@@ -1,4 +1,4 @@
-<!-- This is the main content that will be swapped into the #service-list-container target -->
+<!-- This is the main content that will be swapped into the #source-list-container target -->
 <h6 class="card-subtitle my-2 text-muted">Manage Mappings</h6>
 <p class="small text-muted">
     Set priority for failover (0=highest, 5=default). Only change if you want to override
@@ -141,7 +141,7 @@
             <li class="page-item {% if current_page <= 1 %}disabled{% endif %}">
                 <a class="page-link"
                     hx-get="{{ url_for('ui_logical_channel_form', logical_channel_id=channel.logical_channel_id, page=current_page-1, search_query=search_query) }}"
-                    hx-target="#service-list-container" hx-push-url="true"
+                    hx-target="#source-list-container" hx-push-url="true"
                     hx-include="[name='logical_channel_id'], [name='logical_channel_title'], [name='search_query']">«
                     Previous</a>
             </li>
@@ -150,7 +150,7 @@
             <li class="page-item {% if current_page >= total_pages %}disabled{% endif %}">
                 <a class="page-link"
                     hx-get="{{ url_for('ui_logical_channel_form', logical_channel_id=channel.logical_channel_id, page=current_page+1, search_query=search_query) }}"
-                    hx-target="#service-list-container" hx-push-url="true"
+                    hx-target="#source-list-container" hx-push-url="true"
                     hx-include="[name='logical_channel_id'], [name='logical_channel_title'], [name='search_query']">Next
                     »</a>
             </li>

@@ -5,7 +5,7 @@
         {% if channel_metrics.discovered_mappings != channel_metrics.enabled_mappings %}
         <button class="btn btn-sm btn-danger ms-2 float-end"
             hx-delete="{{ url_for('ui_remove_dead_mappings', logical_channel_id=channel.logical_channel_id) }}"
-            hx-target="#service-list-container">
+            hx-target="#source-list-container">
             <i class="fas fa-trash-alt"></i> Remove Dead Mappings ({{ channel_metrics.enabled_mappings -
             channel_metrics.discovered_mappings }})
         </button>
@@ -23,7 +23,7 @@
                 <input type="search" class="form-control" id="service-search-input" name="search_query"
                     value="{{ search_query or '' }}" placeholder="Search all available services..."
                     hx-get="{{ url_for('ui_logical_channel_form', logical_channel_id=channel.logical_channel_id) }}"
-                    hx-trigger="keyup changed delay:500ms, search" hx-target="#service-list-container"
+                    hx-trigger="keyup changed delay:500ms, search" hx-target="#source-list-container"
                     hx-indicator="#search-spinner">
                 <span id="search-spinner" class="input-group-text htmx-indicator">
                     <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
@@ -31,8 +31,8 @@
             </div>
         </div>
 
-        <div id="service-list-container">
-            {% include '_service_list_content.html' %}
+        <div id="source-list-container">
+            {% include '_source_list_content.html' %}
         </div>
     </div>
 </div>

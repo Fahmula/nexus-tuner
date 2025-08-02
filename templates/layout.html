@@ -157,7 +157,7 @@
                         <a class="nav-link {% if request.endpoint == 'ui_providers_manage' %}active{% endif %}" href="{{ url_for('ui_providers_manage') }}">Providers</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'ui_source_services_list' %}active{% endif %}" href="{{ url_for('ui_source_services_list') }}">Source Services</a>
+                        <a class="nav-link {% if request.endpoint == 'ui_sources_list' %}active{% endif %}" href="{{ url_for('ui_sources_list') }}">Source Services</a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link {% if request.endpoint == 'ui_logical_channels_list' or request.endpoint == 'ui_logical_channel_edit' or request.endpoint == 'ui_logical_channel_add' %}active{% endif %}" href="{{ url_for('ui_logical_channels_list') }}">Logical Channels</a>
