@@ -1,6 +1,6 @@
 <div class="card">
     <div class="card-header">
-        Map Source Services to "<span id="channel-name-header">{{ channel.display_name or 'New Channel' }}</span>"
+        Map Source Services to "<span id="channel-name-header">{{ channel.logical_channel_name or 'New Channel' }}</span>"
         {% if channel_metrics.discovered_mappings != channel_metrics.enabled_mappings %}
             <button class="btn btn-sm btn-danger ms-2 float-end"
                 hx-delete="{{ url_for('ui_remove_dead_mappings', logical_channel_id=channel.logical_channel_id) }}"

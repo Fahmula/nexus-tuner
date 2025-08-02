@@ -61,7 +61,7 @@
                        {% if discovered_percent <= 75 %}table-danger
                        {% elif discovered_percent < 100 %}table-warning{% endif %}
                        {% endif %}">
-                <td class="align-middle" data-sort-value="{{ channel.display_name }}"><strong>{{ channel.display_name }}</strong></td>
+                <td class="align-middle" data-sort-value="{{ channel.logical_channel_name }}"><strong>{{ channel.logical_channel_name }}</strong></td>
                 <td class="align-middle" data-sort-value="{{ channel.channel_num|default(9999) }}">{{ channel.channel_num if
                     channel.channel_num else '-' }}</td>
                 <td class="align-middle" data-sort-value="{{ channel.group_title|default('') }}">{{ channel.group_title if
@@ -125,7 +125,7 @@
                         <i class="fas fa-edit"></i> Edit
                     </a>
                     <form method="POST" action="{{ url_for('ui_logical_channel_delete', logical_channel_id=channel.logical_channel_id) }}" style="display: inline;"
-                          onsubmit="return confirm('Are you sure you want to delete logical channel \'{{ channel.display_name }}\'? This cannot be undone.');">
+                          onsubmit="return confirm('Are you sure you want to delete logical channel \'{{ channel.logical_channel_name }}\'? This cannot be undone.');">
                         <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
                             <i class="fas fa-trash-alt"></i>
                         </button>

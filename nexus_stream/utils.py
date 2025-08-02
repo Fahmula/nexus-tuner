@@ -140,7 +140,7 @@ class DiscoveredSourceWithId(DiscoveredSource):
 
 class LogicalChannelInfo(TypedDict):
     logical_channel_id: ReadOnly[LogicalChannelId]
-    display_name: ReadOnly[LogicalChannelName]
+    logical_channel_name: ReadOnly[LogicalChannelName]
     channel_num: ReadOnly[ChannelNum]
     group_title: ReadOnly[TVGGroupTitle]
     tvg_id: ReadOnly[TVGId]

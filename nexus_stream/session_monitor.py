@@ -22,7 +22,7 @@ class GhostSessionMonitor:
     """
     __slots__ = (
         'config', 'handler', 'stream_manager',
-        'display_name_to_lc_id_map', 'ghost_monitor_task',
+        'lc_title_to_lc_id_map', 'ghost_monitor_task',
     )
     
     def __init__(self, config: Config, handler: ChannelHandler, stream_manager: StreamManager) -> None:
@@ -35,7 +35,7 @@ class GhostSessionMonitor:
         self.handler: ChannelHandler = handler
         self.stream_manager: StreamManager = stream_manager
         
-        self.display_name_to_lc_id_map: dict[LogicalChannelName, LogicalChannelId] = {}
+        self.lc_title_to_lc_id_map: dict[LogicalChannelName, LogicalChannelId] = {}
         self.ghost_monitor_task: asyncio.Task[NoReturn]
 
     @classmethod
@@ -52,10 +52,10 @@ class GhostSessionMonitor:
     async def _build_name_to_id_map(self) -> None:
         """Creates a mapping from a channel's display name to its logical_channel_id."""
         self.config.debug(Label.SESSION, "Building channel name to stream ID map...")
-        name_map = {channel_data["display_name"]: lc_id
+        name_map = {channel_data["logical_channel_name"]: lc_id
                     for lc_id, channel_data in (await self.handler.copy_client_facing_channels()).items()}
-        self.display_name_to_lc_id_map = name_map
-        self.config.debug(Label.SESSION, f"Built map with {len(self.display_name_to_lc_id_map)} entries.")
+        self.lc_title_to_lc_id_map = name_map
+        self.config.debug(Label.SESSION, f"Built map with {len(self.lc_title_to_lc_id_map)} entries.")
 
     async def _fetch_sessions_from_server(self, session: aiohttp.ClientSession, base_url: str | None, api_key: str | None, server_type: str) -> list[Any]:
         """Fetches active session data from a single media server asynchronously."""
@@ -88,13 +88,13 @@ class GhostSessionMonitor:
             results = await asyncio.gather(*tasks)
             all_sessions = [item for sublist in results for item in sublist]
 
-        if not self.display_name_to_lc_id_map:
+        if not self.lc_title_to_lc_id_map:
             return set()
 
         for session_data in all_sessions:
             if (now_playing := session_data.get("NowPlayingItem")) and now_playing.get("Type") == "TvChannel":
-                if (channel_name := now_playing.get("Name")) in self.display_name_to_lc_id_map:
-                    lc_id = self.display_name_to_lc_id_map[channel_name]
+                if (channel_name := now_playing.get("Name")) in self.lc_title_to_lc_id_map:
+                    lc_id = self.lc_title_to_lc_id_map[channel_name]
                     active_lc_ids.add(lc_id)
                     self.config.debug(Label.SESSION, f"Found legitimate session for '{channel_name}' (ID: {lc_id}) on device '{session_data.get('DeviceName', 'Unknown')}'.")
         

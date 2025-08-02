@@ -1,8 +1,8 @@
 <div id="form-content-wrapper">
     <div class="mb-3" style="position: relative;">
-        <label for="display_name" class="form-label">Display Name</label>
-        <input type="text" class="form-control" id="display_name" name="display_name"
-            value="{{ channel.display_name if channel else '' }}" required
+        <label for="logical_channel_name" class="form-label">Display Name</label>
+        <input type="text" class="form-control" id="logical_channel_name" name="logical_channel_name"
+            value="{{ channel.logical_channel_name if channel else '' }}" required
             {# SIMPLIFIED: Only targets its own suggestion box now. #}
             hx-get="{{ url_for('ui_channel_suggest') }}"
             hx-trigger="input changed delay:500ms, search"

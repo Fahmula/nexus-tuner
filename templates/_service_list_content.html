@@ -129,11 +129,11 @@
         <nav aria-label="Suggestions navigation" class="mt-2">
             <ul class="pagination justify-content-center">
                 <li class="page-item {% if current_page <= 1 %}disabled{% endif %}">
-                    <a class="page-link" hx-get="{{ url_for('ui_logical_channel_form', logical_channel_id=channel.logical_channel_id, page=current_page-1, search_query=search_query) }}" hx-target="#service-list-container" hx-push-url="true" hx-include="[name='logical_channel_id'], [name='display_name'], [name='search_query']">« Previous</a>
+                    <a class="page-link" hx-get="{{ url_for('ui_logical_channel_form', logical_channel_id=channel.logical_channel_id, page=current_page-1, search_query=search_query) }}" hx-target="#service-list-container" hx-push-url="true" hx-include="[name='logical_channel_id'], [name='logical_channel_name'], [name='search_query']">« Previous</a>
                 </li>
                 <li class="page-item disabled"><span class="page-link">Page {{ current_page }} of {{ total_pages }}</span></li>
                 <li class="page-item {% if current_page >= total_pages %}disabled{% endif %}">
-                    <a class="page-link" hx-get="{{ url_for('ui_logical_channel_form', logical_channel_id=channel.logical_channel_id, page=current_page+1, search_query=search_query) }}" hx-target="#service-list-container" hx-push-url="true" hx-include="[name='logical_channel_id'], [name='display_name'], [name='search_query']">Next »</a>
+                    <a class="page-link" hx-get="{{ url_for('ui_logical_channel_form', logical_channel_id=channel.logical_channel_id, page=current_page+1, search_query=search_query) }}" hx-target="#service-list-container" hx-push-url="true" hx-include="[name='logical_channel_id'], [name='logical_channel_name'], [name='search_query']">Next »</a>
                 </li>
             </ul>
         </nav>

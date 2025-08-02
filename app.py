@@ -112,10 +112,10 @@ async def calculate_channel_metrics(mapped_services: list[SourcePriority], all_q
 def filter_sources(raw_query: str, service: DiscoveredSource) -> bool:
     """Filters sources based on a query. (Sync - pure function)"""
     tvg_name = service.get('tvg_name', '').lower()
-    display_name = service.get('display_title', '').lower()
+    display_title = service.get('display_title', '').lower()
     for raw_q in raw_query.split(MULTI_SEARCH_QUERY_DELIMITER):
         words = raw_q.strip().lower().split()
-        if all(word in tvg_name or word in display_name for word in words):
+        if all(word in tvg_name or word in display_title for word in words):
             return True
     return False
 
@@ -154,7 +154,7 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
             msg = f"Logical channel {logical_channel_id} not found for MPEGTS."
             config.error(VideoType.MPEGTS, msg)
             abort(404, msg)
-        logical_channel_name = logical_channel['display_name']
+        logical_channel_name = logical_channel['logical_channel_name']
 
         lc_id_processes = await stream_manager.get_ffmpeg_processes_from_logical_id(logical_channel_id, video_type=VideoType.MPEGTS, long_term_only=True)
         if len(lc_id_processes):
@@ -252,7 +252,7 @@ async def serve_hls_playlist(logical_channel_id: LogicalChannelId, logical_chann
                 msg = f"Logical channel {logical_channel_id} not found for HLS."
                 config.error(VideoType.HLS, msg)
                 abort(404, msg)
-            logical_channel_name = logical_channel['display_name']
+            logical_channel_name = logical_channel['logical_channel_name']
 
         lc_id_processes = await stream_manager.get_ffmpeg_processes_from_logical_id(logical_channel_id, video_type=VideoType.HLS, long_term_only=True)
         if len(lc_id_processes):
@@ -497,7 +497,7 @@ async def ui_source_services_list() -> str:
 @app.route("/ui/logical-channels")
 async def ui_logical_channels_list() -> str:
     """Renders the list of all configured logical channels."""
-    channels = await handler.copy_logical_channels_data(key=lambda x: x.get("display_name","").lower())
+    channels = await handler.copy_logical_channels_data(key=lambda x: x.get("logical_channel_name","").lower())
     all_quality_scores = await quality_monitor.get_quality_scores()
 
     all_channel_metrics: dict[LogicalChannelId, LogicalChannelMetrics] = {}
@@ -516,7 +516,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     if request.method == "POST":
         form_data = cast(ImmutableMultiDict[str, str], await request.form)  # type: ignore
 
-        logical_channel_name: LogicalChannelName = LogicalChannelName(form_data.get("display_name", "").strip())
+        logical_channel_name: LogicalChannelName = LogicalChannelName(form_data.get("logical_channel_name", "").strip())
         channel_num: ChannelNum = ChannelNum(form_data.get("channel_num", "").strip())
         group_title: TVGGroupTitle = TVGGroupTitle(form_data.get("group_title", "Uncategorized").strip())
         tvg_id: TVGId = TVGId(form_data.get("tvg_id", "").strip())
@@ -546,7 +546,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
         if submitted_id:
             lc_data: LogicalChannelInfo = {
                 "logical_channel_id": LogicalChannelId(submitted_id),
-                "display_name": logical_channel_name,
+                "logical_channel_name": logical_channel_name,
                 "channel_num": channel_num,
                 "group_title": group_title,
                 "tvg_id": tvg_id,
@@ -564,7 +564,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
         else:
             lc_data: LogicalChannelInfo = {
                 "logical_channel_id": LogicalChannelId("0"),
-                "display_name": logical_channel_name,
+                "logical_channel_name": logical_channel_name,
                 "channel_num": channel_num,
                 "group_title": group_title,
                 "tvg_id": tvg_id,
@@ -596,9 +596,9 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     
     search_query = request.args.get('search_query')
     if channel and search_query is None and not is_htmx_service_list_request:
-        predefined_channel = await handler.find_matching_predefined_channel(channel['display_name'], channel['channel_num'])
+        predefined_channel = await handler.find_matching_predefined_channel(channel['logical_channel_name'], channel['channel_num'])
         if predefined_channel:
-            search_query = MULTI_SEARCH_QUERY_DELIMITER.join(predefined_channel['names']) if predefined_channel.get('names') else predefined_channel.get('title', channel.get('display_name'))
+            search_query = MULTI_SEARCH_QUERY_DELIMITER.join(predefined_channel['names']) if predefined_channel.get('names') else predefined_channel.get('title', channel.get('logical_channel_name'))
 
     filter_query = search_query.strip().lower() if search_query else None
     all_services = await handler.get_all_discovered_source_services_for_ui()
@@ -659,7 +659,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
 async def ui_logical_channel_delete(logical_channel_id: LogicalChannelId) -> Response | WerkzeugResponse:
     channel = await handler.get_logical_channel_by_id(logical_channel_id)
     if channel:
-        channel_log = f"'{channel['display_name']}' ({channel['channel_num']})"
+        channel_log = f"'{channel['logical_channel_name']}' ({channel['channel_num']})"
         if await handler.delete_logical_channel(logical_channel_id):
             await flash(f"Channel {channel_log} deleted.", "success")
             await handler.reload_handler_config()
@@ -682,7 +682,7 @@ async def ui_analyze_mappings(logical_channel_id: LogicalChannelId) -> Response:
         await flash(f"No mappings found for logical channel '{logical_channel_id}'.", "info")
         return Response("", 204)
 
-    channel_log = f"'{channel['display_name']}' ({channel['channel_num']})"
+    channel_log = f"'{channel['logical_channel_name']}' ({channel['channel_num']})"
     await quality_monitor.analyze_mapped_services(logical_channel_id)
     await flash(f"Quality analysis completed for {len(services)} mapping(s) in {channel_log}", "success")
 
@@ -713,7 +713,7 @@ async def ui_remove_dead_mappings(logical_channel_id: LogicalChannelId) -> Respo
         await flash(f"Failed to update mappings for logical channel '{logical_channel_id}' after removing dead services.", "error")
         return Response("", 500)
 
-    channel_log = f"'{channel['display_name']}' ({channel['channel_num']})"
+    channel_log = f"'{channel['logical_channel_name']}' ({channel['channel_num']})"
     if removed_count > 0:
         await flash(f"Removed {removed_count} dead mapping(s) from {channel_log}.", "success")
     else:
@@ -736,7 +736,7 @@ async def ui_channel_populate_from_suggestion() -> str:
     """
     # 1. Populate the channel details form with pre-filled data
     prefilled_data = {
-        'display_name': request.args.get('title', ''),
+        'logical_channel_name': request.args.get('title', ''),
         'channel_num': request.args.get('num', ''),
         'group_title': request.args.get('group', 'Uncategorized'),
         'tvg_logo': ''
@@ -744,12 +744,12 @@ async def ui_channel_populate_from_suggestion() -> str:
     form_html = await render_template("_logical_channel_form_fields.html", channel=prefilled_data)
 
     # 2. Pre-filter services based on the suggested name
-    filter_query = prefilled_data['display_name'].strip().lower()
+    filter_query = prefilled_data['logical_channel_name'].strip().lower()
     all_services = await handler.get_all_discovered_source_services_for_ui()
     services_mapped_elsewhere = await handler.get_all_mapped_service_ids()
     unmapped_suggestions: list[DiscoveredSource] = []
 
-    search_query = prefilled_data['display_name']
+    search_query = prefilled_data['logical_channel_name']
     for channel_list in await handler.get_channel_lists():
         for pre_channel in channel_list:
             if search_query == pre_channel.get('title'):  # Only need this check since we are populating this
@@ -791,7 +791,7 @@ async def ui_channel_populate_from_suggestion() -> str:
 
 @app.route("/ui/channels/suggest", methods=["GET"])
 async def ui_channel_suggest() -> str:
-    query = request.args.get('display_name', '')
+    query = request.args.get('logical_channel_name', '')
     if len(query) < 2: return ""
     suggestions = await handler.search_predefined_channels(query)
     return await render_template("_channel_suggestions.html", suggestions=suggestions)
@@ -874,7 +874,7 @@ async def hdhomerun_lineup() -> Response:
             is_hd = 0
         lineup.append({
             "GuideNumber": channel_number,
-            "GuideName": channel.get('display_name', channel_number),
+            "GuideName": channel.get('logical_channel_name', channel_number),
             "HD": is_hd,
             "URL": f"{config.nexus_url}/{VideoType.MPEGTS}/{channel['logical_channel_id']}"
         })

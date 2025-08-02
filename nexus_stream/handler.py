@@ -251,12 +251,12 @@ class ChannelHandler:
                         source_name = f"'{prev_discovered_source['display_title'] or prev_discovered_source['tvg_name']}' ({source_id})"
                     else:
                         source_name = f"'Unknown Source' ({source_id})"
-                    self.config.warn(self.label, f"Mapped source {source_name} for '{lc_def.get('display_name', logical_channel_id)}'{f' ({lc_def['channel_num']})' if 'channel_num' in lc_def else ''} not found in discovered services.")
+                    self.config.warn(self.label, f"Mapped source {source_name} for '{lc_def.get('logical_channel_name', logical_channel_id)}'{f' ({lc_def['channel_num']})' if 'channel_num' in lc_def else ''} not found in discovered services.")
 
             if processed_sources:
                 new_client_facing_channels[logical_channel_id] = {
                     "logical_channel_id": logical_channel_id,
-                    "display_name": lc_def["display_name"] or LogicalChannelName(logical_channel_id),
+                    "logical_channel_name": lc_def["logical_channel_name"] or LogicalChannelName(logical_channel_id),
                     "group_title": lc_def["group_title"] or TVGGroupTitle("Uncategorized"),
                     "tvg_id": lc_def["tvg_id"],
                     "tvg_logo": lc_def["tvg_logo"],
@@ -329,10 +329,10 @@ class ChannelHandler:
             self._main_m3u_playlist = MainM3UPlaylist("\n".join(m3u_lines) + "\n")
             return
 
-        sorted_channels = sorted(self._client_facing_channels.values(), key=lambda item: (item.get("group_title", "zzz").lower(), item.get("display_name", "zzz").lower()))
+        sorted_channels = sorted(self._client_facing_channels.values(), key=lambda item: (item.get("group_title", "zzz").lower(), item.get("logical_channel_name", "zzz").lower()))
 
         for lc_data in sorted_channels:
-            name = lc_data.get("display_name", "")
+            name = lc_data.get("logical_channel_name", "")
             extinf_parts = [f'tvg-name="{name}"']
             if ch_num := lc_data.get("channel_num"): extinf_parts.append(f'tvg-chno="{ch_num}"')
             if tvg_id := lc_data.get("tvg_id"): extinf_parts.append(f'tvg-id="{tvg_id}"')
