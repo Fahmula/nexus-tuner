@@ -597,7 +597,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     if channel and search_query is None and not is_htmx_service_list_request:
         predefined_channel = await handler.find_matching_predefined_channel(channel['logical_channel_name'], channel['channel_num'])
         if predefined_channel:
-            search_query = MULTI_SEARCH_QUERY_DELIMITER.join(predefined_channel['names']) if predefined_channel.get('names') else predefined_channel.get('title', channel.get('logical_channel_name'))
+            search_query = MULTI_SEARCH_QUERY_DELIMITER.join(predefined_channel['aliases']) if predefined_channel.get('aliases') else predefined_channel.get('title', channel.get('logical_channel_name'))
 
     filter_query = search_query.strip().lower() if search_query else None
     all_services = await handler.get_discovered_source_services_for_ui()
@@ -752,7 +752,7 @@ async def ui_channel_populate_from_suggestion() -> str:
     for channel_list in await handler.get_channel_lists():
         for pre_channel in channel_list:
             if search_query == pre_channel.get('title'):  # Only need this check since we are populating this
-                search_query = MULTI_SEARCH_QUERY_DELIMITER.join(pre_channel.get('names', []))
+                search_query = MULTI_SEARCH_QUERY_DELIMITER.join(pre_channel.get('aliases', []))
                 break
 
     if filter_query:

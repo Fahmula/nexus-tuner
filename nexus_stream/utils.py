@@ -219,7 +219,7 @@ type QualityScores = QualityScoresImpl | _QualityScoresReadOnly
 class ChannelListInfo(TypedDict):
     num: ReadOnly[ChannelNum]
     title: ReadOnly[ChannelTitle]
-    names: ReadOnly[tuple[ChannelAliases, ...]]
+    aliases: ReadOnly[tuple[ChannelAliases, ...]]
 ChannelListDataImpl = NewType("ChannelListDataImpl", dict[TVGGroupTitle, list[ChannelListInfo]])
 _ChannelListDataReadOnly = NewType("_ChannelListDataReadOnly", Mapping[TVGGroupTitle, tuple[ChannelListInfo, ...]])
 type ChannelListData = ChannelListDataImpl | _ChannelListDataReadOnly

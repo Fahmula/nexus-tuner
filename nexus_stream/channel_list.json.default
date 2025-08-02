@@ -3,1997 +3,1997 @@
         {
             "num": "1",
             "title": "WINS",
-            "names": ["WINS"]
+            "aliases": ["WINS"]
         },
         {
             "num": "70",
             "title": "QVC",
-            "names": ["QVC"]
+            "aliases": ["QVC"]
         },
         {
             "num": "70-1",
             "title": "HSN",
-            "names": ["HSN"]
+            "aliases": ["HSN"]
         },
         {
             "num": "71",
             "title": "News Mix",
-            "names": ["News Mix"]
+            "aliases": ["News Mix"]
         },
         {
             "num": "72",
             "title": "Jewelry Television",
-            "names": ["Jewelry Television"]
+            "aliases": ["Jewelry"]
         },
         {
             "num": "74",
             "title": "Sale Network",
-            "names": ["Sale"]
+            "aliases": ["Sale"]
         },
         {
             "num": "75",
             "title": "Shop LC",
-            "names": ["Shop LC"]
+            "aliases": ["Shop LC"]
         },
         {
             "num": "76",
             "title": "QVC 2",
-            "names": ["QVC 2"]
+            "aliases": ["QVC 2"]
         },
         {
             "num": "77",
             "title": "MeTV",
-            "names": ["MeTV"]
+            "aliases": ["MeTV"]
         },
         {
             "num": "77-1",
             "title": "New TV",
-            "names": ["New TV"]
+            "aliases": ["New TV"]
         },
         {
             "num": "78",
             "title": "Cool",
-            "names": ["Cool"]
+            "aliases": ["Cool"]
         },
         {
             "num": "79",
             "title": "QVC 2",
-            "names": ["QVC 2"]
+            "aliases": ["QVC 2"]
         },
         {
             "num": "80",
             "title": "Cozi TV",
-            "names": ["Cozi TV"]
+            "aliases": ["Cozi"]
         },
         {
             "num": "81",
             "title": "Grit",
-            "names": ["Grit"]
+            "aliases": ["Grit"]
         },
         {
             "num": "82",
             "title": "Bounce TV",
-            "names": ["Bounce TV"]
+            "aliases": ["Bounce"]
         },
         {
             "num": "83",
             "title": "Get",
-            "names": ["Get"]
+            "aliases": ["Get"]
         },
         {
             "num": "84",
             "title": "Start TV",
-            "names": ["Start TV"]
+            "aliases": ["Start"]
         },
         {
             "num": "85",
             "title": "NBC American Crimes",
-            "names": ["NBC American Crimes"]
+            "aliases": ["American Crimes"]
         },
         {
             "num": "86",
             "title": "VALU",
-            "names": ["VALU"]
+            "aliases": ["VALU"]
         },
         {
             "num": "87",
             "title": "Deals",
-            "names": ["Deals"]
+            "aliases": ["Deals"]
         },
         {
             "num": "88",
             "title": "Best",
-            "names": ["Best"]
+            "aliases": ["Best"]
         },
         {
             "num": "89",
             "title": "Vision",
-            "names": ["Vision"]
+            "aliases": ["Vision"]
         },
         {
             "num": "91",
             "title": "Fresh",
-            "names": ["Fresh"]
+            "aliases": ["Fresh"]
         },
         {
             "num": "92",
             "title": "Crave",
-            "names": ["Crave"]
+            "aliases": ["Crave"]
         },
         {
             "num": "95",
             "title": "Celebrity Shopping TV",
-            "names": ["Celebrity Shopping TV"]
+            "aliases": ["Celebrity Shopping TV"]
         },
         {
             "num": "97",
             "title": "Cash",
-            "names": ["Cash"]
+            "aliases": ["Cash"]
         },
         {
             "num": "98",
             "title": "Interactive Advertising Channel",
-            "names": ["Interactive Advertising"]
+            "aliases": ["Interactive Advertising"]
         },
         {
             "num": "98-1",
             "title": "America's Value Channel",
-            "names": ["America's Value", "America Value"]
+            "aliases": ["America's Value", "America Value"]
         },
         {
             "num": "99",
             "title": "XTRA",
-            "names": ["XTRA"]
+            "aliases": ["XTRA"]
         },
         {
             "num": "100",
             "title": "Order DirecTV Sports Packages",
-            "names": ["Order DirecTV Sports Packages"]
+            "aliases": ["Order DirecTV Sports Packages"]
         },
         {
             "num": "105",
             "title": "LIVE4K",
-            "names": ["LIVE4K"]
+            "aliases": ["LIVE4K"]
         },
         {
             "num": "106",
             "title": "LIVE4K2",
-            "names": ["LIVE4K2"]
+            "aliases": ["LIVE4K2"]
         },
         {
             "num": "107",
             "title": "CINE4K",
-            "names": ["CINE4K"]
+            "aliases": ["CINE4K"]
         },
         {
             "num": "108",
             "title": "CINE4K2",
-            "names": ["CINE4K2"]
+            "aliases": ["CINE4K2"]
         },
         {
             "num": "110",
             "title": "Order DirecTV Sports Packages",
-            "names": ["Order DirecTV Sports Packages"]
+            "aliases": ["Order DirecTV Sports Packages"]
         },
         {
             "num": "111",
             "title": "Interactive Advertising Channel",
-            "names": ["Interactive Advertising"]
+            "aliases": ["Interactive Advertising"]
         },
         {
             "num": "112",
             "title": "Order DirecTV Sports Packages",
-            "names": ["Order DirecTV Sports Packages"]
+            "aliases": ["Order DirecTV Sports Packages"]
         },
         {
             "num": "113",
             "title": "Order DirecTV Sports Packages",
-            "names": ["Order DirecTV Sports Packages"]
+            "aliases": ["Order DirecTV Sports Packages"]
         },
         {
             "num": "115",
             "title": "Order DirecTV Sports Packages",
-            "names": ["Order DirecTV Sports Packages"]
+            "aliases": ["Order DirecTV Sports Packages"]
         },
         {
             "num": "119",
             "title": "Pay-Per-View Events",
-            "names": ["Pay-Per-View Events", "Pay Per View Events"]
+            "aliases": ["Pay-Per-View Events", "Pay Per View Events"]
         },
         {
             "num": "120",
             "title": "Pay-Per-View Events",
-            "names": ["Pay-Per-View Events", "Pay Per View Events"]
+            "aliases": ["Pay-Per-View Events", "Pay Per View Events"]
         },
         {
             "num": "121",
             "title": "Pay-Per-View Events",
-            "names": ["Pay-Per-View Events", "Pay Per View Events"]
+            "aliases": ["Pay-Per-View Events", "Pay Per View Events"]
         },
         {
             "num": "122",
             "title": "Pay-Per-View Events",
-            "names": ["Pay-Per-View Events", "Pay Per View Events"]
+            "aliases": ["Pay-Per-View Events", "Pay Per View Events"]
         },
         {
             "num": "123",
             "title": "Pay-Per-View Events",
-            "names": ["Pay-Per-View Events", "Pay Per View Events"]
+            "aliases": ["Pay-Per-View Events", "Pay Per View Events"]
         },
         {
             "num": "124",
             "title": "Pay-Per-View Events",
-            "names": ["Pay-Per-View Events", "Pay Per View Events"]
+            "aliases": ["Pay-Per-View Events", "Pay Per View Events"]
         },
         {
             "num": "196",
             "title": "Discovery+",
-            "names": ["Discovery+", "Discovery Plus"]
+            "aliases": ["Discovery+", "Discovery Plus"]
         },
         {
             "num": "199",
             "title": "Kids Mix",
-            "names": ["Kids Mix"]
+            "aliases": ["Kids Mix"]
         },
         {
             "num": "200",
             "title": "News Mix",
-            "names": ["News Mix"]
+            "aliases": ["News Mix"]
         },
         {
             "num": "202",
             "title": "CNN",
-            "names": ["CNN"]
+            "aliases": ["CNN"]
         },
         {
             "num": "203",
             "title": "Cool",
-            "names": ["Cool"]
+            "aliases": ["Cool"]
         },
         {
             "num": "204",
             "title": "HLN",
-            "names": ["HLN"]
+            "aliases": ["HLN"]
         },
         {
             "num": "205",
             "title": "SPORTSMIX",
-            "names": ["SPORTSMIX"]
+            "aliases": ["SPORTSMIX"]
         },
         {
             "num": "206",
             "title": "ESPN",
-            "names": ["ESPN"]
+            "aliases": ["ESPN"]
         },
         {
             "num": "207",
             "title": "ESPNews",
-            "names": ["ESPNews"]
+            "aliases": ["ESPNews", "ESPN News"]
         },
         {
             "num": "208",
             "title": "ESPNU",
-            "names": ["ESPNU"]
+            "aliases": ["ESPNU", "ESPN U"]
         },
         {
             "num": "209",
             "title": "ESPN2",
-            "names": ["ESPN2"]
+            "aliases": ["ESPN2", "ESPN 2"]
         },
         {
             "num": "211",
             "title": "NFL RedZone",
-            "names": ["NFL RedZone"]
+            "aliases": ["NFL RedZone"]
         },
         {
             "num": "212",
             "title": "NFL Network",
-            "names": ["NFL"]
+            "aliases": ["NFL"]
         },
         {
             "num": "213",
             "title": "MLB Network",
-            "names": ["MLB"]
+            "aliases": ["MLB"]
         },
         {
             "num": "213-1",
             "title": "MLB Network Alternate",
-            "names": ["MLB Alt"]
+            "aliases": ["MLB Alt"]
         },
         {
             "num": "214",
             "title": "MAVTV",
-            "names": ["MAVTV"]
+            "aliases": ["MAVTV"]
         },
         {
             "num": "215",
             "title": "NHL Network",
-            "names": ["NHL"]
+            "aliases": ["NHL"]
         },
         {
             "num": "215-1",
             "title": "NHL Network Alternate",
-            "names": ["NHL Alt"]
+            "aliases": ["NHL Alt"]
         },
         {
             "num": "216",
             "title": "NBA TV",
-            "names": ["NBA TV"]
+            "aliases": ["NBA TV"]
         },
         {
             "num": "217",
             "title": "Tennis Channel",
-            "names": ["Tennis"]
+            "aliases": ["Tennis"]
         },
         {
             "num": "218",
             "title": "Golf Channel",
-            "names": ["Golf"]
+            "aliases": ["Golf"]
         },
         {
             "num": "219",
             "title": "FOX Sports 1",
-            "names": ["FOX Sports 1"]
+            "aliases": ["FOX Sports 1"]
         },
         {
             "num": "221",
             "title": "CBS Sports Network",
-            "names": ["CBS Sports"]
+            "aliases": ["CBS Sports"]
         },
         {
             "num": "222",
             "title": "Save",
-            "names": ["Save"]
+            "aliases": ["Save"]
         },
         {
             "num": "223",
             "title": "Celebrity Shopping TV",
-            "names": ["Celebrity Shopping TV"]
+            "aliases": ["Celebrity Shopping TV"]
         },
         {
             "num": "224",
             "title": "Shepherd's Chapel",
-            "names": ["Shepherd's Chapel", "Shepherd Chapel"]
+            "aliases": ["Shepherd's Chapel", "Shepherd Chapel"]
         },
         {
             "num": "225",
             "title": "America's Value Channel",
-            "names": ["America's Value", "America Value"]
+            "aliases": ["America's Value", "America Value"]
         },
         {
             "num": "226",
             "title": "Shop LC",
-            "names": ["Shop LC"]
+            "aliases": ["Shop LC"]
         },
         {
             "num": "227",
             "title": "Mall TV",
-            "names": ["Mall TV"]
+            "aliases": ["Mall TV"]
         },
         {
             "num": "228",
             "title": "Gems",
-            "names": ["Gems"]
+            "aliases": ["Gems"]
         },
         {
             "num": "229",
             "title": "HGTV",
-            "names": ["HGTV"]
+            "aliases": ["HGTV"]
         },
         {
             "num": "230",
             "title": "Magnolia Network",
-            "names": ["Magnolia"]
+            "aliases": ["Magnolia"]
         },
         {
             "num": "231",
             "title": "Food Network",
-            "names": ["Food"]
+            "aliases": ["Food"]
         },
         {
             "num": "232",
             "title": "Cooking Channel",
-            "names": ["Cooking"]
+            "aliases": ["Cooking"]
         },
         {
             "num": "233",
             "title": "Game Show Network",
-            "names": ["Game Show"]
+            "aliases": ["Game Show"]
         },
         {
             "num": "234",
             "title": "Wow TV",
-            "names": ["Wow TV"]
+            "aliases": ["Wow TV"]
         },
         {
             "num": "235",
             "title": "Tastemade",
-            "names": ["Tastemade"]
+            "aliases": ["Tastemade"]
         },
         {
             "num": "236",
             "title": "E!",
-            "names": ["E!"]
+            "aliases": ["E!"]
         },
         {
             "num": "237",
             "title": "Bravo",
-            "names": ["Bravo"]
+            "aliases": ["Bravo"]
         },
         {
             "num": "238",
             "title": "Reelz",
-            "names": ["Reelz"]
+            "aliases": ["Reelz"]
         },
         {
             "num": "239",
             "title": "SundanceTV",
-            "names": ["SundanceTV"]
+            "aliases": ["SundanceTV"]
         },
         {
             "num": "240",
             "title": "HSN",
-            "names": ["HSN"]
+            "aliases": ["HSN"]
         },
         {
             "num": "241",
             "title": "Paramount Network",
-            "names": ["Paramount"]
+            "aliases": ["Paramount"]
         },
         {
             "num": "242",
             "title": "USA Network",
-            "names": ["USA Network"]
+            "aliases": ["USA Network"]
         },
         {
             "num": "243",
             "title": "XPLOR",
-            "names": ["XPLOR"]
+            "aliases": ["XPLOR"]
         },
         {
             "num": "244",
             "title": "SYFY",
-            "names": ["SYFY"]
+            "aliases": ["SYFY"]
         },
         {
             "num": "245",
             "title": "TNT (East)",
-            "names": ["TNT"]
+            "aliases": ["TNT"]
         },
         {
             "num": "245-1",
             "title": "TNT (West)",
-            "names": ["TNT"]
+            "aliases": ["TNT"]
         },
         {
             "num": "246",
             "title": "truTV",
-            "names": ["truTV"]
+            "aliases": ["truTV"]
         },
         {
             "num": "247",
             "title": "TBS (East)",
-            "names": ["TBS"]
+            "aliases": ["TBS"]
         },
         {
             "num": "247-1",
             "title": "TBS (West)",
-            "names": ["TBS"]
+            "aliases": ["TBS"]
         },
         {
             "num": "248",
             "title": "FX",
-            "names": ["FX"]
+            "aliases": ["FX"]
         },
         {
             "num": "249",
             "title": "Comedy Central (East)",
-            "names": ["Comedy Central"]
+            "aliases": ["Comedy Central"]
         },
         {
             "num": "249-1",
             "title": "Comedy Central (West)",
-            "names": ["Comedy Central"]
+            "aliases": ["Comedy Central"]
         },
         {
             "num": "250",
             "title": "Secret",
-            "names": ["Secret"]
+            "aliases": ["Secret"]
         },
         {
             "num": "251",
             "title": "Oxygen",
-            "names": ["Oxygen"]
+            "aliases": ["Oxygen"]
         },
         {
             "num": "252",
             "title": "Lifetime",
-            "names": ["Lifetime"]
+            "aliases": ["Lifetime"]
         },
         {
             "num": "253",
             "title": "LMN",
-            "names": ["LMN"]
+            "aliases": ["LMN"]
         },
         {
             "num": "254",
             "title": "AMC",
-            "names": ["AMC"]
+            "aliases": ["AMC"]
         },
         {
             "num": "255",
             "title": "Xtra Network",
-            "names": ["Xtra"]
+            "aliases": ["Xtra"]
         },
         {
             "num": "256",
             "title": "TCM",
-            "names": ["TCM"]
+            "aliases": ["TCM"]
         },
         {
             "num": "258",
             "title": "FXM",
-            "names": ["FXM"]
+            "aliases": ["FXM"]
         },
         {
             "num": "259",
             "title": "FXX",
-            "names": ["FXX"]
+            "aliases": ["FXX"]
         },
         {
             "num": "260",
             "title": "We TV",
-            "names": ["We TV"]
+            "aliases": ["We TV"]
         },
         {
             "num": "261",
             "title": "Discovery Life",
-            "names": ["Discovery Life"]
+            "aliases": ["Discovery Life"]
         },
         {
             "num": "262",
             "title": "Vision",
-            "names": ["Vision"]
+            "aliases": ["Vision"]
         },
         {
             "num": "262-1",
             "title": "XPLOR",
-            "names": ["XPLOR"]
+            "aliases": ["XPLOR"]
         },
         {
             "num": "263",
             "title": "Get It",
-            "names": ["Get It"]
+            "aliases": ["Get It"]
         },
         {
             "num": "264",
             "title": "BBC America",
-            "names": ["BBC America"]
+            "aliases": ["BBC America"]
         },
         {
             "num": "265",
             "title": "A&E",
-            "names": ["A&E"]
+            "aliases": ["A&E"]
         },
         {
             "num": "266",
             "title": "FYI",
-            "names": ["FYI"]
+            "aliases": ["FYI"]
         },
         {
             "num": "267",
             "title": "EarthxTV",
-            "names": ["EarthxTV"]
+            "aliases": ["EarthxTV"]
         },
         {
             "num": "268",
             "title": "Best Channel",
-            "names": ["Best"]
+            "aliases": ["Best"]
         },
         {
             "num": "269",
             "title": "History",
-            "names": ["History"]
+            "aliases": ["History"]
         },
         {
             "num": "270",
             "title": "Idea Channel",
-            "names": ["Idea"]
+            "aliases": ["Idea"]
         },
         {
             "num": "271",
             "title": "Vice TV",
-            "names": ["Vice TV"]
+            "aliases": ["Vice TV"]
         },
         {
             "num": "272",
             "title": "Logo",
-            "names": ["Logo"]
+            "aliases": ["Logo"]
         },
         {
             "num": "273",
             "title": "POP",
-            "names": ["POP"]
+            "aliases": ["POP"]
         },
         {
             "num": "274",
             "title": "Ovation",
-            "names": ["Ovation"]
+            "aliases": ["Ovation"]
         },
         {
             "num": "275",
             "title": "QVC",
-            "names": ["QVC"]
+            "aliases": ["QVC"]
         },
         {
             "num": "276",
             "title": "National Geographic",
-            "names": ["National Geographic"]
+            "aliases": ["National Geographic"]
         },
         {
             "num": "277",
             "title": "Travel Channel",
-            "names": ["Travel"]
+            "aliases": ["Travel"]
         },
         {
             "num": "278",
             "title": "Discovery",
-            "names": ["Discovery"]
+            "aliases": ["Discovery"]
         },
         {
             "num": "279",
             "title": "Oprah Winfrey Network (East)",
-            "names": ["Oprah Winfrey"]
+            "aliases": ["Oprah Winfrey"]
         },
         {
             "num": "279-1",
             "title": "Oprah Winfrey Network (West)",
-            "names": ["Oprah Winfrey"]
+            "aliases": ["Oprah Winfrey"]
         },
         {
             "num": "280",
             "title": "TLC",
-            "names": ["TLC"]
+            "aliases": ["TLC"]
         },
         {
             "num": "281",
             "title": "Motor Trend",
-            "names": ["Motor Trend"]
+            "aliases": ["Motor Trend"]
         },
         {
             "num": "282",
             "title": "Animal Planet",
-            "names": ["Animal Planet"]
+            "aliases": ["Animal Planet"]
         },
         {
             "num": "283",
             "title": "Nat Geo Wild",
-            "names": ["Nat Geo Wild"]
+            "aliases": ["Nat Geo Wild"]
         },
         {
             "num": "284",
             "title": "Science",
-            "names": ["Science"]
+            "aliases": ["Science"]
         },
         {
             "num": "285",
             "title": "Investigation Discovery",
-            "names": ["Investigation Discovery"]
+            "aliases": ["Investigation Discovery"]
         },
         {
             "num": "286",
             "title": "Destination America",
-            "names": ["Destination America"]
+            "aliases": ["Destination America"]
         },
         {
             "num": "287",
             "title": "American Heroes Channel",
-            "names": ["American Heroes"]
+            "aliases": ["American Heroes"]
         },
         {
             "num": "288",
             "title": "PBS Kids",
-            "names": ["PBS Kids"]
+            "aliases": ["PBS Kids"]
         },
         {
             "num": "289",
             "title": "Disney Jr.",
-            "names": ["Disney Jr", "Disney Junior", "DisneyJr", "Disney JNR"]
+            "aliases": ["Disney Jr", "Disney Junior", "DisneyJr", "Disney JNR"]
         },
         {
             "num": "290",
             "title": "Disney Channel (East)",
-            "names": ["Disney Channel"]
+            "aliases": ["Disney Channel"]
         },
         {
             "num": "291",
             "title": "Disney Channel (West)",
-            "names": ["Disney Channel"]
+            "aliases": ["Disney Channel"]
         },
         {
             "num": "292",
             "title": "Disney XD",
-            "names": ["Disney XD"]
+            "aliases": ["Disney XD"]
         },
         {
             "num": "293",
             "title": "BabyFirst",
-            "names": ["BabyFirst", "Baby First"]
+            "aliases": ["BabyFirst", "Baby First"]
         },
         {
             "num": "294",
             "title": "Discovery Family",
-            "names": ["Discovery Family"]
+            "aliases": ["Discovery Family"]
         },
         {
             "num": "296",
             "title": "Cartoon Network/Adult Swim (East)",
-            "names": ["Cartoon Network", "Adult Swim"]
+            "aliases": ["Cartoon Network", "Adult Swim"]
         },
         {
             "num": "297",
             "title": "Cartoon Network/Adult Swim (West)",
-            "names": ["Cartoon Network", "Adult Swim"]
+            "aliases": ["Cartoon Network", "Adult Swim"]
         },
         {
             "num": "298",
             "title": "Boomerang",
-            "names": ["Boomerang"]
+            "aliases": ["Boomerang"]
         },
         {
             "num": "299",
             "title": "Nickelodeon/Nick at Nite (East)",
-            "names": ["Nickelodeon", "Nick"]
+            "aliases": ["Nickelodeon", "Nick"]
         },
         {
             "num": "300",
             "title": "Nickelodeon/Nick at Nite (West)",
-            "names": ["Nickelodeon", "Nick"]
+            "aliases": ["Nickelodeon", "Nick"]
         },
         {
             "num": "301",
             "title": "Nick Jr.",
-            "names": ["Nick Jr", "Nick Junior", "NickJr", "Nick JNR"]
+            "aliases": ["Nick Jr", "Nick Junior", "NickJr", "Nick JNR"]
         },
         {
             "num": "302",
             "title": "NickToons",
-            "names": ["NickToons", "Nick Toons", "NickSpongebob", "SpongeBob"]
+            "aliases": ["NickToons", "Nick Toons", "NickSpongebob", "SpongeBob"]
         },
         {
             "num": "303",
             "title": "TeenNick",
-            "names": ["TeenNick", "Teen Nick"]
+            "aliases": ["TeenNick", "Teen Nick"]
         },
         {
             "num": "304",
             "title": "TV Land",
-            "names": ["TV Land"]
+            "aliases": ["TV Land"]
         },
         {
             "num": "305",
             "title": "Ion",
-            "names": ["Ion"]
+            "aliases": ["Ion"]
         },
         {
             "num": "306",
             "title": "Merit Street",
-            "names": ["Merit Street"]
+            "aliases": ["Merit Street"]
         },
         {
             "num": "307",
             "title": "NewsNation",
-            "names": ["NewsNation"]
+            "aliases": ["NewsNation"]
         },
         {
             "num": "308",
             "title": "LooLoo Kids TV",
-            "names": ["LooLoo Kids TV"]
+            "aliases": ["LooLoo Kids TV"]
         },
         {
             "num": "309",
             "title": "Sale Network",
-            "names": ["Sale"]
+            "aliases": ["Sale"]
         },
         {
             "num": "310",
             "title": "HSN 2",
-            "names": ["HSN 2"]
+            "aliases": ["HSN 2"]
         },
         {
             "num": "311",
             "title": "Freeform",
-            "names": ["Freeform"]
+            "aliases": ["Freeform"]
         },
         {
             "num": "312",
             "title": "Hallmark Channel",
-            "names": ["Hallmark"]
+            "aliases": ["Hallmark"]
         },
         {
             "num": "313",
             "title": "Jewelry Television",
-            "names": ["Jewelry Television"]
+            "aliases": ["Jewelry Television"]
         },
         {
             "num": "314",
             "title": "Family Movie Classics",
-            "names": ["Family Movie Classics"]
+            "aliases": ["Family Movie Classics"]
         },
         {
             "num": "315",
             "title": "QVC 2",
-            "names": ["QVC 2"]
+            "aliases": ["QVC 2"]
         },
         {
             "num": "317",
             "title": "QVC",
-            "names": ["QVC"]
+            "aliases": ["QVC"]
         },
         {
             "num": "318",
             "title": "QVC 3",
-            "names": ["QVC 3"]
+            "aliases": ["QVC 3"]
         },
         {
             "num": "319",
             "title": "New TV",
-            "names": ["New TV"]
+            "aliases": ["New TV"]
         },
         {
             "num": "320",
             "title": "Scientology Network",
-            "names": ["Scientology"]
+            "aliases": ["Scientology"]
         },
         {
             "num": "322",
             "title": "NHK World Japan",
-            "names": ["NHK World Japan"]
+            "aliases": ["NHK World Japan"]
         },
         {
             "num": "323",
             "title": "fetv",
-            "names": ["fetv"]
+            "aliases": ["fetv"]
         },
         {
             "num": "324",
             "title": "In Touch+",
-            "names": ["Touch+", "Touch Plus"]
+            "aliases": ["Touch+", "Touch Plus"]
         },
         {
             "num": "324-1",
             "title": "Secret TV",
-            "names": ["Secret TV"]
+            "aliases": ["Secret TV"]
         },
         {
             "num": "325",
             "title": "Fresh",
-            "names": ["Fresh"]
+            "aliases": ["Fresh"]
         },
         {
             "num": "325-1",
             "title": "JLTV",
-            "names": ["JLTV"]
+            "aliases": ["JLTV"]
         },
         {
             "num": "326",
             "title": "Great American Family",
-            "names": ["Great American Family"]
+            "aliases": ["Great American Family"]
         },
         {
             "num": "327",
             "title": "CMT",
-            "names": ["CMT"]
+            "aliases": ["CMT"]
         },
         {
             "num": "328",
             "title": "TV One",
-            "names": ["TV One"]
+            "aliases": ["TV One"]
         },
         {
             "num": "329",
             "title": "BET (East)",
-            "names": ["BET"]
+            "aliases": ["BET"]
         },
         {
             "num": "329-1",
             "title": "BET (West)",
-            "names": ["BET"]
+            "aliases": ["BET"]
         },
         {
             "num": "330",
             "title": "BET Her",
-            "names": ["BET Her"]
+            "aliases": ["BET Her"]
         },
         {
             "num": "331",
             "title": "MTV (East)",
-            "names": ["MTV"]
+            "aliases": ["MTV"]
         },
         {
             "num": "331-1",
             "title": "MTV (West)",
-            "names": ["MTV"]
+            "aliases": ["MTV"]
         },
         {
             "num": "332",
             "title": "MTV2",
-            "names": ["MTV2"]
+            "aliases": ["MTV2"]
         },
         {
             "num": "333",
             "title": "IFC",
-            "names": ["IFC"]
+            "aliases": ["IFC"]
         },
         {
             "num": "334",
             "title": "Revolt",
-            "names": ["Revolt"]
+            "aliases": ["Revolt"]
         },
         {
             "num": "335",
             "title": "VH1",
-            "names": ["VH1"]
+            "aliases": ["VH1"]
         },
         {
             "num": "336",
             "title": "MTV Classic",
-            "names": ["MTV Classic"]
+            "aliases": ["MTV Classic"]
         },
         {
             "num": "337",
             "title": "Cash",
-            "names": ["Cash"]
+            "aliases": ["Cash"]
         },
         {
             "num": "338",
             "title": "UP TV",
-            "names": ["UP TV"]
+            "aliases": ["UP TV"]
         },
         {
             "num": "339",
             "title": "Fuse",
-            "names": ["Fuse"]
+            "aliases": ["Fuse"]
         },
         {
             "num": "340",
             "title": "AXS TV",
-            "names": ["AXS TV"]
+            "aliases": ["AXS TV"]
         },
         {
             "num": "341",
             "title": "Cleo TV",
-            "names": ["Cleo TV"]
+            "aliases": ["Cleo TV"]
         },
         {
             "num": "342",
             "title": "TheGrio",
-            "names": ["Grio"]
+            "aliases": ["Grio"]
         },
         {
             "num": "343",
             "title": "i24 News",
-            "names": ["i24 News"]
+            "aliases": ["i24 News"]
         },
         {
             "num": "344",
             "title": "SonLife Broadcasting Network",
-            "names": ["SonLife Broadcasting"]
+            "aliases": ["SonLife Broadcasting"]
         },
         {
             "num": "345",
             "title": "RFD TV",
-            "names": ["RFD TV"]
+            "aliases": ["RFD TV"]
         },
         {
             "num": "346",
             "title": "BBC News",
-            "names": ["BBC News"]
+            "aliases": ["BBC News"]
         },
         {
             "num": "347",
             "title": "The First",
-            "names": ["First"]
+            "aliases": ["First"]
         },
         {
             "num": "348",
             "title": "Free Speech TV",
-            "names": ["Free Speech TV"]
+            "aliases": ["Free Speech TV"]
         },
         {
             "num": "349",
             "title": "Newsmax TV",
-            "names": ["Newsmax TV"]
+            "aliases": ["Newsmax TV"]
         },
         {
             "num": "350",
             "title": "C-SPAN",
-            "names": ["C-SPAN", "CSPAN"]
+            "aliases": ["C-SPAN", "CSPAN"]
         },
         {
             "num": "351",
             "title": "C-SPAN 2",
-            "names": ["C-SPAN 2", "CSPAN 2"]
+            "aliases": ["C-SPAN 2", "CSPAN 2"]
         },
         {
             "num": "353",
             "title": "Bloomberg Television",
-            "names": ["Bloomberg Television"]
+            "aliases": ["Bloomberg Television"]
         },
         {
             "num": "354",
             "title": "Cheddar News",
-            "names": ["Cheddar News"]
+            "aliases": ["Cheddar News"]
         },
         {
             "num": "355",
             "title": "CNBC",
-            "names": ["CNBC"]
+            "aliases": ["CNBC"]
         },
         {
             "num": "356",
             "title": "MSNBC",
-            "names": ["MSNBC"]
+            "aliases": ["MSNBC"]
         },
         {
             "num": "357",
             "title": "CNBC World",
-            "names": ["CNBC World"]
+            "aliases": ["CNBC World"]
         },
         {
             "num": "358",
             "title": "CNN International",
-            "names": ["CNN International"]
+            "aliases": ["CNN International"]
         },
         {
             "num": "359",
             "title": "Fox Business Network",
-            "names": ["Fox Business"]
+            "aliases": ["Fox Business"]
         },
         {
             "num": "360",
             "title": "Fox News Channel",
-            "names": ["Fox News"]
+            "aliases": ["Fox News"]
         },
         {
             "num": "361",
             "title": "AccuWeather Network",
-            "names": ["AccuWeather"]
+            "aliases": ["AccuWeather"]
         },
         {
             "num": "362",
             "title": "The Weather Channel",
-            "names": ["Weather"]
+            "aliases": ["Weather"]
         },
         {
             "num": "363",
             "title": "Fox Weather",
-            "names": ["Fox Weather"]
+            "aliases": ["Fox Weather"]
         },
         {
             "num": "364",
             "title": "INSP",
-            "names": ["INSP"]
+            "aliases": ["INSP"]
         },
         {
             "num": "365",
             "title": "GEB Network",
-            "names": ["GEB"]
+            "aliases": ["GEB"]
         },
         {
             "num": "366",
             "title": "Victory",
-            "names": ["Victory"]
+            "aliases": ["Victory"]
         },
         {
             "num": "367",
             "title": "WHT",
-            "names": ["WHT"]
+            "aliases": ["WHT"]
         },
         {
             "num": "368",
             "title": "Hope Channel",
-            "names": ["Hope"]
+            "aliases": ["Hope"]
         },
         {
             "num": "369",
             "title": "Daystar",
-            "names": ["Daystar"]
+            "aliases": ["Daystar"]
         },
         {
             "num": "370",
             "title": "EWTN",
-            "names": ["EWTN"]
+            "aliases": ["EWTN"]
         },
         {
             "num": "371",
             "title": "TBN Inspire",
-            "names": ["TBN Inspire"]
+            "aliases": ["TBN Inspire"]
         },
         {
             "num": "372",
             "title": "TBN",
-            "names": ["TBN"]
+            "aliases": ["TBN"]
         },
         {
             "num": "373",
             "title": "The Word Network",
-            "names": ["Word"]
+            "aliases": ["Word"]
         },
         {
             "num": "374",
             "title": "BYUtv",
-            "names": ["BYUtv"]
+            "aliases": ["BYUtv"]
         },
         {
             "num": "375",
             "title": "Blossom",
-            "names": ["Blossom"]
+            "aliases": ["Blossom"]
         },
         {
             "num": "376",
             "title": "CTN",
-            "names": ["CTN"]
+            "aliases": ["CTN"]
         },
         {
             "num": "377",
             "title": "TCT",
-            "names": ["TCT"]
+            "aliases": ["TCT"]
         },
         {
             "num": "378",
             "title": "NRBTV",
-            "names": ["NRBTV"]
+            "aliases": ["NRBTV"]
         },
         {
             "num": "379",
             "title": "Faith TV USA",
-            "names": ["Faith TV USA"]
+            "aliases": ["Faith TV USA"]
         },
         {
             "num": "380",
             "title": "The Impact Network",
-            "names": ["Impact"]
+            "aliases": ["Impact"]
         },
         {
             "num": "381",
             "title": "Aspire",
-            "names": ["Aspire"]
+            "aliases": ["Aspire"]
         },
         {
             "num": "382",
             "title": "Comedy.TV",
-            "names": ["Comedy TV"]
+            "aliases": ["Comedy TV"]
         },
         {
             "num": "383",
             "title": "Justice Central",
-            "names": ["Justice Central"]
+            "aliases": ["Justice Central"]
         },
         {
             "num": "385",
             "title": "Heroes & Icons",
-            "names": ["Heroes Icons"]
+            "aliases": ["Heroes Icons"]
         },
         {
             "num": "386",
             "title": "FM",
-            "names": ["FM"]
+            "aliases": ["FM"]
         },
         {
             "num": "388",
             "title": "Jewish Broadcasting Service",
-            "names": ["Jewish Broadcasting Service", "JBS"]
+            "aliases": ["Jewish Broadcasting Service", "JBS"]
         },
         {
             "num": "389",
             "title": "PBS Satellite Service",
-            "names": ["PBS Satellite Service"]
+            "aliases": ["PBS Satellite Service"]
         },
         {
             "num": "390",
             "title": "WCBS-TV (New York) CBS (East)",
-            "names": ["WCBS-TV", "WCBS TV", "CBS"]
+            "aliases": ["WCBS-TV", "WCBS TV", "CBS"]
         },
         {
             "num": "391",
             "title": "KCBS-TV (Los Angeles) CBS (West)",
-            "names": ["KCBS-TV", "KCBS TV", "CBS"]
+            "aliases": ["KCBS-TV", "KCBS TV", "CBS"]
         },
         {
             "num": "392",
             "title": "WNBC (New York) NBC (East)",
-            "names": ["WNBC", "NBC"]
+            "aliases": ["WNBC", "NBC"]
         },
         {
             "num": "393",
             "title": "KNBC (Los Angeles) NBC (West)",
-            "names": ["KNBC", "NBC"]
+            "aliases": ["KNBC", "NBC"]
         },
         {
             "num": "394",
             "title": "The CW Plus (East feed) The CW (East)",
-            "names": ["CW"]
+            "aliases": ["CW"]
         },
         {
             "num": "395",
             "title": "KTLA (Los Angeles) The CW (West)",
-            "names": ["KTLA", "CW"]
+            "aliases": ["KTLA", "CW"]
         },
         {
             "num": "396",
             "title": "WABC-TV (New York) ABC (East)",
-            "names": ["WABC-TV", "WABC TV", "ABC"]
+            "aliases": ["WABC-TV", "WABC TV", "ABC"]
         },
         {
             "num": "397",
             "title": "KABC-TV (Los Angeles) ABC (West)",
-            "names": ["KABC-TV", "KABC TV", "ABC"]
+            "aliases": ["KABC-TV", "KABC TV", "ABC"]
         },
         {
             "num": "398",
             "title": "WNYW (New York) Fox (East)",
-            "names": ["WNYW", "Fox"]
+            "aliases": ["WNYW", "Fox"]
         },
         {
             "num": "399",
             "title": "KTTV (Los Angeles) Fox (West)",
-            "names": ["KTTV", "Fox"]
+            "aliases": ["KTTV", "Fox"]
         },
         {
             "num": "400",
             "title": "Pay-Per-View Events",
-            "names": ["Pay-Per-View Events", "Pay Per View Events"]
+            "aliases": ["Pay-Per-View Events", "Pay Per View Events"]
         },
         {
             "num": "401",
             "title": "Aquí",
-            "names": ["Aquí", "Aqui"]
+            "aliases": ["Aquí", "Aqui"]
         },
         {
             "num": "402",
             "title": "Univision (East)",
-            "names": ["Univision"]
+            "aliases": ["Univision"]
         },
         {
             "num": "403",
             "title": "Univision (West)",
-            "names": ["Univision"]
+            "aliases": ["Univision"]
         },
         {
             "num": "404",
             "title": "Galavision",
-            "names": ["Galavision"]
+            "aliases": ["Galavision"]
         },
         {
             "num": "405",
             "title": "Mega TV",
-            "names": ["Mega TV"]
+            "aliases": ["Mega TV"]
         },
         {
             "num": "406",
             "title": "Telemundo (East)",
-            "names": ["Telemundo"]
+            "aliases": ["Telemundo"]
         },
         {
             "num": "407",
             "title": "Telemundo (West)",
-            "names": ["Telemundo"]
+            "aliases": ["Telemundo"]
         },
         {
             "num": "408",
             "title": "UniMás (West)",
-            "names": ["UniMás", "UniMas"]
+            "aliases": ["UniMás", "UniMas"]
         },
         {
             "num": "409",
             "title": "VePlus",
-            "names": ["VePlus"]
+            "aliases": ["VePlus"]
         },
         {
             "num": "410",
             "title": "Universo",
-            "names": ["Universo"]
+            "aliases": ["Universo"]
         },
         {
             "num": "411",
             "title": "Telefe Internacional",
-            "names": ["Telefe Internacional"]
+            "aliases": ["Telefe Internacional"]
         },
         {
             "num": "412",
             "title": "Canal 6 Multimedios USA",
-            "names": ["Canal 6 Multimedios USA"]
+            "aliases": ["Canal 6 Multimedios USA"]
         },
         {
             "num": "413",
             "title": "Discovery en Español",
-            "names": ["Discovery en Español", "Discovery en Espanol"]
+            "aliases": ["Discovery en Español", "Discovery en Espanol"]
         },
         {
             "num": "414",
             "title": "WAPA America",
-            "names": ["WAPA America"]
+            "aliases": ["WAPA America"]
         },
         {
             "num": "415",
             "title": "Video Rola",
-            "names": ["Video Rola"]
+            "aliases": ["Video Rola"]
         },
         {
             "num": "416",
             "title": "RCN Nuestra Tele",
-            "names": ["RCN Nuestra Tele"]
+            "aliases": ["RCN Nuestra Tele"]
         },
         {
             "num": "417",
             "title": "Caracol TV Internacional",
-            "names": ["Caracol TV Internacional"]
+            "aliases": ["Caracol TV Internacional"]
         },
         {
             "num": "418",
             "title": "NTN24",
-            "names": ["NTN24"]
+            "aliases": ["NTN24"]
         },
         {
             "num": "419",
             "title": "CNN en Español",
-            "names": ["CNN en Español", "CNN en Espanol"]
+            "aliases": ["CNN en Español", "CNN en Espanol"]
         },
         {
             "num": "420",
             "title": "Atreseries",
-            "names": ["Atreseries"]
+            "aliases": ["Atreseries"]
         },
         {
             "num": "422",
             "title": "Cine Estelar",
-            "names": ["Cine Estelar"]
+            "aliases": ["Cine Estelar"]
         },
         {
             "num": "423",
             "title": "Cine Latino",
-            "names": ["Cine Latino"]
+            "aliases": ["Cine Latino"]
         },
         {
             "num": "424",
             "title": "Cine Nostalgia",
-            "names": ["Cine Nostalgia"]
+            "aliases": ["Cine Nostalgia"]
         },
         {
             "num": "425",
             "title": "Baby TV",
-            "names": ["Baby TV"]
+            "aliases": ["Baby TV"]
         },
         {
             "num": "426",
             "title": "Starz Encore Español",
-            "names": ["Starz Encore Español", "Starz Encore Espanol"]
+            "aliases": ["Starz Encore Español", "Starz Encore Espanol"]
         },
         {
             "num": "428",
             "title": "Centroamérica TV",
-            "names": ["Centroamérica TV", "Centroamerica TV"]
+            "aliases": ["Centroamérica TV", "Centroamerica TV"]
         },
         {
             "num": "429",
             "title": "TeleCentro",
-            "names": ["TeleCentro"]
+            "aliases": ["TeleCentro"]
         },
         {
             "num": "430",
             "title": "Hola TV",
-            "names": ["Hola TV"]
+            "aliases": ["Hola TV"]
         },
         {
             "num": "431",
             "title": "Perú Mágico",
-            "names": ["Perú Mágico", "Peru Magico"]
+            "aliases": ["Perú Mágico", "Peru Magico"]
         },
         {
             "num": "432",
             "title": "ZooMoo",
-            "names": ["ZooMoo"]
+            "aliases": ["ZooMoo"]
         },
         {
             "num": "433",
             "title": "Bandamax",
-            "names": ["Bandamax"]
+            "aliases": ["Bandamax"]
         },
         {
             "num": "434",
             "title": "Hogar HGTV",
-            "names": ["Hogar HGTV"]
+            "aliases": ["Hogar HGTV"]
         },
         {
             "num": "435",
             "title": "NatGeo Mundo",
-            "names": ["NatGeo Mundo"]
+            "aliases": ["NatGeo Mundo"]
         },
         {
             "num": "436",
             "title": "Discovery Familia",
-            "names": ["Discovery Familia"]
+            "aliases": ["Discovery Familia"]
         },
         {
             "num": "437",
             "title": "TV Chile",
-            "names": ["TV Chile"]
+            "aliases": ["TV Chile"]
         },
         {
             "num": "438",
             "title": "Ecuavisa Internacional",
-            "names": ["Ecuavisa Internacional"]
+            "aliases": ["Ecuavisa Internacional"]
         },
         {
             "num": "439",
             "title": "SUR Perú",
-            "names": ["SUR Perú", "SUR Peru"]
+            "aliases": ["SUR Perú", "SUR Peru"]
         },
         {
             "num": "440",
             "title": "V-me",
-            "names": ["V-me", "V me"]
+            "aliases": ["V-me", "V me"]
         },
         {
             "num": "442",
             "title": "Estrella TV",
-            "names": ["Estrella TV"]
+            "aliases": ["Estrella TV"]
         },
         {
             "num": "443",
             "title": "History en Español",
-            "names": ["History en Español", "History en Espanol"]
+            "aliases": ["History en Español", "History en Espanol"]
         },
         {
             "num": "444",
             "title": "Pasiones",
-            "names": ["Pasiones"]
+            "aliases": ["Pasiones"]
         },
         {
             "num": "445",
             "title": "Tr3s",
-            "names": ["Tr3s"]
+            "aliases": ["Tr3s"]
         },
         {
             "num": "446",
             "title": "Canal 22 Internacional",
-            "names": ["Canal 22 Internacional"]
+            "aliases": ["Canal 22 Internacional"]
         },
         {
             "num": "447",
             "title": "Canal Once Internacional",
-            "names": ["Canal Once Internacional"]
+            "aliases": ["Canal Once Internacional"]
         },
         {
             "num": "448",
             "title": "Enlace",
-            "names": ["Enlace"]
+            "aliases": ["Enlace"]
         },
         {
             "num": "449",
             "title": "Cine SONY",
-            "names": ["Cine SONY"]
+            "aliases": ["Cine SONY"]
         },
         {
             "num": "450",
             "title": "ViendoMovies",
-            "names": ["ViendoMovies"]
+            "aliases": ["ViendoMovies"]
         },
         {
             "num": "451",
             "title": "De Película",
-            "names": ["De Película", "De Pelicula"]
+            "aliases": ["De Película", "De Pelicula"]
         },
         {
             "num": "452",
             "title": "De Película Clásico",
-            "names": ["De Película Clásico", "De Pelicula Clasico"]
+            "aliases": ["De Película Clásico", "De Pelicula Clasico"]
         },
         {
             "num": "453",
             "title": "N+ Foro",
-            "names": ["Foro"]
+            "aliases": ["Foro"]
         },
         {
             "num": "454",
             "title": "Univision tlnovelas",
-            "names": ["Univision tlnovelas"]
+            "aliases": ["Univision tlnovelas"]
         },
         {
             "num": "455",
             "title": "Ganga",
-            "names": ["Ganga"]
+            "aliases": ["Ganga"]
         },
         {
             "num": "456",
             "title": "ESNE (El Sembrador Nueva Evangelización)",
-            "names": ["ESNE", "El Sembrador Nueva Evangelización", "El Sembrador Nueva Evangelizacion"]
+            "aliases": ["ESNE", "El Sembrador Nueva Evangelización", "El Sembrador Nueva Evangelizacion"]
         },
         {
             "num": "457",
             "title": "TC Internacional",
-            "names": ["TC Internacional"]
+            "aliases": ["TC Internacional"]
         },
         {
             "num": "458",
             "title": "Antena 3 Internacional",
-            "names": ["Antena 3 Internacional"]
+            "aliases": ["Antena 3 Internacional"]
         },
         {
             "num": "459",
             "title": "Atrés Cine",
-            "names": ["Atrés Cine", "Atres Cine"]
+            "aliases": ["Atrés Cine", "Atres Cine"]
         },
         {
             "num": "460",
             "title": "TVE Internacional",
-            "names": ["TVE Internacional"]
+            "aliases": ["TVE Internacional"]
         },
         {
             "num": "461",
             "title": "HITN",
-            "names": ["HITN"]
+            "aliases": ["HITN"]
         },
         {
             "num": "462",
             "title": "Cine Mexicano",
-            "names": ["Cine Mexicano"]
+            "aliases": ["Cine Mexicano"]
         },
         {
             "num": "463",
             "title": "Daystar en Español",
-            "names": ["Daystar en Español", "Daystar en Espanol"]
+            "aliases": ["Daystar en Español", "Daystar en Espanol"]
         },
         {
             "num": "464",
             "title": "TUDN",
-            "names": ["TUDN"]
+            "aliases": ["TUDN"]
         },
         {
             "num": "465",
             "title": "Fox Deportes",
-            "names": ["Fox Deportes"]
+            "aliases": ["Fox Deportes"]
         },
         {
             "num": "466",
             "title": "ESPN Deportes",
-            "names": ["ESPN Deportes"]
+            "aliases": ["ESPN Deportes"]
         },
         {
             "num": "468",
             "title": "GOL TV",
-            "names": ["GOL TV"]
+            "aliases": ["GOL TV"]
         },
         {
             "num": "469",
             "title": "TyC Sports",
-            "names": ["TyC Sports"]
+            "aliases": ["TyC Sports"]
         },
         {
             "num": "472",
             "title": "Nuestra Visión",
-            "names": ["Nuestra Visión", "Nuestra Vision"]
+            "aliases": ["Nuestra Visión", "Nuestra Vision"]
         },
         {
             "num": "473",
             "title": "Estrella News",
-            "names": ["Estrella News"]
+            "aliases": ["Estrella News"]
         },
         {
             "num": "474",
             "title": "Meganoticias",
-            "names": ["Meganoticias"]
+            "aliases": ["Meganoticias"]
         },
         {
             "num": "475",
             "title": "EWTN Español",
-            "names": ["EWTN", "EWTN Español", "EWTN Espanol"]
+            "aliases": ["EWTN", "EWTN Español", "EWTN Espanol"]
         },
         {
             "num": "501",
             "title": "HBO (East)",
-            "names": ["HBO"]
+            "aliases": ["HBO"]
         },
         {
             "num": "502",
             "title": "HBO2 (East)",
-            "names": ["HBO2"]
+            "aliases": ["HBO2"]
         },
         {
             "num": "503",
             "title": "HBO Signature",
-            "names": ["HBO Signature"]
+            "aliases": ["HBO Signature"]
         },
         {
             "num": "504",
             "title": "HBO (West)",
-            "names": ["HBO"]
+            "aliases": ["HBO"]
         },
         {
             "num": "505",
             "title": "HBO2 (West)",
-            "names": ["HBO2"]
+            "aliases": ["HBO2"]
         },
         {
             "num": "506",
             "title": "HBO Comedy",
-            "names": ["HBO Comedy"]
+            "aliases": ["HBO Comedy"]
         },
         {
             "num": "507",
             "title": "HBO Family (East)",
-            "names": ["HBO Family"]
+            "aliases": ["HBO Family"]
         },
         {
             "num": "508",
             "title": "HBO Family (West)",
-            "names": ["HBO Family"]
+            "aliases": ["HBO Family"]
         },
         {
             "num": "509",
             "title": "HBO Zone",
-            "names": ["HBO Zone"]
+            "aliases": ["HBO Zone"]
         },
         {
             "num": "511",
             "title": "HBO Latino",
-            "names": ["HBO Latino"]
+            "aliases": ["HBO Latino"]
         },
         {
             "num": "512",
             "title": "Order HBO Interactive Channel",
-            "names": ["Order HBO Interactive"]
+            "aliases": ["Order HBO Interactive"]
         },
         {
             "num": "515",
             "title": "Cinemax (East)",
-            "names": ["Cinemax"]
+            "aliases": ["Cinemax"]
         },
         {
             "num": "516",
             "title": "Cinemax (West)",
-            "names": ["Cinemax"]
+            "aliases": ["Cinemax"]
         },
         {
             "num": "517",
             "title": "MoreMax",
-            "names": ["MoreMax"]
+            "aliases": ["MoreMax"]
         },
         {
             "num": "519",
             "title": "ActionMax",
-            "names": ["ActionMax"]
+            "aliases": ["ActionMax"]
         },
         {
             "num": "520",
             "title": "5StarMax",
-            "names": ["5StarMax"]
+            "aliases": ["5StarMax"]
         },
         {
             "num": "521",
             "title": "MovieMax",
-            "names": ["MovieMax"]
+            "aliases": ["MovieMax"]
         },
         {
             "num": "522",
             "title": "ThrillerMax",
-            "names": ["ThrillerMax"]
+            "aliases": ["ThrillerMax"]
         },
         {
             "num": "523",
             "title": "Cinemáx",
-            "names": ["Cinemáx", "Cinemax"]
+            "aliases": ["Cinemáx", "Cinemax"]
         },
         {
             "num": "525",
             "title": "Starz (East)",
-            "names": ["Starz"]
+            "aliases": ["Starz"]
         },
         {
             "num": "526",
             "title": "Starz (West)",
-            "names": ["Starz"]
+            "aliases": ["Starz"]
         },
         {
             "num": "527",
             "title": "Starz Kids & Family",
-            "names": ["Starz Kids Family"]
+            "aliases": ["Starz Kids Family"]
         },
         {
             "num": "528",
             "title": "Starz Comedy",
-            "names": ["Starz Comedy"]
+            "aliases": ["Starz Comedy"]
         },
         {
             "num": "529",
             "title": "Starz Edge",
-            "names": ["Starz Edge"]
+            "aliases": ["Starz Edge"]
         },
         {
             "num": "530",
             "title": "Starz In Black",
-            "names": ["Starz Black"]
+            "aliases": ["Starz Black"]
         },
         {
             "num": "531",
             "title": "Starz Cinema",
-            "names": ["Starz Cinema"]
+            "aliases": ["Starz Cinema"]
         },
         {
             "num": "535",
             "title": "Starz Encore (East)",
-            "names": ["Starz Encore"]
+            "aliases": ["Starz Encore"]
         },
         {
             "num": "536",
             "title": "Starz Encore (West)",
-            "names": ["Starz Encore"]
+            "aliases": ["Starz Encore"]
         },
         {
             "num": "537",
             "title": "Starz Encore Classic",
-            "names": ["Starz Encore Classic"]
+            "aliases": ["Starz Encore Classic"]
         },
         {
             "num": "538",
             "title": "Starz Encore Westerns",
-            "names": ["Starz Encore Westerns"]
+            "aliases": ["Starz Encore Westerns"]
         },
         {
             "num": "539",
             "title": "Starz Encore Suspense",
-            "names": ["Starz Encore Suspense"]
+            "aliases": ["Starz Encore Suspense"]
         },
         {
             "num": "540",
             "title": "Starz Encore Black",
-            "names": ["Starz Encore Black"]
+            "aliases": ["Starz Encore Black"]
         },
         {
             "num": "541",
             "title": "Starz Encore Action",
-            "names": ["Starz Encore Action"]
+            "aliases": ["Starz Encore Action"]
         },
         {
             "num": "542",
             "title": "Starz Encore Family",
-            "names": ["Starz Encore Family"]
+            "aliases": ["Starz Encore Family"]
         },
         {
             "num": "545",
             "title": "Paramount+ with Showtime (East)",
-            "names": ["Paramount+ Showtime", "Paramount Plus Showtime"]
+            "aliases": ["Paramount+ Showtime", "Paramount Plus Showtime"]
         },
         {
             "num": "546",
             "title": "Paramount+ with Showtime (West)",
-            "names": ["Paramount+ Showtime", "Paramount Plus Showtime"]
+            "aliases": ["Paramount+ Showtime", "Paramount Plus Showtime"]
         },
         {
             "num": "547",
             "title": "Showtime 2",
-            "names": ["Showtime 2"]
+            "aliases": ["Showtime 2"]
         },
         {
             "num": "548",
             "title": "SHOxBET",
-            "names": ["SHOxBET"]
+            "aliases": ["SHOxBET"]
         },
         {
             "num": "549",
             "title": "Showtime Extreme",
-            "names": ["Showtime Extreme"]
+            "aliases": ["Showtime Extreme"]
         },
         {
             "num": "550",
             "title": "Showtime Showcase",
-            "names": ["Showtime Showcase"]
+            "aliases": ["Showtime Showcase"]
         },
         {
             "num": "551",
             "title": "Showtime Next",
-            "names": ["Showtime Next"]
+            "aliases": ["Showtime Next"]
         },
         {
             "num": "552",
             "title": "Showtime Family Zone",
-            "names": ["Showtime Family Zone"]
+            "aliases": ["Showtime Family Zone"]
         },
         {
             "num": "553",
             "title": "The Movie Channel (East)",
-            "names": ["Movie"]
+            "aliases": ["Movie"]
         },
         {
             "num": "554",
             "title": "The Movie Channel (West)",
-            "names": ["Movie"]
+            "aliases": ["Movie"]
         },
         {
             "num": "555",
             "title": "The Movie Channel Xtra (East)",
-            "names": ["Movie Xtra"]
+            "aliases": ["Movie Xtra"]
         },
         {
             "num": "556",
             "title": "Flix",
-            "names": ["Flix"]
+            "aliases": ["Flix"]
         },
         {
             "num": "557",
             "title": "AMC+",
-            "names": ["AMC+", "AMC Plus"]
+            "aliases": ["AMC+", "AMC Plus"]
         },
         {
             "num": "557-1",
             "title": "The Walking Dead Channel",
-            "names": ["Walking Dead"]
+            "aliases": ["Walking Dead"]
         },
         {
             "num": "558",
             "title": "MGM+",
-            "names": ["MGM+", "MGM Plus"]
+            "aliases": ["MGM+", "MGM Plus"]
         },
         {
             "num": "559",
             "title": "MGM+ Hits",
-            "names": ["MGM+ Hits", "MGM Plus Hits"]
+            "aliases": ["MGM+ Hits", "MGM Plus Hits"]
         },
         {
             "num": "560",
             "title": "MGM+ Marquee",
-            "names": ["MGM+ Marquee", "MGM Plus Marquee"]
+            "aliases": ["MGM+ Marquee", "MGM Plus Marquee"]
         },
         {
             "num": "561",
             "title": "Order MGM+ Interactive Channel",
-            "names": ["Order MGM+ Interactive", "Order MGM Plus Interactive"]
+            "aliases": ["Order MGM+ Interactive", "Order MGM Plus Interactive"]
         },
         {
             "num": "562",
             "title": "Dog TV",
-            "names": ["Dog TV"]
+            "aliases": ["Dog TV"]
         },
         {
             "num": "563",
             "title": "So Yummy",
-            "names": ["So Yummy"]
+            "aliases": ["So Yummy"]
         },
         {
             "num": "564",
             "title": "Hallmark Family",
-            "names": ["Hallmark Family"]
+            "aliases": ["Hallmark Family"]
         },
         {
             "num": "565",
             "title": "Hallmark Mystery",
-            "names": ["Hallmark Mystery"]
+            "aliases": ["Hallmark Mystery"]
         },
         {
             "num": "566",
             "title": "HDNet Movies",
-            "names": ["HDNet Movies"]
+            "aliases": ["HDNet Movies"]
         },
         {
             "num": "568",
             "title": "Sony Movies",
-            "names": ["Sony Movies"]
+            "aliases": ["Sony Movies"]
         },
         {
             "num": "570",
             "title": "Smithsonian Channel",
-            "names": ["Smithsonian"]
+            "aliases": ["Smithsonian"]
         },
         {
             "num": "571",
             "title": "Crime & Investigation",
-            "names": ["Crime Investigation"]
+            "aliases": ["Crime Investigation"]
         },
         {
             "num": "572",
             "title": "MTV Live",
-            "names": ["MTV Live"]
+            "aliases": ["MTV Live"]
         },
         {
             "num": "573",
             "title": "ShortsTV",
-            "names": ["ShortsTV"]
+            "aliases": ["ShortsTV"]
         },
         {
             "num": "575",
             "title": "Playboy TV Interactive Ordering",
-            "names": ["Playboy TV Interactive Ordering"]
+            "aliases": ["Playboy TV Interactive Ordering"]
         },
         {
             "num": "576",
             "title": "Playboy TV",
-            "names": ["Playboy TV"]
+            "aliases": ["Playboy TV"]
         },
         {
             "num": "577",
             "title": "Playboy TV",
-            "names": ["Playboy TV"]
+            "aliases": ["Playboy TV"]
         },
         {
             "num": "578",
             "title": "Playboy TV en Español",
-            "names": ["Playboy TV en Español", "Playboy TV en Espanol"]
+            "aliases": ["Playboy TV en Español", "Playboy TV en Espanol"]
         },
         {
             "num": "581",
             "title": "Adult Monthly Subscription Ordering Info",
-            "names": ["Adult Monthly Subscription Ordering Info"]
+            "aliases": ["Adult Monthly Subscription Ordering Info"]
         },
         {
             "num": "585",
             "title": "Playboy TV en Español Interactive Ordering",
-            "names": ["Playboy TV en Español Interactive Ordering", "Playboy TV en Espanol Interactive Ordering"]
+            "aliases": ["Playboy TV en Español Interactive Ordering", "Playboy TV en Espanol Interactive Ordering"]
         },
         {
             "num": "586",
             "title": "Playboy TV en Español",
-            "names": ["Playboy TV en Español", "Playboy TV en Espanol"]
+            "aliases": ["Playboy TV en Español", "Playboy TV en Espanol"]
         },
         {
             "num": "587",
             "title": "Penthouse TV Interactive Ordering",
-            "names": ["Penthouse TV Interactive Ordering"]
+            "aliases": ["Penthouse TV Interactive Ordering"]
         },
         {
             "num": "588",
             "title": "Hustler TV Interactive Ordering",
-            "names": ["Hustler TV Interactive Ordering"]
+            "aliases": ["Hustler TV Interactive Ordering"]
         },
         {
             "num": "589",
             "title": "Playboy TV",
-            "names": ["Playboy TV"]
+            "aliases": ["Playboy TV"]
         },
         {
             "num": "590",
             "title": "Playboy TV",
-            "names": ["Playboy TV"]
+            "aliases": ["Playboy TV"]
         },
         {
             "num": "591",
             "title": "Club Erotix 1 - IPPV Channel",
-            "names": ["Club Erotix 1"]
+            "aliases": ["Club Erotix 1"]
         },
         {
             "num": "592",
             "title": "Club Erotix 2 - IPPV Channel",
-            "names": ["Club Erotix 2"]
+            "aliases": ["Club Erotix 2"]
         },
         {
             "num": "593",
             "title": "Adult Billboard IPPV",
-            "names": ["Adult Billboard"]
+            "aliases": ["Adult Billboard"]
         },
         {
             "num": "594",
             "title": "Reality Kings TV",
-            "names": ["Reality Kings TV"]
+            "aliases": ["Reality Kings TV"]
         },
         {
             "num": "595",
             "title": "Penthouse TV",
-            "names": ["Penthouse TV"]
+            "aliases": ["Penthouse TV"]
         },
         {
             "num": "597",
             "title": "Brazzers TV",
-            "names": ["Brazzers TV"]
+            "aliases": ["Brazzers TV"]
         },
         {
             "num": "598",
             "title": "Vivid TV",
-            "names": ["Vivid TV"]
+            "aliases": ["Vivid TV"]
         },
         {
             "num": "599",
             "title": "Hustler TV",
-            "names": ["Hustler TV"]
+            "aliases": ["Hustler TV"]
         }
     ]
 }

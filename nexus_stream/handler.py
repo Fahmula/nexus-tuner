@@ -589,13 +589,13 @@ class ChannelHandler:
                 if channel_name == pre_channel.get('title'): return pre_channel
         for channel_list in predefined_channel_lists:
             for pre_channel in channel_list:
-                if channel_name in pre_channel.get('names', []): return pre_channel
+                if channel_name in pre_channel.get('aliases', []): return pre_channel
         for channel_list in predefined_channel_lists:
             for pre_channel in channel_list:
                 pre_channel_title = pre_channel.get('title', '')
                 if channel_name in pre_channel_title: return pre_channel
                 if pre_channel_title and pre_channel_title in channel_name: return pre_channel
-                for pre_channel_name in pre_channel.get('names', []):
+                for pre_channel_name in pre_channel.get('aliases', []):
                     if channel_name in pre_channel_name: return pre_channel
                     if pre_channel_name in channel_name: return pre_channel
         for channel_list in predefined_channel_lists:
@@ -618,7 +618,7 @@ class ChannelHandler:
                     matches.append({**channel, 'group': group})
                     found_with[channel['title']] = channel['title']
                     continue
-                for name in channel.get('names', []):
+                for name in channel.get('aliases', []):
                     title = name.lower()
                     if all(word in title for word in words):
                         matches.append({**channel, 'group': group})
