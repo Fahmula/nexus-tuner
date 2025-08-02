@@ -19,11 +19,11 @@
         </thead>
 
         <tbody>
-            {% for service in mapped_services %}
+            {% for service in mapped_sources %}
             {% set source_metrics = source_metrics.get(service.source_id, {}) %}
             <tr>
                 <td class="text-center align-middle">
-                    <input class="form-check-input" type="checkbox" name="mapping_service_id"
+                    <input class="form-check-input" type="checkbox" name="mapping_source_id"
                         value="{{ service.source_id }}" checked>
                 </td>
                 <td class="align-middle">
@@ -57,7 +57,7 @@
                 <td class="text-end align-middle">
                     <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal"
                         data-bs-target="#previewModal"
-                        hx-get="{{ url_for('ui_player_for_service', service_id=service.source_id) }}"
+                        hx-get="{{ url_for('ui_player_for_service', source_id=service.source_id) }}"
                         hx-target="#preview-modal-body" hx-trigger="click"
                         title="Preview Stream URL for {{ service.tvg_name }}">
                         <i class="fas fa-play"></i>
@@ -72,7 +72,7 @@
             {% set source_metrics = source_metrics.get(service.source_id, {}) %}
             <tr>
                 <td class="text-center align-middle">
-                    <input class="form-check-input" type="checkbox" name="mapping_service_id"
+                    <input class="form-check-input" type="checkbox" name="mapping_source_id"
                         value="{{ service.source_id }}">
                 </td>
                 <td class="align-middle">
@@ -105,7 +105,7 @@
                 <td class="text-end align-middle">
                     <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal"
                         data-bs-target="#previewModal"
-                        hx-get="{{ url_for('ui_player_for_service', service_id=service.source_id) }}"
+                        hx-get="{{ url_for('ui_player_for_service', source_id=service.source_id) }}"
                         hx-target="#preview-modal-body" hx-trigger="click"
                         title="Preview Stream URL for {{ service.tvg_name }}">
                         <i class="fas fa-play"></i>
@@ -115,12 +115,12 @@
             {% endfor %}
 
             {# Helpful messages for different states #}
-            {% if filter_query is not none and not unmapped_suggestions_for_page and not mapped_services %}
+            {% if filter_query is not none and not unmapped_suggestions_for_page and not mapped_sources %}
             <tr>
                 <td colspan="5" class="text-center text-muted fst-italic py-3">No services found matching your criteria.
                 </td>
             </tr>
-            {% elif not mapped_services and filter_query is none %}
+            {% elif not mapped_sources and filter_query is none %}
             <tr>
                 <td colspan="5" class="text-center text-muted fst-italic py-3">
                     Type in the "Display Name" field on the left to automatically find matching services,

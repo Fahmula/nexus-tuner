@@ -83,7 +83,7 @@ class Scheduler:
             Job(JobName.BACKUP, BACKUP_TIME, scheduled_backup),
             Job(JobName.CLEANUP, CLEANUP_TIME, scheduled_cleanup),
             Job(JobName.DISCOVER, DISCOVER_TIME, scheduled_discover),
-            Job(JobName.QUALITY, QUALITY_TIME, self.quality_monitor.analyze_mapped_services)
+            Job(JobName.QUALITY, QUALITY_TIME, self.quality_monitor.analyze_mapped_sources)
         ]
         self._scheduler_task: asyncio.Task[NoReturn]
 

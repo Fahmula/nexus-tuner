@@ -38,7 +38,7 @@ class ChannelHandler:
     - Providing async methods for the UI to interact with configuration data.
     """
     __slots__ = (
-        'label', 'config', '_mutex', '_providers_data', '_discovered_source_services_data',
+        'label', 'config', '_mutex', '_providers_data', '_discovered_sources_data',
         '_logical_channels_data', '_channel_mappings_data', '_channel_list_data',
         '_client_channels', '_main_m3u_playlist',
         '_slots', '_kill_provider_streams', '_pending_streams',
@@ -54,7 +54,7 @@ class ChannelHandler:
 
         # Data loaded from configuration files
         self._providers_data: ProvidersData = ProvidersDataImpl({})
-        self._discovered_source_services_data: DiscoveredSourcesData = DiscoveredSourcesDataImpl({})
+        self._discovered_sources_data: DiscoveredSourcesData = DiscoveredSourcesDataImpl({})
         self._logical_channels_data: LogicalChannelsData = LogicalChannelsDataImpl({})
         self._channel_mappings_data: ChannelMappingsData = ChannelMappingsDataImpl({})
         self._channel_list_data: ChannelListData = ChannelListDataImpl({})
@@ -92,7 +92,7 @@ class ChannelHandler:
         try:
             self.config.info(self.label, "Reloading ChannelHandler configurations")
 
-            self._discovered_source_services_data = await self.config.get_discovered_source_services_config()
+            self._discovered_sources_data = await self.config.get_discovered_sources_config()
             self._logical_channels_data = await self.config.get_logical_channels_config()
             self._channel_mappings_data = await self.config.get_channel_mappings_config()
             self._channel_list_data = await self.config.get_channel_list_config()
@@ -101,13 +101,13 @@ class ChannelHandler:
                 self._providers_data = await self.config.get_providers_config()
                 self._update_providers_slots()
 
-            prev_discovered_source_services = DiscoveredSourcesDataImpl({**self._discovered_source_services_data})
+            prev_discovered_sources = DiscoveredSourcesDataImpl({**self._discovered_sources_data})
             min_updated_at = min([p_data["updated_at"] or DateTimeISO("0001-01-01") for p_data in self._providers_data.values()], default=DateTimeISO("0001-01-01"))
             now = datetime.now()
             if force_discover_sources or datetime.fromisoformat(min_updated_at) < now - timedelta(seconds=DISCOVER_SOURCES_INTERVAL):
                 self.config.info(self.label, "Discovering source services from configured providers...")
                 await self._parse_all_provider_m3us_and_populate_discovered_services()
-                if not await self.config.save_discovered_source_services_config(self._discovered_source_services_data):
+                if not await self.config.save_discovered_sources_config(self._discovered_sources_data):
                     self.config.critical(self.label, "Failed to save discovered source services configuration.")
                 new_providers_data = ProvidersDataImpl({alias: {
                     "m3u_url": details["m3u_url"],
@@ -120,11 +120,11 @@ class ChannelHandler:
                     self.config.critical(self.label, "Failed to save updated provider configuration after discovery.")
 
             # Build in-memory data
-            self._build_client_channels(prev_discovered_source_services)
+            self._build_client_channels(prev_discovered_sources)
             self.generate_main_client_m3u()
             
             self.config.info(self.label,
-                f"ChannelHandler ready. Discovered: {len(self._discovered_source_services_data)}, "
+                f"ChannelHandler ready. Discovered: {len(self._discovered_sources_data)}, "
                 f"Client-Facing: {len(self._client_channels)}"
             )
         finally:
@@ -189,8 +189,8 @@ class ChannelHandler:
                 m3u_sources = self._parse_source_m3u_lines(await response.text())
 
                 for m3u_source in m3u_sources:
-                    service_id = self._generate_source_id(provider_alias, m3u_source["stream_url"])
-                    discovered_sources[service_id] = {
+                    source_id = self._generate_source_id(provider_alias, m3u_source["stream_url"])
+                    discovered_sources[source_id] = {
                         "provider_alias": provider_alias,
                         **m3u_source
                     }
@@ -220,11 +220,11 @@ class ChannelHandler:
             for res in results:
                 if not isinstance(res, BaseException):
                     discovered_sources.update(res)
-            self._discovered_source_services_data = discovered_sources
+            self._discovered_sources_data = discovered_sources
 
-        self.config.info(self.label, f"Finished parsing. Total discovered source services: {len(self._discovered_source_services_data)}")
+        self.config.info(self.label, f"Finished parsing. Total discovered source services: {len(self._discovered_sources_data)}")
 
-    def _build_client_channels(self, prev_discovered_source_services: DiscoveredSourcesData) -> None:
+    def _build_client_channels(self, prev_discovered_sources: DiscoveredSourcesData) -> None:
         """Builds the final list of channels exposed to clients."""
         self.config.info(self.label, "Building client-facing channels...")
         new_client_channels = ClientChannelInfosImpl({})
@@ -234,7 +234,7 @@ class ChannelHandler:
             mapped_sources_for_lc.sort(key=lambda x: x[0]) 
             processed_sources: list[SourceInfo] = []
             for priority, source_id in mapped_sources_for_lc:
-                discovered_service = self._discovered_source_services_data.get(source_id)
+                discovered_service = self._discovered_sources_data.get(source_id)
                 if discovered_service:
                     processed_sources.append({
                         "source_id": source_id,
@@ -243,8 +243,8 @@ class ChannelHandler:
                         "stream_url": discovered_service["stream_url"],
                     })
                 else:
-                    if source_id in prev_discovered_source_services:
-                        prev_discovered_source = prev_discovered_source_services[source_id]
+                    if source_id in prev_discovered_sources:
+                        prev_discovered_source = prev_discovered_sources[source_id]
                         source_name = f"'{prev_discovered_source['display_title'] or prev_discovered_source['tvg_name']}' ({source_id})"
                     else:
                         source_name = f"'Unknown Source' ({source_id})"
@@ -272,12 +272,12 @@ class ChannelHandler:
     async def get_discovered_source(self, source_id: SourceId) -> DiscoveredSource | None:
         """Retrieves a discovered source by its ID."""
         async with self._mutex:
-            return self._discovered_source_services_data.get(source_id)
+            return self._discovered_sources_data.get(source_id)
 
     async def get_num_discovered_sources(self) -> int:
         """Returns the number of discovered sources."""
         async with self._mutex:
-            return len(self._discovered_source_services_data)
+            return len(self._discovered_sources_data)
 
     async def get_num_logical_channels(self) -> int:
         """Returns the number of logical channels."""
@@ -448,11 +448,11 @@ class ChannelHandler:
             self._providers_data = new_providers_data
             return True
 
-    async def get_discovered_source_services_for_ui(self) -> list[DiscoveredSourceWithId]:
+    async def get_discovered_sources_for_ui(self) -> list[DiscoveredSourceWithId]:
         """Gets a list of discovered services."""
         async with self._mutex:
             all_services = [DiscoveredSourceWithId({**source, "source_id": source_id})
-                            for source_id, source in self._discovered_source_services_data.items()]
+                            for source_id, source in self._discovered_sources_data.items()]
         return sorted(all_services, key=lambda x: (x["provider_alias"], (x.get("tvg_name","") or x.get("display_title","")).lower()))
 
     async def get_logical_channels_for_ui(self, key: Callable[[LogicalChannelInfo], str] | None = None) -> list[LogicalChannelInfoWithId]:
@@ -534,7 +534,7 @@ class ChannelHandler:
                     return channel_mapping[source_id]["priority"]
             return None
 
-    async def get_all_mapped_service_ids(self) -> set[SourceId]:
+    async def get_all_mapped_source_ids(self) -> set[SourceId]:
         """Returns a set of all source service IDs that are mapped to logical channels."""
         async with self._mutex:
             return {source_id for mappings in self._channel_mappings_data.values() for source_id in mappings}        

@@ -13,25 +13,27 @@
     </div>
     <div class="card-body">
         <form method="GET" action="{{ url_for('ui_source_services_list') }}" class="row g-2 align-items-center">
-            
+
             {# --- INPUTS --- #}
             <div class="col-sm-3">
                 <select class="form-select" id="provider_alias_filter" name="provider_alias">
                     <option value="">All Providers</option>
                     {% for p_alias in providers %}
-                    <option value="{{ p_alias }}" {% if p_alias == current_provider %}selected{% endif %}>{{ p_alias }}</option>
+                    <option value="{{ p_alias }}" {% if p_alias==current_provider %}selected{% endif %}>{{ p_alias }}
+                    </option>
                     {% endfor %}
                 </select>
             </div>
             <div class="col-sm-4">
-                <input type="text" class="form-control" id="name_filter" name="name_filter" placeholder="Filter by name..." value="{{ current_name_filter }}">
+                <input type="text" class="form-control" id="name_filter" name="name_filter"
+                    placeholder="Filter by name..." value="{{ current_name_filter }}">
             </div>
             <div class="col-sm-2">
                 <select class="form-select" id="per_page_select" name="per_page">
-                    <option value="100" {% if per_page == 100 %}selected{% endif %}>100 per page</option>
-                    <option value="250" {% if per_page == 250 %}selected{% endif %}>250 per page</option>
-                    <option value="500" {% if per_page == 500 %}selected{% endif %}>500 per page</option>
-                    <option value="1000" {% if per_page == 1000 %}selected{% endif %}>1000 per page</option>
+                    <option value="100" {% if per_page==100 %}selected{% endif %}>100 per page</option>
+                    <option value="250" {% if per_page==250 %}selected{% endif %}>250 per page</option>
+                    <option value="500" {% if per_page==500 %}selected{% endif %}>500 per page</option>
+                    <option value="1000" {% if per_page==1000 %}selected{% endif %}>1000 per page</option>
                 </select>
             </div>
 
@@ -39,11 +41,13 @@
             {# This column now holds both buttons and will align them horizontally #}
             <div class="col-sm-3 d-flex gap-2">
                 <button type="submit" class="btn btn-primary w-100"><i class="fas fa-filter"></i> Filter</button>
-                <a href="{{ url_for('ui_source_services_list') }}" class="btn btn-outline-secondary {% if not current_provider and not current_name_filter and per_page == 100 %}d-none{% endif %}" data-bs-toggle="tooltip" title="Clear Filters">
+                <a href="{{ url_for('ui_source_services_list') }}"
+                    class="btn btn-outline-secondary {% if not current_provider and not current_name_filter and per_page == 100 %}d-none{% endif %}"
+                    data-bs-toggle="tooltip" title="Clear Filters">
                     <i class="fas fa-times"></i>
                 </a>
             </div>
-            
+
         </form>
     </div>
 </div>
@@ -68,34 +72,37 @@
         </thead>
         <tbody>
             {% if services %}
-                {% for service in services %}
-                <tr>
-                    <td><small class="text-muted">{{ service.source_id }}</small></td>
-                    <td><span class="badge bg-secondary">{{ service.provider_alias }}</span></td>
-                    <td>{{ service.tvg_name if service.tvg_name else '-' }}</td>
-                    <td>{{ service.display_title if service.display_title else '-' }}</td>
-                    <td>{{ service.group_title if service.group_title else '-' }}</td>
-                    <td>{{ service.tvg_id if service.tvg_id else '-' }}</td>
-                    <td>
-                        {% if service.tvg_log %}
-                        <img src="{{ service.tvg_log }}" alt="logo" style="max-height: 20px; max-width: 40px;" 
-                             onerror="this.style.display='none'" loading="lazy">
-                        {% else %}
-                        -
-                        {% endif %}
-                    </td>
-                    <td>
-                        <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#previewModal"
-                            hx-get="{{ url_for('ui_player_for_service', service_id=service.source_id) }}" hx-target="#preview-modal-body"
-                            hx-trigger="click" title="Preview Stream URL for {{ service.tvg_name }}">
-                            <i class="fas fa-play"></i>
-                        </button>
-                    </td>
-                </tr>
-                {% endfor %}
+            {% for service in services %}
+            <tr>
+                <td><small class="text-muted">{{ service.source_id }}</small></td>
+                <td><span class="badge bg-secondary">{{ service.provider_alias }}</span></td>
+                <td>{{ service.tvg_name if service.tvg_name else '-' }}</td>
+                <td>{{ service.display_title if service.display_title else '-' }}</td>
+                <td>{{ service.group_title if service.group_title else '-' }}</td>
+                <td>{{ service.tvg_id if service.tvg_id else '-' }}</td>
+                <td>
+                    {% if service.tvg_log %}
+                    <img src="{{ service.tvg_log }}" alt="logo" style="max-height: 20px; max-width: 40px;"
+                        onerror="this.style.display='none'" loading="lazy">
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+                <td>
+                    <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal"
+                        data-bs-target="#previewModal"
+                        hx-get="{{ url_for('ui_player_for_service', source_id=service.source_id) }}"
+                        hx-target="#preview-modal-body" hx-trigger="click"
+                        title="Preview Stream URL for {{ service.tvg_name }}">
+                        <i class="fas fa-play"></i>
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
             {% else %}
             <tr>
-                <td colspan="7" class="text-center">No source services found matching your criteria, or no providers configured/parsed.</td>
+                <td colspan="7" class="text-center">No source services found matching your criteria, or no providers
+                    configured/parsed.</td>
             </tr>
             {% endif %}
         </tbody>
@@ -108,11 +115,12 @@
     <ul class="pagination justify-content-center">
         {# Previous Button #}
         <li class="page-item {% if current_page <= 1 %}disabled{% endif %}">
-            <a class="page-link" href="{{ url_for('ui_source_services_list', page=current_page-1, provider_alias=current_provider, name_filter=current_name_filter, per_page=per_page) }}">
+            <a class="page-link"
+                href="{{ url_for('ui_source_services_list', page=current_page-1, provider_alias=current_provider, name_filter=current_name_filter, per_page=per_page) }}">
                 « Previous
             </a>
         </li>
-        
+
         {# Display the current page status #}
         <li class="page-item disabled">
             <span class="page-link">Page {{ current_page }} of {{ total_pages }}</span>
@@ -120,7 +128,8 @@
 
         {# Next Button #}
         <li class="page-item {% if current_page >= total_pages %}disabled{% endif %}">
-            <a class="page-link" href="{{ url_for('ui_source_services_list', page=current_page+1, provider_alias=current_provider, name_filter=current_name_filter, per_page=per_page) }}">
+            <a class="page-link"
+                href="{{ url_for('ui_source_services_list', page=current_page+1, provider_alias=current_provider, name_filter=current_name_filter, per_page=per_page) }}">
                 Next »
             </a>
         </li>

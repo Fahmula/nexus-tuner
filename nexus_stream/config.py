@@ -31,11 +31,11 @@ class Config:
         'config_dir', 'nexus_url', 'nexus_port',
         'logs_dir', '_logger', 'log_level', 'log_backup_count', 'ffmpeg_logs_retention_seconds',
         'providers_name', 'providers_path',
-        'discovered_source_services_name', 'discovered_source_services_path',
+        'discovered_sources_name', 'discovered_sources_path',
         'logical_channels_name', 'logical_channels_path',
         'channel_mappings_name', 'channel_mappings_path',
         'channel_list_name', 'channel_list_path',
-        'service_quality_cache_name', 'service_quality_cache_path',
+        'quality_cache_name', 'quality_cache_path',
         'jobs_name', 'jobs_path',
         'backups_base_path', 'backups_scheduled_path', 'backups_manual_path', 'backup_count',
         'hls_base_segment_dir', 'hls_segment_duration', 'segment_prune_timeout', 'latest_segment_timeout', 'hls_playlist_length',
@@ -78,8 +78,8 @@ class Config:
         self.providers_name: Final[str] = "providers.json"
         self.providers_path: Final[Path] = self.config_dir / self.providers_name
         
-        self.discovered_source_services_name: Final[str] = "discovered_source_services.json"
-        self.discovered_source_services_path: Final[Path] = self.config_dir / self.discovered_source_services_name
+        self.discovered_sources_name: Final[str] = "discovered_sources.json"
+        self.discovered_sources_path: Final[Path] = self.config_dir / self.discovered_sources_name
         
         self.logical_channels_name: Final[str] = "logical_channels.json"
         self.logical_channels_path: Final[Path] = self.config_dir / self.logical_channels_name
@@ -90,8 +90,8 @@ class Config:
         self.channel_list_name: Final[str] = "channel_list.json"
         self.channel_list_path: Final[Path] = self.config_dir / self.channel_list_name
         
-        self.service_quality_cache_name: Final[str] = "service_quality_cache.json"
-        self.service_quality_cache_path: Final[Path] = self.config_dir / self.service_quality_cache_name
+        self.quality_cache_name: Final[str] = "quality_cache.json"
+        self.quality_cache_path: Final[Path] = self.config_dir / self.quality_cache_name
 
         self.jobs_name: Final[str] = "jobs.json"
         self.jobs_path: Final[Path] = self.config_dir / self.jobs_name
@@ -339,13 +339,13 @@ class Config:
         """Saves the providers configuration to providers.json asynchronously."""
         return await self._save_json_file(self.providers_path, data)
 
-    async def get_discovered_source_services_config(self) -> DiscoveredSourcesDataImpl:
-        """Loads the discovered source services from discovered_source_services.json asynchronously."""
-        return await self._load_json_file(self.discovered_source_services_path, lambda: DiscoveredSourcesDataImpl({}))
+    async def get_discovered_sources_config(self) -> DiscoveredSourcesDataImpl:
+        """Loads the discovered source services from discovered_sources.json asynchronously."""
+        return await self._load_json_file(self.discovered_sources_path, lambda: DiscoveredSourcesDataImpl({}))
 
-    async def save_discovered_source_services_config(self, data: DiscoveredSourcesData) -> bool:
-        """Saves the discovered source services to discovered_source_services.json asynchronously."""
-        return await self._save_json_file(self.discovered_source_services_path, data)
+    async def save_discovered_sources_config(self, data: DiscoveredSourcesData) -> bool:
+        """Saves the discovered source services to discovered_sources.json asynchronously."""
+        return await self._save_json_file(self.discovered_sources_path, data)
 
     async def get_logical_channels_config(self) -> LogicalChannelsDataImpl:
         """Loads the logical channels configuration from logical_channels.json asynchronously."""
@@ -367,13 +367,13 @@ class Config:
         """Loads the predefined channel list from channel_list.json asynchronously."""
         return await self._load_json_file(self.channel_list_path, lambda: ChannelListDataImpl({}))
 
-    async def get_service_quality_cache(self) -> ServiceQualityCacheDataImpl:
-        """Loads the service quality cache from service_quality_cache.json asynchronously."""
-        return await self._load_json_file(self.service_quality_cache_path, lambda: ServiceQualityCacheDataImpl({}))
+    async def get_quality_cache(self) -> ServiceQualityCacheDataImpl:
+        """Loads the service quality cache from quality_cache.json asynchronously."""
+        return await self._load_json_file(self.quality_cache_path, lambda: ServiceQualityCacheDataImpl({}))
 
-    async def save_service_quality_cache(self, data: ServiceQualityCacheData) -> bool:
-        """Saves the service quality cache to service_quality_cache.json asynchronously."""
-        return await self._save_json_file(self.service_quality_cache_path, data)
+    async def save_quality_cache(self, data: ServiceQualityCacheData) -> bool:
+        """Saves the service quality cache to quality_cache.json asynchronously."""
+        return await self._save_json_file(self.quality_cache_path, data)
 
     async def get_jobs_config(self) -> JobsDataImpl:
         """Loads the jobs configuration from jobs.json asynchronously."""
@@ -393,11 +393,11 @@ class Config:
             self.info(Label.CONFIG, f"Creating backup at {backup_path}")
             async with self.file_lock:
                 await aioshutil.copy2(self.providers_path, backup_folder / self.providers_name)
-                await aioshutil.copy2(self.discovered_source_services_path, backup_folder / self.discovered_source_services_name)
+                await aioshutil.copy2(self.discovered_sources_path, backup_folder / self.discovered_sources_name)
                 await aioshutil.copy2(self.logical_channels_path, backup_folder / self.logical_channels_name)
                 await aioshutil.copy2(self.channel_mappings_path, backup_folder / self.channel_mappings_name)
                 await aioshutil.copy2(self.channel_list_path, backup_folder / self.channel_list_name)
-                await aioshutil.copy2(self.service_quality_cache_path, backup_folder / self.service_quality_cache_name)
+                await aioshutil.copy2(self.quality_cache_path, backup_folder / self.quality_cache_name)
                 await aioshutil.copy2(self.jobs_path, backup_folder / self.jobs_name)
                 await aioshutil.make_archive(str(backup_folder), 'zip', backup_folder)
                 await aioshutil.rmtree(backup_folder, ignore_errors=True)
