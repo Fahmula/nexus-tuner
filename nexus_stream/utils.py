@@ -156,12 +156,16 @@ class LogicalChannelMetrics(TypedDict):
     enabled_mappings: ReadOnly[int]
     discovered_mappings: ReadOnly[int]
 
-class SourcePriority(TypedDict):
-    source_service_id: ReadOnly[SourceServiceId]
+class SourceMappingInfo(TypedDict):
     priority: ReadOnly[Priority]
-ChannelMappingsDataImpl = NewType("ChannelMappingsDataImpl", dict[LogicalChannelId, list[SourcePriority]])
-ChannelMappingsDataReadOnly = NewType("ChannelMappingsDataReadOnly", Mapping[LogicalChannelId, tuple[SourcePriority, ...]])
-type ChannelMappingsData = ChannelMappingsDataImpl | ChannelMappingsDataReadOnly
+ChannelMappingsImpl = NewType("ChannelMappingsImpl", dict[SourceServiceId, SourceMappingInfo])
+_ChannelMappingsReadOnly = NewType("_ChannelMappingsReadOnly", Mapping[SourceServiceId, SourceMappingInfo])
+type ChannelMappings = ChannelMappingsImpl | _ChannelMappingsReadOnly
+ChannelMappingsDataImpl = NewType("ChannelMappingsDataImpl", dict[LogicalChannelId, ChannelMappingsImpl])
+_ChannelMappingsDataReadOnly = NewType("_ChannelMappingsDataReadOnly", Mapping[LogicalChannelId, _ChannelMappingsReadOnly])
+type ChannelMappingsData = ChannelMappingsDataImpl | _ChannelMappingsDataReadOnly
+class SourceMappingInfoWithId(SourceMappingInfo):
+    source_service_id: ReadOnly[SourceServiceId]
 
 class SourceMetrics(TypedDict):
     priority: ReadOnly[Priority]
@@ -339,7 +343,7 @@ def relative_time(dt: datetime, reference_time: datetime | None = None) -> str:
         return f"in {value}{unit}"
 
 
-def sort_sources(sources: list[SourceInfo] | list[SourcePriority], quality_scores: QualityScores, *, reverse: bool) -> dict[SourceServiceId, Priority]:
+def sort_sources(sources: list[SourceInfo] | list[SourceMappingInfoWithId], quality_scores: QualityScores, *, reverse: bool) -> dict[SourceServiceId, Priority]:
     """Sorts sources based on priority and quality."""
     prev_score: tuple[Priority, float, float, SourceServiceId] | None = None
     curr_priority: Priority = Priority(-1)

@@ -194,11 +194,11 @@ class QualityMonitor:
         valid_mappings: list[tuple[LogicalChannelId, list[SourceServiceId], DateTimeISO]] = []
         if input_lc_id:
             self.config.info(Label.QUALITY, f"Starting stream quality analysis for Logical Channel ID {input_lc_id}.")
-            services = await self.handler.copy_mappings_for_logical_channel(input_lc_id)
+            services = await self.handler.get_mappings_for_logical_channel(input_lc_id)
             if not services:
                 self.config.error(Label.QUALITY, f"No mapped services found for Logical Channel ID {input_lc_id}.")
                 return
-            valid_mappings.append((input_lc_id, [service["source_service_id"] for service in services], DateTimeISO("0001-01-01")))
+            valid_mappings.append((input_lc_id, [source_id for source_id in services], DateTimeISO("0001-01-01")))
         else:
             self.config.info(Label.QUALITY, "Starting stream quality analysis cycle.")
             all_mappings = await self.handler.copy_channel_mappings_data()
@@ -212,12 +212,12 @@ class QualityMonitor:
                 if not services:
                     self.config.debug(Label.QUALITY, f"No valid services found for Logical Channel ID {logical_channel_id}.")
                     continue
-                min_updated_at = min([quality_cache.get(service["source_service_id"], {}).get("updated_at", "0001-01-01") for service in services])
-                at_max_history = all(len(quality_cache.get(service["source_service_id"], {}).get("statuses", [])) >= MAX_HISTORY_PER_SERVICE for service in services)
+                min_updated_at = min([quality_cache.get(source_id, {}).get("updated_at", "0001-01-01") for source_id in services])
+                at_max_history = all(len(quality_cache.get(source_id, {}).get("statuses", [])) >= MAX_HISTORY_PER_SERVICE for source_id in services)
                 delta = timedelta(days=MIN_DAYS_AT_MAX_HISTORY) if at_max_history else timedelta(days=MIN_DAYS_AT_NON_MAX_HISTORY)
                 if datetime.fromisoformat(min_updated_at) > now - delta:
                     continue
-                valid_mappings.append((logical_channel_id, [service["source_service_id"] for service in services], min_updated_at))
+                valid_mappings.append((logical_channel_id, [source_id for source_id in services], min_updated_at))
             if not valid_mappings:
                 self.config.info(Label.QUALITY, "No services are due for quality probing.")
                 return

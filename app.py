@@ -36,8 +36,8 @@ from nexus_stream.scheduler import Scheduler
 from nexus_stream.utils import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL,
                                 DEFAULT_PRIORITY, M3UURL, NEXUS_STREAM_PORT, NEXUS_STREAM_VERSION, ChannelNum, DiscoveredSource,
                                 Label, LogicalChannelId, LogicalChannelInfo, LogicalChannelMetrics, LogicalChannelName, MaxStreams, 
-                                PercentDisplay, Priority, ProviderAlias, ProviderStatus, QualityScores, SourceInfo, SourceMetrics,
-                                SourcePriority, SourceServiceId, TVGGroupTitle, TVGId, TVGLogo, VideoType, is_valid_url, run_bg, sort_sources)
+                                PercentDisplay, Priority, ProviderAlias, ProviderStatus, QualityScores, SourceInfo, SourceMappingInfoWithId, SourceMetrics,
+                                SourceServiceId, TVGGroupTitle, TVGId, TVGLogo, VideoType, is_valid_url, run_bg, sort_sources)
 
 # --- Constants ---
 PLAYLIST_POLL_INTERVAL: Final[float] = 0.2         # Seconds to wait between checking for a new playlist
@@ -88,7 +88,7 @@ async def shutdown() -> None:
         await config.clean_up_hls_segments()
 
 
-async def calculate_channel_metrics(mapped_services: list[SourcePriority], all_quality_scores: QualityScores) -> LogicalChannelMetrics:
+async def calculate_channel_metrics(mapped_services: list[SourceMappingInfoWithId], all_quality_scores: QualityScores) -> LogicalChannelMetrics:
     """Calculates uptime metrics for a channel. (Sync, CPU-bound logic)."""
     uptime_scores: list[float] = []
     if mapped_services:
@@ -502,7 +502,7 @@ async def ui_logical_channels_list() -> str:
 
     all_channel_metrics: dict[LogicalChannelId, LogicalChannelMetrics] = {}
     for channel in channels:
-        mapped_services = await handler.copy_mappings_for_logical_channel(channel['logical_channel_id'])
+        mapped_services = await handler.get_channel_mappings_for_ui(channel['logical_channel_id'])
         sort_sources(mapped_services, all_quality_scores, reverse=False)
         all_channel_metrics[channel["logical_channel_id"]] = await calculate_channel_metrics(mapped_services, all_quality_scores)
 
@@ -531,10 +531,10 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
             await flash(f"Channel Number must be a valid integer, received: {channel_num}", "error")
             return redirect(request.url)
 
-        mappings_to_save: list[SourcePriority] = []
+        mappings_to_save: list[SourceMappingInfoWithId] = []
         for service_id_str in form_data.getlist('mapping_service_id'):
             try:
-                mappings_to_save.append(SourcePriority({
+                mappings_to_save.append(SourceMappingInfoWithId({
                     'source_service_id': SourceServiceId(service_id_str),
                     'priority': Priority(int(form_data.get(f"priority_{service_id_str}", DEFAULT_PRIORITY)))
                 }))
@@ -607,7 +607,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     mapped_services: list[DiscoveredSource] = []
     all_mapped_service_ids: set[SourceServiceId] = set()
     source_metrics: dict[SourceServiceId, SourceMetrics] = {}
-    current_mappings = await handler.copy_mappings_for_logical_channel(logical_channel_id) if logical_channel_id else []
+    current_mappings = await handler.get_channel_mappings_for_ui(logical_channel_id) if logical_channel_id else []
     sort_sources(current_mappings, all_quality_scores, reverse=False)
     services_mapped_elsewhere = await handler.get_all_mapped_service_ids()
     for mapping in current_mappings:
@@ -676,7 +676,7 @@ async def ui_analyze_mappings(logical_channel_id: LogicalChannelId) -> Response:
     if not channel:
         await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
         return Response("", 404)
-    services = await handler.copy_mappings_for_logical_channel(logical_channel_id)
+    services = await handler.get_channel_mappings_for_ui(logical_channel_id)
     if not services:
         await flash(f"No mappings found for logical channel '{logical_channel_id}'.", "info")
         return Response("", 204)
@@ -698,9 +698,9 @@ async def ui_remove_dead_mappings(logical_channel_id: LogicalChannelId) -> Respo
     if not channel:
         await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
         return Response("", 404)
-    discovered_mappings: list[SourcePriority] = []
+    discovered_mappings: list[SourceMappingInfoWithId] = []
     removed_count = 0
-    for service in await handler.copy_mappings_for_logical_channel(logical_channel_id):
+    for service in await handler.get_channel_mappings_for_ui(logical_channel_id):
         if await handler.get_discovered_source(service['source_service_id']):
             discovered_mappings.append(service)
         else:
@@ -866,7 +866,7 @@ async def hdhomerun_lineup() -> Response:
         if not channel_number:
             continue
         is_hd = 1
-        for mapping in await handler.copy_mappings_for_logical_channel(channel['logical_channel_id']):
+        for mapping in await handler.get_channel_mappings_for_ui(channel['logical_channel_id']):
             if quality_scores.get(mapping['source_service_id'], {}).get('height', 0) >= 720:
                 break
         else:
