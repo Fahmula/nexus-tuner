@@ -35,9 +35,9 @@ from nexus_stream.stream import StreamManager
 from nexus_stream.scheduler import Scheduler
 from nexus_stream.utils import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL,
                                 DEFAULT_PRIORITY, M3UURL, NEXUS_STREAM_PORT, NEXUS_STREAM_VERSION, ChannelNum, DiscoveredSource,
-                                Label, LogicalChannelId, LogicalChannelInfo, LogicalChannelMetrics, LogicalChannelName, MaxStreams, 
+                                Label, LogicalChannelId, LogicalChannelInfo, LogicalChannelMetrics, LogicalChannelTitle, MaxStreams, 
                                 PercentDisplay, Priority, ProviderAlias, ProviderStatus, QualityScores, SourceInfo, SourceMappingInfoWithId, SourceMetrics,
-                                SourceServiceId, TVGGroupTitle, TVGId, TVGLogo, VideoType, is_valid_url, run_bg, sort_sources)
+                                SourceId, TVGGroupTitle, TVGId, TVGLogo, VideoType, is_valid_url, run_bg, sort_sources)
 
 # --- Constants ---
 PLAYLIST_POLL_INTERVAL: Final[float] = 0.2         # Seconds to wait between checking for a new playlist
@@ -93,14 +93,14 @@ async def calculate_channel_metrics(mapped_services: list[SourceMappingInfoWithI
     uptime_scores: list[float] = []
     if mapped_services:
         for service_object in mapped_services[:HIGHEST_PRIORITY_SOURCES_NUM]:
-            service_id = service_object.get('source_service_id')
+            service_id = service_object.get('source_id')
             if not service_id: continue
             raw_uptime = all_quality_scores.get(service_id, {}).get('uptime')
             if raw_uptime is not None: uptime_scores.append(raw_uptime)
 
     discovered_mappings = 0
     for service in mapped_services:
-        if await handler.get_discovered_source(service["source_service_id"]):
+        if await handler.get_discovered_source(service["source_id"]):
             discovered_mappings += 1
     return LogicalChannelMetrics({
         "health_score": PercentDisplay(int((1 - math.prod([(1 - score) for score in uptime_scores])) * 100)) if uptime_scores else None,
@@ -154,17 +154,17 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
             msg = f"Logical channel {logical_channel_id} not found for MPEGTS."
             config.error(VideoType.MPEGTS, msg)
             abort(404, msg)
-        logical_channel_name = logical_channel['logical_channel_name']
+        logical_channel_title = logical_channel['logical_channel_title']
 
         lc_id_processes = await stream_manager.get_ffmpeg_processes_from_logical_id(logical_channel_id, video_type=VideoType.MPEGTS, long_term_only=True)
         if len(lc_id_processes):
             video_key, p_info = lc_id_processes.popitem()
             if p_info['is_mpegts_active']:
-                config.info(VideoType.MPEGTS, f"Client connecting to shared MPEGTS stream for '{logical_channel_name}' with key '{video_key}'.")
+                config.info(VideoType.MPEGTS, f"Client connecting to shared MPEGTS stream for '{logical_channel_title}' with key '{video_key}'.")
             else:
-                config.info(VideoType.MPEGTS, f"Client reconnected to MPEGTS stream for '{logical_channel_name}' with key '{video_key}'.")
+                config.info(VideoType.MPEGTS, f"Client reconnected to MPEGTS stream for '{logical_channel_title}' with key '{video_key}'.")
         else:
-            create_stream_task = await CreateStream.create(config, handler, stream_manager, quality_monitor, logical_channel_id, logical_channel_name, VideoType.MPEGTS)
+            create_stream_task = await CreateStream.create(config, handler, stream_manager, quality_monitor, logical_channel_id, logical_channel_title, VideoType.MPEGTS)
             res = await create_stream_task.result()
             if isinstance(res, tuple):
                 code, msg = res
@@ -173,7 +173,7 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
             video_key = res
 
         if not stream_response:
-            config.info(VideoType.MPEGTS, f"Recreated MPEGTS stream for channel '{logical_channel_name}' with key '{video_key}'.")
+            config.info(VideoType.MPEGTS, f"Recreated MPEGTS stream for channel '{logical_channel_title}' with key '{video_key}'.")
             return Response(status=204)
 
         async def stream_generator() -> AsyncGenerator[bytes, None]:
@@ -182,7 +182,7 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
             try:
                 mpegts_stream, reader_id = await MPEGTSStream.register(config, stream_manager, video_key, recreate_stream=recreate_stream)
             except Exception as e:
-                msg = f"Failed to register MPEGTS stream for '{logical_channel_name}' with key '{video_key}': {e}"
+                msg = f"Failed to register MPEGTS stream for '{logical_channel_title}' with key '{video_key}': {e}"
                 config.error(VideoType.MPEGTS, msg)
                 abort(500, msg)
 
@@ -190,10 +190,10 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
                 while True:
                     yield await mpegts_stream.read(reader_id)
             except asyncio.CancelledError as e:
-                config.info(VideoType.MPEGTS, f"Client disconnected from MPEGTS stream for '{logical_channel_name}' with key '{video_key}'.")
+                config.info(VideoType.MPEGTS, f"Client disconnected from MPEGTS stream for '{logical_channel_title}' with key '{video_key}'.")
                 raise
             except BaseException as e:
-                config.error(VideoType.MPEGTS, f"Unexpected error in MPEGTS stream for '{logical_channel_name}' with key '{video_key}': {e}")
+                config.error(VideoType.MPEGTS, f"Unexpected error in MPEGTS stream for '{logical_channel_title}' with key '{video_key}': {e}")
                 raise
             finally:
                 mpegts_stream.unregister(reader_id)
@@ -212,8 +212,8 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
 @app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/preview.m3u8')
 async def serve_hls_preview(logical_channel_id: LogicalChannelId) -> Response:
     """Serves a preview HLS playlist for a channel asynchronously."""
-    source_service_id = SourceServiceId(logical_channel_id.replace("preview_", ""))
-    source_service = await handler.get_discovered_source(source_service_id)
+    source_id = SourceId(logical_channel_id.replace("preview_", ""))
+    source_service = await handler.get_discovered_source(source_id)
     
     if not source_service:
         msg = f"Preview requested for non-existent source service ID {source_service}."
@@ -221,17 +221,17 @@ async def serve_hls_preview(logical_channel_id: LogicalChannelId) -> Response:
         abort(404, msg)
 
     sources: list[SourceInfo] = [{
-        'source_service_id': source_service_id,
-        'priority': await handler.get_source_priority(source_service_id) or Priority(DEFAULT_PRIORITY),
+        'source_id': source_id,
+        'priority': await handler.get_source_priority(source_id) or Priority(DEFAULT_PRIORITY),
         'provider_alias': source_service['provider_alias'],
         'stream_url': source_service['stream_url']
     }]
 
-    return await serve_hls_playlist(logical_channel_id, logical_channel_name=LogicalChannelName('Preview'), sources=sources)
+    return await serve_hls_playlist(logical_channel_id, logical_channel_title=LogicalChannelTitle('Preview'), sources=sources)
 
 
 @app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/playlist.m3u8')
-async def serve_hls_playlist(logical_channel_id: LogicalChannelId, logical_channel_name: LogicalChannelName | None = None, sources: list[SourceInfo] | None = None) -> Response:
+async def serve_hls_playlist(logical_channel_id: LogicalChannelId, logical_channel_title: LogicalChannelTitle | None = None, sources: list[SourceInfo] | None = None) -> Response:
     """Serves the HLS playlist for a channel asynchronously."""
     run_bg(stream_manager.record_video_access(logical_channel_id, VideoType.HLS))
     added_pending_stream = False
@@ -246,19 +246,19 @@ async def serve_hls_playlist(logical_channel_id: LogicalChannelId, logical_chann
             await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
         added_pending_stream = True
 
-        if logical_channel_name is None:
+        if logical_channel_title is None:
             logical_channel = await handler.get_logical_channel_by_id(logical_channel_id)
             if not logical_channel:
                 msg = f"Logical channel {logical_channel_id} not found for HLS."
                 config.error(VideoType.HLS, msg)
                 abort(404, msg)
-            logical_channel_name = logical_channel['logical_channel_name']
+            logical_channel_title = logical_channel['logical_channel_title']
 
         lc_id_processes = await stream_manager.get_ffmpeg_processes_from_logical_id(logical_channel_id, video_type=VideoType.HLS, long_term_only=True)
         if len(lc_id_processes):
             video_key = lc_id_processes.popitem()[0]
         else:
-            create_stream_task = await CreateStream.create(config, handler, stream_manager, quality_monitor, logical_channel_id, logical_channel_name, VideoType.HLS, sources)
+            create_stream_task = await CreateStream.create(config, handler, stream_manager, quality_monitor, logical_channel_id, logical_channel_title, VideoType.HLS, sources)
             res = await create_stream_task.result()
             if isinstance(res, tuple):
                 code, msg = res
@@ -268,7 +268,7 @@ async def serve_hls_playlist(logical_channel_id: LogicalChannelId, logical_chann
 
         playlist_path = await stream_manager.get_hls_playlist_path(video_key)
         if not playlist_path:
-            msg = f"Internal error: HLS playlist path not found for channel '{logical_channel_name}' with key '{video_key}'."
+            msg = f"Internal error: HLS playlist path not found for channel '{logical_channel_title}' with key '{video_key}'."
             config.error(VideoType.HLS, msg)
             abort(500, msg)
 
@@ -279,9 +279,9 @@ async def serve_hls_playlist(logical_channel_id: LogicalChannelId, logical_chann
                 if video_key not in stream_manager.ffmpeg_processes or stream_manager.ffmpeg_processes[video_key]['process'].returncode is not None:
                     to_cleanup = True
             if to_cleanup:
-                msg = f"HLS FFmpeg process for '{logical_channel_name}' with key '{video_key}' terminated unexpectedly."
+                msg = f"HLS FFmpeg process for '{logical_channel_title}' with key '{video_key}' terminated unexpectedly."
                 config.error(VideoType.HLS, msg)
-                await stream_manager.stop_ffmpeg_process(video_key, logical_channel_name)
+                await stream_manager.stop_ffmpeg_process(video_key, logical_channel_title)
                 abort(503, msg)
 
             if await aiofiles.os.path.exists(playlist_path) and (await aiofiles.os.stat(playlist_path)).st_size > 0:
@@ -292,12 +292,12 @@ async def serve_hls_playlist(logical_channel_id: LogicalChannelId, logical_chann
                     response.headers["Expires"] = "0"
                     return response
                 except Exception as e:
-                    msg = f"Error serving HLS playlist {playlist_path} for '{logical_channel_name}' with key '{video_key}': {e}"
+                    msg = f"Error serving HLS playlist {playlist_path} for '{logical_channel_title}' with key '{video_key}': {e}"
                     config.error(VideoType.HLS, msg)
                     abort(500, msg)
             await asyncio.sleep(PLAYLIST_POLL_INTERVAL)
 
-        msg = f"HLS playlist for '{logical_channel_name}' with key '{video_key}' was not available after {config.ffmpeg_start_timeout} seconds."
+        msg = f"HLS playlist for '{logical_channel_title}' with key '{video_key}' was not available after {config.ffmpeg_start_timeout} seconds."
         config.error(VideoType.HLS, msg)
         abort(408, msg)
     finally:
@@ -497,7 +497,7 @@ async def ui_source_services_list() -> str:
 @app.route("/ui/logical-channels")
 async def ui_logical_channels_list() -> str:
     """Renders the list of all configured logical channels."""
-    channels = await handler.get_logical_channels_for_ui(key=lambda x: x.get("logical_channel_name","").lower())
+    channels = await handler.get_logical_channels_for_ui(key=lambda x: x.get("logical_channel_title","").lower())
     all_quality_scores = await quality_monitor.get_quality_scores()
 
     all_channel_metrics: dict[LogicalChannelId, LogicalChannelMetrics] = {}
@@ -516,13 +516,13 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     if request.method == "POST":
         form_data = cast(ImmutableMultiDict[str, str], await request.form)  # type: ignore
 
-        logical_channel_name: LogicalChannelName = LogicalChannelName(form_data.get("logical_channel_name", "").strip())
+        logical_channel_title: LogicalChannelTitle = LogicalChannelTitle(form_data.get("logical_channel_title", "").strip())
         channel_num: ChannelNum = ChannelNum(form_data.get("channel_num", "").strip())
         group_title: TVGGroupTitle = TVGGroupTitle(form_data.get("group_title", "Uncategorized").strip())
         tvg_id: TVGId = TVGId(form_data.get("tvg_id", "").strip())
         tvg_log: TVGLogo = TVGLogo(form_data.get("tvg_logo", "").strip())
 
-        if not logical_channel_name or not channel_num:
+        if not logical_channel_title or not channel_num:
             await flash("Display Name and Channel Number are required.", "error") 
             return redirect(request.url)
         try:
@@ -535,18 +535,18 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
         for service_id_str in form_data.getlist('mapping_service_id'):
             try:
                 mappings_to_save.append(SourceMappingInfoWithId({
-                    'source_service_id': SourceServiceId(service_id_str),
+                    'source_id': SourceId(service_id_str),
                     'priority': Priority(int(form_data.get(f"priority_{service_id_str}", DEFAULT_PRIORITY)))
                 }))
             except (ValueError, TypeError):
                 await flash(f"Skipping a mapping with invalid priority for service '{service_id_str}'.", "warning")
 
-        channel_log = f"'{logical_channel_name}' ({channel_num})"
+        channel_log = f"'{logical_channel_title}' ({channel_num})"
         submitted_id = form_data.get("logical_channel_id")
         if submitted_id:
             logical_channel_id = LogicalChannelId(submitted_id)
             lc_data: LogicalChannelInfo = {
-                "logical_channel_name": logical_channel_name,
+                "logical_channel_title": logical_channel_title,
                 "channel_num": channel_num,
                 "group_title": group_title,
                 "tvg_id": tvg_id,
@@ -563,7 +563,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
             return redirect(url_for('ui_logical_channel_form', logical_channel_id=submitted_id))
         else:
             lc_data: LogicalChannelInfo = {
-                "logical_channel_name": logical_channel_name,
+                "logical_channel_title": logical_channel_title,
                 "channel_num": channel_num,
                 "group_title": group_title,
                 "tvg_id": tvg_id,
@@ -595,9 +595,9 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     
     search_query = request.args.get('search_query')
     if channel and search_query is None and not is_htmx_service_list_request:
-        predefined_channel = await handler.find_matching_predefined_channel(channel['logical_channel_name'], channel['channel_num'])
+        predefined_channel = await handler.find_matching_predefined_channel(channel['logical_channel_title'], channel['channel_num'])
         if predefined_channel:
-            search_query = MULTI_SEARCH_QUERY_DELIMITER.join(predefined_channel['aliases']) if predefined_channel.get('aliases') else predefined_channel.get('title', channel.get('logical_channel_name'))
+            search_query = MULTI_SEARCH_QUERY_DELIMITER.join(predefined_channel['aliases']) if predefined_channel.get('aliases') else predefined_channel.get('title', channel.get('logical_channel_title'))
 
     filter_query = search_query.strip().lower() if search_query else None
     all_services = await handler.get_discovered_source_services_for_ui()
@@ -605,13 +605,13 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
 
     all_services_map = {s['source_id']: s for s in all_services}
     mapped_services: list[DiscoveredSource] = []
-    all_mapped_service_ids: set[SourceServiceId] = set()
-    source_metrics: dict[SourceServiceId, SourceMetrics] = {}
+    all_mapped_service_ids: set[SourceId] = set()
+    source_metrics: dict[SourceId, SourceMetrics] = {}
     current_mappings = await handler.get_channel_mappings_for_ui(logical_channel_id) if logical_channel_id else []
     sort_sources(current_mappings, all_quality_scores, reverse=False)
     services_mapped_elsewhere = await handler.get_all_mapped_service_ids()
     for mapping in current_mappings:
-        service_id = mapping['source_service_id']
+        service_id = mapping['source_id']
         services_mapped_elsewhere.discard(service_id)
         all_mapped_service_ids.add(service_id)
         if service_id in all_services_map:
@@ -658,7 +658,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
 async def ui_logical_channel_delete(logical_channel_id: LogicalChannelId) -> Response | WerkzeugResponse:
     channel = await handler.get_logical_channel_by_id(logical_channel_id)
     if channel:
-        channel_log = f"'{channel['logical_channel_name']}' ({channel['channel_num']})"
+        channel_log = f"'{channel['logical_channel_title']}' ({channel['channel_num']})"
         if await handler.delete_logical_channel(logical_channel_id):
             await flash(f"Channel {channel_log} deleted.", "success")
             await handler.reload_handler_config()
@@ -681,7 +681,7 @@ async def ui_analyze_mappings(logical_channel_id: LogicalChannelId) -> Response:
         await flash(f"No mappings found for logical channel '{logical_channel_id}'.", "info")
         return Response("", 204)
 
-    channel_log = f"'{channel['logical_channel_name']}' ({channel['channel_num']})"
+    channel_log = f"'{channel['logical_channel_title']}' ({channel['channel_num']})"
     await quality_monitor.analyze_mapped_services(logical_channel_id)
     await flash(f"Quality analysis completed for {len(services)} mapping(s) in {channel_log}", "success")
 
@@ -701,18 +701,18 @@ async def ui_remove_dead_mappings(logical_channel_id: LogicalChannelId) -> Respo
     discovered_mappings: list[SourceMappingInfoWithId] = []
     removed_count = 0
     for service in await handler.get_channel_mappings_for_ui(logical_channel_id):
-        if await handler.get_discovered_source(service['source_service_id']):
+        if await handler.get_discovered_source(service['source_id']):
             discovered_mappings.append(service)
         else:
-            if not await quality_monitor.remove_source_service(service['source_service_id']):
-                await flash(f"Failed to remove dead service {service['source_service_id']} from quality monitor.", "error")
+            if not await quality_monitor.remove_source_service(service['source_id']):
+                await flash(f"Failed to remove dead service {service['source_id']} from quality monitor.", "error")
                 return Response("", 500)
             removed_count += 1
     if not await handler.update_mappings_for_logical_channel(logical_channel_id, discovered_mappings):
         await flash(f"Failed to update mappings for logical channel '{logical_channel_id}' after removing dead services.", "error")
         return Response("", 500)
 
-    channel_log = f"'{channel['logical_channel_name']}' ({channel['channel_num']})"
+    channel_log = f"'{channel['logical_channel_title']}' ({channel['channel_num']})"
     if removed_count > 0:
         await flash(f"Removed {removed_count} dead mapping(s) from {channel_log}.", "success")
     else:
@@ -735,7 +735,7 @@ async def ui_channel_populate_from_suggestion() -> str:
     """
     # 1. Populate the channel details form with pre-filled data
     prefilled_data = {
-        'logical_channel_name': request.args.get('title', ''),
+        'logical_channel_title': request.args.get('title', ''),
         'channel_num': request.args.get('num', ''),
         'group_title': request.args.get('group', 'Uncategorized'),
         'tvg_logo': ''
@@ -743,12 +743,12 @@ async def ui_channel_populate_from_suggestion() -> str:
     form_html = await render_template("_logical_channel_form_fields.html", channel=prefilled_data)
 
     # 2. Pre-filter services based on the suggested name
-    filter_query = prefilled_data['logical_channel_name'].strip().lower()
+    filter_query = prefilled_data['logical_channel_title'].strip().lower()
     all_services = await handler.get_discovered_source_services_for_ui()
     services_mapped_elsewhere = await handler.get_all_mapped_service_ids()
     unmapped_suggestions: list[DiscoveredSource] = []
 
-    search_query = prefilled_data['logical_channel_name']
+    search_query = prefilled_data['logical_channel_title']
     for channel_list in await handler.get_channel_lists():
         for pre_channel in channel_list:
             if search_query == pre_channel.get('title'):  # Only need this check since we are populating this
@@ -790,7 +790,7 @@ async def ui_channel_populate_from_suggestion() -> str:
 
 @app.route("/ui/channels/suggest", methods=["GET"])
 async def ui_channel_suggest() -> str:
-    query = request.args.get('logical_channel_name', '')
+    query = request.args.get('logical_channel_title', '')
     if len(query) < 2: return ""
     suggestions = await handler.search_predefined_channels(query)
     return await render_template("_channel_suggestions.html", suggestions=suggestions)
@@ -811,7 +811,7 @@ async def ui_logs_modal() -> str:
 
 
 @app.route("/ui/service-preview/<path:service_id>")
-async def ui_player_for_service(service_id: SourceServiceId) -> str:
+async def ui_player_for_service(service_id: SourceId) -> str:
     source_service = await handler.get_discovered_source(service_id)
     if not source_service:
         await flash(f"Error: source service ID not found.", "error")
@@ -867,13 +867,13 @@ async def hdhomerun_lineup() -> Response:
             continue
         is_hd = 1
         for mapping in await handler.get_channel_mappings_for_ui(channel['logical_channel_id']):
-            if quality_scores.get(mapping['source_service_id'], {}).get('height', 0) >= 720:
+            if quality_scores.get(mapping['source_id'], {}).get('height', 0) >= 720:
                 break
         else:
             is_hd = 0
         lineup.append({
             "GuideNumber": channel_number,
-            "GuideName": channel.get('logical_channel_name', channel_number),
+            "GuideName": channel.get('logical_channel_title', channel_number),
             "HD": is_hd,
             "URL": f"{config.nexus_url}/{VideoType.MPEGTS}/{channel['logical_channel_id']}"
         })

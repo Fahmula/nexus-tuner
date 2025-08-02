@@ -7,7 +7,7 @@ from nexus_stream.config import Config
 from nexus_stream.handler import ChannelHandler
 from nexus_stream.utils import (NEXUS_STREAM_USER_AGENT, Bitrate, BitrateScore, DateTimeISO, Framerate, FramerateScore, Height,
                                 Label, LogicalChannelId, Percent, ProbeInfo, ProbeSuccess, ProviderAlias, QualityInfoImpl, QualityScores,
-                                QualityScoresImpl, ResolutionScore, ServiceQualityCacheData, ServiceQualityCacheDataImpl, SourceServiceId,
+                                QualityScoresImpl, ResolutionScore, ServiceQualityCacheData, ServiceQualityCacheDataImpl, SourceId,
                                 StreamURL, TotalScore, UptimeScore, Width, run_bg)
 
 # --- Constants ---
@@ -48,7 +48,7 @@ class QualityMonitor:
         async with self._mutex:
             return QualityScoresImpl({**self._quality_scores})
 
-    async def remove_source_service(self, service_id: SourceServiceId) -> bool:
+    async def remove_source_service(self, service_id: SourceId) -> bool:
         """Removes a source service from the quality scores and cache."""
         async with self._mutex:
             quality_cache = await self.config.get_service_quality_cache()
@@ -63,7 +63,7 @@ class QualityMonitor:
                 self._quality_scores = new_quality_scores
             return True
 
-    async def _get_stream_info(self, service_id: SourceServiceId, stream_url: StreamURL) -> ProbeSuccess | None:
+    async def _get_stream_info(self, service_id: SourceId, stream_url: StreamURL) -> ProbeSuccess | None:
         """
         Extracts stream information using ffprobe, ensuring the subprocess is
         terminated on timeout or cancellation.
@@ -130,7 +130,7 @@ class QualityMonitor:
 
         return ProbeSuccess({"status": "online", "width": width, "height": height, "bitrate": bitrate, "framerate": framerate})
 
-    async def _run_single_probe(self, service_id: SourceServiceId, stream_url: StreamURL, provider_alias: ProviderAlias) -> tuple[SourceServiceId, ProbeInfo]:
+    async def _run_single_probe(self, service_id: SourceId, stream_url: StreamURL, provider_alias: ProviderAlias) -> tuple[SourceId, ProbeInfo]:
         """
         Probes a single stream, persistently trying to acquire a slot, and ensures
         all resources are cleaned up upon completion, failure, or cancellation.
@@ -191,7 +191,7 @@ class QualityMonitor:
     
     async def analyze_mapped_services(self, input_lc_id: LogicalChannelId | None = None) -> None:
         """Finds and probes all mapped services concurrently."""
-        valid_mappings: list[tuple[LogicalChannelId, list[SourceServiceId], DateTimeISO]] = []
+        valid_mappings: list[tuple[LogicalChannelId, list[SourceId], DateTimeISO]] = []
         if input_lc_id:
             self.config.info(Label.QUALITY, f"Starting stream quality analysis for Logical Channel ID {input_lc_id}.")
             services = await self.handler.get_mappings_for_logical_channel(input_lc_id)
@@ -224,7 +224,7 @@ class QualityMonitor:
             valid_mappings.sort(key=lambda x: x[2])
 
         for logical_channel_id, service_ids, _ in valid_mappings:
-            tasks: list[Coroutine[Any, Any, tuple[SourceServiceId, ProbeInfo]]] = []
+            tasks: list[Coroutine[Any, Any, tuple[SourceId, ProbeInfo]]] = []
             for service_id in service_ids:
                 service_details = await self.handler.get_discovered_source(service_id)
                 if not service_details:
@@ -249,7 +249,7 @@ class QualityMonitor:
                 continue
 
             raw_results = await asyncio.gather(*tasks, return_exceptions=True)
-            stream_infos: list[tuple[SourceServiceId, ProbeInfo]] = []
+            stream_infos: list[tuple[SourceId, ProbeInfo]] = []
             for raw_result in raw_results:
                 if isinstance(raw_result, BaseException):
                     if not isinstance(raw_result, asyncio.CancelledError) and not isinstance(raw_result, Exception):

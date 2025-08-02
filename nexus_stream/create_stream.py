@@ -15,7 +15,7 @@ from nexus_stream.handler import ChannelHandler
 from nexus_stream.stream import StreamManager
 from nexus_stream.utils import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL, FFMPEG_TERMINATE_TIMEOUT,
                                 MPEGTS_PACKET_SIZE, NEW_DEADLINE_NON_BEST, NEXUS_STREAM_USER_AGENT, FFmpegProcessInfosMutable, Label,
-                                LogicalChannelId, LogicalChannelName, Priority, ProviderAlias, QualityScores, QualityScoresImpl, SourceInfo, SourceServiceId, TVGDisplayName, TVGName, VideoKey, VideoName,
+                                LogicalChannelId, LogicalChannelTitle, Priority, ProviderAlias, QualityScores, QualityScoresImpl, SourceInfo, SourceId, TVGDisplayTitle, TVGName, VideoKey, VideoName,
                                 VideoType, create_stream_key, create_video_key, create_video_name, get_segment_format, run_bg, sort_sources)
 
 
@@ -73,7 +73,7 @@ class CreateStream:
     """
     __slots__ = (
         'config', 'handler', 'stream_manager', 'quality_monitor',
-        'logical_channel_id', 'logical_channel_name', 'video_type',
+        'logical_channel_id', 'logical_channel_title', 'video_type',
         '_res', '_mutex', '_result_event', '_sources', '_source_names',
         '_quality_scores', '_remaining_priorities', '_input_sources',
         '_results', '_selected', '_slots_acquired', '_active_video_keys',
@@ -81,13 +81,13 @@ class CreateStream:
         '_worker_tasks', '_supervisor_task',
     )
     
-    def __init__(self, config: Config, handler: ChannelHandler, stream_manager: StreamManager, quality_monitor: QualityMonitor, logical_channel_id: LogicalChannelId, logical_channel_name: LogicalChannelName, video_type: VideoType, input_sources: list[SourceInfo] | None = None) -> None:
+    def __init__(self, config: Config, handler: ChannelHandler, stream_manager: StreamManager, quality_monitor: QualityMonitor, logical_channel_id: LogicalChannelId, logical_channel_title: LogicalChannelTitle, video_type: VideoType, input_sources: list[SourceInfo] | None = None) -> None:
         self.config: Config = config
         self.handler: ChannelHandler = handler
         self.stream_manager: StreamManager = stream_manager
         self.quality_monitor: QualityMonitor = quality_monitor
         self.logical_channel_id: LogicalChannelId = logical_channel_id
-        self.logical_channel_name: LogicalChannelName = logical_channel_name
+        self.logical_channel_title: LogicalChannelTitle = logical_channel_title
         self.video_type: VideoType = video_type
         
         self._res: VideoKey | tuple[int, str] = (500, f"[{video_type}] Stream not created yet")
@@ -95,9 +95,9 @@ class CreateStream:
         self._result_event: asyncio.Event = asyncio.Event()
 
         self._sources: list[SourceInfo] = []
-        self._source_names: dict[SourceServiceId, TVGDisplayName | TVGName] = {}
+        self._source_names: dict[SourceId, TVGDisplayTitle | TVGName] = {}
         self._quality_scores: QualityScores = QualityScoresImpl({})
-        self._remaining_priorities: dict[SourceServiceId, Priority] = {}
+        self._remaining_priorities: dict[SourceId, Priority] = {}
         self._input_sources: list[SourceInfo] | None = input_sources
 
         self._results: list[tuple[VideoKey, SourceInfo]] = []
@@ -111,13 +111,13 @@ class CreateStream:
         self._supervisor_task: asyncio.Task[None] | None = None
 
     @classmethod
-    async def create(cls, config: Config, handler: ChannelHandler, stream_manager: StreamManager, quality_monitor: QualityMonitor, logical_channel_id: LogicalChannelId, logical_channel_name: LogicalChannelName, video_type: VideoType, input_sources: list[SourceInfo] | None = None) -> Self:
+    async def create(cls, config: Config, handler: ChannelHandler, stream_manager: StreamManager, quality_monitor: QualityMonitor, logical_channel_id: LogicalChannelId, logical_channel_title: LogicalChannelTitle, video_type: VideoType, input_sources: list[SourceInfo] | None = None) -> Self:
         """
         Asynchronously creates and initializes the stream creation process.
         This factory pattern is idiomatic for async classes that need to perform
         async operations during initialization.
         """
-        instance = cls(config, handler, stream_manager, quality_monitor, logical_channel_id, logical_channel_name, video_type, input_sources)
+        instance = cls(config, handler, stream_manager, quality_monitor, logical_channel_id, logical_channel_title, video_type, input_sources)
         await instance._initialize_and_start()
         return instance
 
@@ -125,16 +125,16 @@ class CreateStream:
         """Performs async setup and launches all processing tasks."""
         loop = asyncio.get_running_loop()
         self._deadline = loop.time() + CREATE_STREAM_DEADLINE
-        self._sources = self.handler.get_sources_for_client_facing_channel(self.logical_channel_id) if self._input_sources is None else deepcopy(self._input_sources)
+        self._sources = self.handler.get_sources_for_client_channel(self.logical_channel_id) if self._input_sources is None else deepcopy(self._input_sources)
         for source in self._sources.copy():
-            discovered_source = await self.handler.get_discovered_source(source["source_service_id"])
+            discovered_source = await self.handler.get_discovered_source(source["source_id"])
             if not discovered_source:
-                self.config.warn(Label.HANDLER, f"{self.logical_channel_name}: Source '{source['source_service_id']}' not found in discovered sources, skipping use for stream creation.")
+                self.config.warn(Label.HANDLER, f"{self.logical_channel_title}: Source '{source['source_id']}' not found in discovered sources, skipping use for stream creation.")
                 self._sources.remove(source)
                 continue
-            self._source_names[source["source_service_id"]] = discovered_source["display_title"] or discovered_source["tvg_name"]
+            self._source_names[source["source_id"]] = discovered_source["display_title"] or discovered_source["tvg_name"]
         if not self._sources:
-            self._res = (404, f"[{self.video_type}] Logical channel '{self.logical_channel_name}' ({self.logical_channel_id}) not found or has no sources.")
+            self._res = (404, f"[{self.video_type}] Logical channel '{self.logical_channel_title}' ({self.logical_channel_id}) not found or has no sources.")
             self._result_event.set()
             return
 
@@ -157,7 +157,7 @@ class CreateStream:
 
     def _set_deadline(self, source: SourceInfo) -> None:
         loop = asyncio.get_running_loop()
-        if self._remaining_priorities[source["source_service_id"]] <= min(self._remaining_priorities.values()):
+        if self._remaining_priorities[source["source_id"]] <= min(self._remaining_priorities.values()):
             new_deadline = loop.time()
         else:
             new_deadline = loop.time() + NEW_DEADLINE_NON_BEST
@@ -182,7 +182,7 @@ class CreateStream:
 
     def _pop_source(self, provider_sources: list[SourceInfo], current_source: SourceInfo | None) -> SourceInfo | None:
         if current_source:
-            self._remaining_priorities.pop(current_source["source_service_id"], None)
+            self._remaining_priorities.pop(current_source["source_id"], None)
         if provider_sources:
             return provider_sources.pop()
         return
@@ -191,10 +191,10 @@ class CreateStream:
         """Creates streams for a provider by launching concurrent worker tasks."""
         provider_slots = await self.handler.get_provider_slots(provider_alias)
         if not provider_slots:
-            self.config.error(Label.HANDLER, f"{self.logical_channel_name}: Provider '{provider_alias}' does not exist.")
+            self.config.error(Label.HANDLER, f"{self.logical_channel_title}: Provider '{provider_alias}' does not exist.")
             return
         if provider_slots.get_total_slots() <= 0:
-            self.config.warn(Label.HANDLER, f"{self.logical_channel_name}: Provider '{provider_alias}' is configured with 0 slots, skipping stream creation.")
+            self.config.warn(Label.HANDLER, f"{self.logical_channel_title}: Provider '{provider_alias}' is configured with 0 slots, skipping stream creation.")
             return
 
         if len(provider_sources) > await provider_slots.get_available_slots():
@@ -216,8 +216,8 @@ class CreateStream:
         if not source:
             return
 
-        video_key = create_video_key(create_stream_key(self.video_type, self.logical_channel_id), source["source_service_id"])
-        video_name = create_video_name(self.logical_channel_name, self._source_names[source["source_service_id"]], source["source_service_id"])
+        video_key = create_video_key(create_stream_key(self.video_type, self.logical_channel_id), source["source_id"])
+        video_name = create_video_name(self.logical_channel_title, self._source_names[source["source_id"]], source["source_id"])
         self._video_names[video_key] = video_name
         
         loop = asyncio.get_running_loop()
@@ -240,10 +240,10 @@ class CreateStream:
 
             provider_slots = await self.handler.get_provider_slots(provider_alias)
             if not provider_slots:
-                self.config.error(Label.HANDLER, f"{self.logical_channel_name}: Provider '{provider_alias}' not found in slots manager.")
+                self.config.error(Label.HANDLER, f"{self.logical_channel_title}: Provider '{provider_alias}' not found in slots manager.")
                 return
             if provider_slots.get_total_slots() <= 0:
-                self.config.warn(Label.HANDLER, f"{self.logical_channel_name}: Provider '{provider_alias}' is configured with 0 slots, skipping stream creation.")
+                self.config.warn(Label.HANDLER, f"{self.logical_channel_title}: Provider '{provider_alias}' is configured with 0 slots, skipping stream creation.")
                 return
 
             new_active_count = await provider_slots.try_acquire()
@@ -269,8 +269,8 @@ class CreateStream:
             source = self._pop_source(provider_sources, source)
             if not source:
                 return
-            video_key = create_video_key(create_stream_key(self.video_type, self.logical_channel_id), source["source_service_id"])
-            video_name = create_video_name(self.logical_channel_name, self._source_names[source["source_service_id"]], source["source_service_id"])
+            video_key = create_video_key(create_stream_key(self.video_type, self.logical_channel_id), source["source_id"])
+            video_name = create_video_name(self.logical_channel_title, self._source_names[source["source_id"]], source["source_id"])
             self._video_names[video_key] = video_name
 
     async def _check_mpegts_ffmpeg_health_async(self, video_name: VideoName, stream_info: str, stdout_reader: asyncio.StreamReader, is_healthy: list[bool | None]) -> None:
@@ -301,7 +301,7 @@ class CreateStream:
 
     async def _create_stream(self, video_key: VideoKey, video_name: VideoName, provider_alias: ProviderAlias, provider_slots: ProviderSlots, source: SourceInfo, new_active_count: str) -> bool:
         """Creates a stream using FFmpeg via an asynchronous subprocess."""
-        quality_score = self._quality_scores.get(source["source_service_id"])
+        quality_score = self._quality_scores.get(source["source_id"])
         score_msg = f"Score={quality_score['total_score']:.2f} | Uptime={quality_score['uptime']*100:.0f}%" if quality_score else "Score=Unknown | Uptime=Unknown"
         stream_info = f"[Priority={source['priority']} | {score_msg}]"
         self._source_quality_messages[video_key] = stream_info
@@ -336,7 +336,7 @@ class CreateStream:
                         cast(FFmpegProcessInfosMutable, self.stream_manager.ffmpeg_processes)[video_key] = {
                             'process': process, 'is_long_term': False, 'is_preview': self.logical_channel_id.startswith("preview_"),
                             'video_type': VideoType.MPEGTS, 'provider_alias': provider_alias, 'logical_channel_id': self.logical_channel_id,
-                            'source_service_id': source["source_service_id"], 'logical_channel_name': self.logical_channel_name,
+                            'source_id': source["source_id"], 'logical_channel_title': self.logical_channel_title,
                             'channel_hls_dir': None, 'last_access': datetime.now(), 'is_mpegts_active': False,
                             'stderr_log_file_obj': stderr_log_file
                         }
@@ -346,7 +346,7 @@ class CreateStream:
                         cast(FFmpegProcessInfosMutable, self.stream_manager.ffmpeg_processes)[video_key] = {
                             'process': process, 'is_long_term': False, 'is_preview': self.logical_channel_id.startswith("preview_"),
                             'video_type': VideoType.HLS, 'provider_alias': provider_alias, 'logical_channel_id': self.logical_channel_id,
-                            'source_service_id': source["source_service_id"], 'logical_channel_name': self.logical_channel_name,
+                            'source_id': source["source_id"], 'logical_channel_title': self.logical_channel_title,
                             'channel_hls_dir': cast(Path, channel_hls_dir), 'last_access': datetime.now(), 'is_mpegts_active': None,
                             'stderr_log_file_obj': stderr_log_file
                         }
@@ -428,9 +428,9 @@ class CreateStream:
             async with self._mutex:
                 self._selected = True
                 if not self._results:
-                    self._res = (503, f"[{self.video_type}] {self.logical_channel_name}: Failed to start {self.video_type} stream from any source.")
+                    self._res = (503, f"[{self.video_type}] {self.logical_channel_title}: Failed to start {self.video_type} stream from any source.")
                     return
-                video_key = min(self._results, key=lambda x: self._remaining_priorities[x[1]["source_service_id"]])[0]
+                video_key = min(self._results, key=lambda x: self._remaining_priorities[x[1]["source_id"]])[0]
                 await self.stream_manager.set_ffmpeg_process_long_term(video_key, True)
                 self._res = video_key
                 self._result_event.set()

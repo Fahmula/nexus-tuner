@@ -99,12 +99,12 @@ class MPEGTSStream:
                         self._event.set()
                         self._event = asyncio.Event()
                 except Exception as e:
-                    self.config.error(VideoType.MPEGTS, f"Error reading from MPEGTS stream for '{process_info['logical_channel_name']}' with key '{self.video_key}': {e}")
-                    await self.stream_manager.stop_ffmpeg_process(self.video_key, process_info["logical_channel_name"])
+                    self.config.error(VideoType.MPEGTS, f"Error reading from MPEGTS stream for '{process_info['logical_channel_title']}' with key '{self.video_key}': {e}")
+                    await self.stream_manager.stop_ffmpeg_process(self.video_key, process_info["logical_channel_title"])
                     await self.recreate_stream()
                     process_info_res = cast(MPEGTSProcessInfo | None, await self.stream_manager.get_ffmpeg_process_info(self.video_key))
                     if not process_info_res:
-                        self.config.error(VideoType.MPEGTS, f"Internal error: MPEGTS FFmpeg process not found for logical channel '{process_info['logical_channel_name']}' with key '{self.video_key}' after recreating stream.")
+                        self.config.error(VideoType.MPEGTS, f"Internal error: MPEGTS FFmpeg process not found for logical channel '{process_info['logical_channel_title']}' with key '{self.video_key}' after recreating stream.")
                         raise
                     process_info = process_info_res
         except asyncio.CancelledError:

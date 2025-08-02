@@ -7,7 +7,7 @@
 </p>
 
 <div class="table-responsive">
-   <table class="table table-sm table-hover">
+    <table class="table table-sm table-hover">
         <thead class="table-light">
             <tr>
                 <th style="width: 5%;" class="text-center">Enable</th>
@@ -17,125 +17,144 @@
                 <th style="width: 10%;" class="text-end">Preview</th>
             </tr>
         </thead>
-        
+
         <tbody>
             {% for service in mapped_services %}
-                {% set source_metrics = source_metrics.get(service.source_id, {}) %}
-                <tr>
+            {% set source_metrics = source_metrics.get(service.source_id, {}) %}
+            <tr>
                 <td class="text-center align-middle">
-                    <input class="form-check-input" type="checkbox" name="mapping_service_id" value="{{ service.source_id }}" checked>
+                    <input class="form-check-input" type="checkbox" name="mapping_service_id"
+                        value="{{ service.source_id }}" checked>
                 </td>
                 <td class="align-middle">
                     {{ service.tvg_name }}
                     <small class="text-muted">({{ service.provider_alias }})</small>
                     <span class="badge bg-success ms-2">Mapped</span>
                     {% if service.source_id in services_mapped_elsewhere %}
-                        <span class="badge bg-warning ms-2">Duplicated</span>
+                    <span class="badge bg-warning ms-2">Duplicated</span>
                     {% endif %}
                 </td>
                 <td class="text-center align-middle">
                     {% if source_metrics.uptime is defined and source_metrics.uptime is not none %}
-                        {% set uptime_val = source_metrics.uptime|int %}
-                        {% if uptime_val >= 75 %}
-                            <span class="badge bg-success">{{ uptime_val }}%</span>
-                        {% elif uptime_val >= 50 %}
-                            <span class="badge bg-warning">{{ uptime_val }}%</span>
-                        {% elif uptime_val >= 25 %}
-                            <span class="badge bg-orange">{{ uptime_val }}%</span>
-                        {% else %}
-                            <span class="badge bg-danger">{{ uptime_val }}%</span>
-                        {% endif %}
+                    {% set uptime_val = source_metrics.uptime|int %}
+                    {% if uptime_val >= 75 %}
+                    <span class="badge bg-success">{{ uptime_val }}%</span>
+                    {% elif uptime_val >= 50 %}
+                    <span class="badge bg-warning">{{ uptime_val }}%</span>
+                    {% elif uptime_val >= 25 %}
+                    <span class="badge bg-orange">{{ uptime_val }}%</span>
                     {% else %}
-                        <span class="badge bg-secondary">N/A</span>
+                    <span class="badge bg-danger">{{ uptime_val }}%</span>
+                    {% endif %}
+                    {% else %}
+                    <span class="badge bg-secondary">N/A</span>
                     {% endif %}
                 </td>
                 <td class="align-middle">
-                    <input type="number" class="form-control form-control-sm" name="priority_{{ service.source_id }}" value="{{ source_metrics.priority }}" min="0" max="10" required>
+                    <input type="number" class="form-control form-control-sm" name="priority_{{ service.source_id }}"
+                        value="{{ source_metrics.priority }}" min="0" max="10" required>
                 </td>
                 <td class="text-end align-middle">
-                    <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#previewModal" 
-                            hx-get="{{ url_for('ui_player_for_service', service_id=service.source_id) }}" hx-target="#preview-modal-body" hx-trigger="click"
-                            title="Preview Stream URL for {{ service.tvg_name }}">
+                    <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal"
+                        data-bs-target="#previewModal"
+                        hx-get="{{ url_for('ui_player_for_service', service_id=service.source_id) }}"
+                        hx-target="#preview-modal-body" hx-trigger="click"
+                        title="Preview Stream URL for {{ service.tvg_name }}">
                         <i class="fas fa-play"></i>
                     </button>
                 </td>
-                </tr>
+            </tr>
             {% endfor %}
         </tbody>
 
         <tbody>
             {% for service in unmapped_suggestions_for_page %}
-                {% set source_metrics = source_metrics.get(service.source_id, {}) %}
-                <tr>
+            {% set source_metrics = source_metrics.get(service.source_id, {}) %}
+            <tr>
                 <td class="text-center align-middle">
-                    <input class="form-check-input" type="checkbox" name="mapping_service_id" value="{{ service.source_id }}">
+                    <input class="form-check-input" type="checkbox" name="mapping_service_id"
+                        value="{{ service.source_id }}">
                 </td>
                 <td class="align-middle">
                     {{ service.tvg_name }}
                     <small class="text-muted">({{ service.provider_alias }})</small>
                     {% if service.source_id in services_mapped_elsewhere %}
-                        <span class="badge bg-secondary ms-2">In Use</span>
+                    <span class="badge bg-secondary ms-2">In Use</span>
                     {% endif %}
                 </td>
                 <td class="text-center align-middle">
                     {% if source_metrics.uptime is defined and source_metrics.uptime is not none %}
-                        {% set uptime_val = source_metrics.uptime|int %}
-                        {% if uptime_val >= 75 %}
-                            <span class="badge bg-success">{{ uptime_val }}%</span>
-                        {% elif uptime_val >= 50 %}
-                            <span class="badge bg-warning">{{ uptime_val }}%</span>
-                        {% elif uptime_val >= 25 %}
-                            <span class="badge bg-orange">{{ uptime_val }}%</span>
-                        {% else %}
-                            <span class="badge bg-danger">{{ uptime_val }}%</span>
-                        {% endif %}
+                    {% set uptime_val = source_metrics.uptime|int %}
+                    {% if uptime_val >= 75 %}
+                    <span class="badge bg-success">{{ uptime_val }}%</span>
+                    {% elif uptime_val >= 50 %}
+                    <span class="badge bg-warning">{{ uptime_val }}%</span>
+                    {% elif uptime_val >= 25 %}
+                    <span class="badge bg-orange">{{ uptime_val }}%</span>
                     {% else %}
-                        <span class="badge bg-secondary">N/A</span>
+                    <span class="badge bg-danger">{{ uptime_val }}%</span>
+                    {% endif %}
+                    {% else %}
+                    <span class="badge bg-secondary">N/A</span>
                     {% endif %}
                 </td>
                 <td class="align-middle">
-                    <input type="number" class="form-control form-control-sm" name="priority_{{ service.source_id }}" value="{{ source_metrics.priority }}" min="0" max="10" required>
+                    <input type="number" class="form-control form-control-sm" name="priority_{{ service.source_id }}"
+                        value="{{ source_metrics.priority }}" min="0" max="10" required>
                 </td>
                 <td class="text-end align-middle">
-                    <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#previewModal" 
-                            hx-get="{{ url_for('ui_player_for_service', service_id=service.source_id) }}" hx-target="#preview-modal-body" hx-trigger="click"
-                            title="Preview Stream URL for {{ service.tvg_name }}">
+                    <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal"
+                        data-bs-target="#previewModal"
+                        hx-get="{{ url_for('ui_player_for_service', service_id=service.source_id) }}"
+                        hx-target="#preview-modal-body" hx-trigger="click"
+                        title="Preview Stream URL for {{ service.tvg_name }}">
                         <i class="fas fa-play"></i>
                     </button>
                 </td>
-                </tr>
+            </tr>
             {% endfor %}
 
             {# Helpful messages for different states #}
             {% if filter_query is not none and not unmapped_suggestions_for_page and not mapped_services %}
-                <tr>
-                    <td colspan="5" class="text-center text-muted fst-italic py-3">No services found matching your criteria.</td>
-                </tr>
+            <tr>
+                <td colspan="5" class="text-center text-muted fst-italic py-3">No services found matching your criteria.
+                </td>
+            </tr>
             {% elif not mapped_services and filter_query is none %}
-                 <tr>
-                    <td colspan="5" class="text-center text-muted fst-italic py-3">
-                        Type in the "Display Name" field on the left to automatically find matching services,
-                        or use the search bar above to search all available services.
-                    </td>
-                </tr>
+            <tr>
+                <td colspan="5" class="text-center text-muted fst-italic py-3">
+                    Type in the "Display Name" field on the left to automatically find matching services,
+                    or use the search bar above to search all available services.
+                </td>
+            </tr>
             {% endif %}
         </tbody>
     </table>
-    
+
     <p class="text-muted small mt-2">
-        Showing {{ unmapped_suggestions_for_page|length }} of {{ total_unmapped_items }} total unmapped matching services.
+        Showing {{ unmapped_suggestions_for_page|length }} of {{ total_unmapped_items }} total unmapped matching
+        services.
     </p>
     {% if total_pages > 1 %}
-        <nav aria-label="Suggestions navigation" class="mt-2">
-            <ul class="pagination justify-content-center">
-                <li class="page-item {% if current_page <= 1 %}disabled{% endif %}">
-                    <a class="page-link" hx-get="{{ url_for('ui_logical_channel_form', logical_channel_id=channel.logical_channel_id, page=current_page-1, search_query=search_query) }}" hx-target="#service-list-container" hx-push-url="true" hx-include="[name='logical_channel_id'], [name='logical_channel_name'], [name='search_query']">« Previous</a>
-                </li>
-                <li class="page-item disabled"><span class="page-link">Page {{ current_page }} of {{ total_pages }}</span></li>
-                <li class="page-item {% if current_page >= total_pages %}disabled{% endif %}">
-                    <a class="page-link" hx-get="{{ url_for('ui_logical_channel_form', logical_channel_id=channel.logical_channel_id, page=current_page+1, search_query=search_query) }}" hx-target="#service-list-container" hx-push-url="true" hx-include="[name='logical_channel_id'], [name='logical_channel_name'], [name='search_query']">Next »</a>
-                </li>
-            </ul>
-        </nav>
+    <nav aria-label="Suggestions navigation" class="mt-2">
+        <ul class="pagination justify-content-center">
+            <li class="page-item {% if current_page <= 1 %}disabled{% endif %}">
+                <a class="page-link"
+                    hx-get="{{ url_for('ui_logical_channel_form', logical_channel_id=channel.logical_channel_id, page=current_page-1, search_query=search_query) }}"
+                    hx-target="#service-list-container" hx-push-url="true"
+                    hx-include="[name='logical_channel_id'], [name='logical_channel_title'], [name='search_query']">«
+                    Previous</a>
+            </li>
+            <li class="page-item disabled"><span class="page-link">Page {{ current_page }} of {{ total_pages }}</span>
+            </li>
+            <li class="page-item {% if current_page >= total_pages %}disabled{% endif %}">
+                <a class="page-link"
+                    hx-get="{{ url_for('ui_logical_channel_form', logical_channel_id=channel.logical_channel_id, page=current_page+1, search_query=search_query) }}"
+                    hx-target="#service-list-container" hx-push-url="true"
+                    hx-include="[name='logical_channel_id'], [name='logical_channel_title'], [name='search_query']">Next
+                    »</a>
+            </li>
+        </ul>
+    </nav>
     {% endif %}
 </div>

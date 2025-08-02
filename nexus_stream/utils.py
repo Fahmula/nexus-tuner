@@ -1,5 +1,5 @@
 """The goal is for every long running value to be uniquely typed so that they cannot be used incorrectly.
-For example, LogicalChannelId cannot be used instead of SourceServiceId as it will fail type checking.
+For example, LogicalChannelId cannot be used instead of SourceId as it will fail type checking.
 Futher more these types are then used in TypedDicts to model the data structures used in the application.
 All the TypedDicts have all fields marked as ReadOnly and uses Mapping and Tuple instead of dict and list
 to signal immutability, the underlying data structures are likely still dict or lists. This ensures that 99%
@@ -54,8 +54,8 @@ AvailableStreams = NewType("AvailableStreams", int)
 MainM3UPlaylist = NewType("MainM3UPlaylist", str)
 
 LogicalChannelId = NewType("LogicalChannelId", str)
-LogicalChannelName = NewType("LogicalChannelName", str)
-SourceServiceId = NewType("SourceServiceId", str)
+LogicalChannelTitle = NewType("LogicalChannelTitle", str)
+SourceId = NewType("SourceId", str)
 StreamURL = NewType("StreamURL", str)
 StreamKey = NewType("StreamKey", str)
 VideoKey = NewType("VideoKey", str)
@@ -77,7 +77,7 @@ UptimeScore = NewType("UptimeScore", float)
 TotalScore = NewType("TotalScore", float)
 
 TVGName = NewType("TVGName", str)
-TVGDisplayName = NewType("TVGDisplayName", str)
+TVGDisplayTitle = NewType("TVGDisplayTitle", str)
 TVGGroupTitle = NewType("TVGGroupTitle", str)
 TVGId = NewType("TVGId", str)
 TVGLogo = NewType("TVGLogo", str)
@@ -124,7 +124,7 @@ type ProvidersData = ProvidersDataImpl | _ProvidersDataReadOnly
 
 class M3USource(TypedDict):
     tvg_name: ReadOnly[TVGName]
-    display_title: ReadOnly[TVGDisplayName]
+    display_title: ReadOnly[TVGDisplayTitle]
     group_title: ReadOnly[TVGGroupTitle]
     tvg_id: ReadOnly[TVGId]
     tvg_log: ReadOnly[TVGLogo]
@@ -132,14 +132,14 @@ class M3USource(TypedDict):
 
 class DiscoveredSource(M3USource):
     provider_alias: ReadOnly[ProviderAlias]
-DiscoveredSourcesDataImpl = NewType("DiscoveredSourcesDataImpl", dict[SourceServiceId, DiscoveredSource])
-_DiscoveredSourcesDataReadOnly = NewType("_DiscoveredSourcesDataReadOnly", Mapping[SourceServiceId, DiscoveredSource])
+DiscoveredSourcesDataImpl = NewType("DiscoveredSourcesDataImpl", dict[SourceId, DiscoveredSource])
+_DiscoveredSourcesDataReadOnly = NewType("_DiscoveredSourcesDataReadOnly", Mapping[SourceId, DiscoveredSource])
 type DiscoveredSourcesData = DiscoveredSourcesDataImpl | _DiscoveredSourcesDataReadOnly
 class DiscoveredSourceWithId(DiscoveredSource):
-    source_id: ReadOnly[SourceServiceId]
+    source_id: ReadOnly[SourceId]
 
 class LogicalChannelInfo(TypedDict):
-    logical_channel_name: ReadOnly[LogicalChannelName]
+    logical_channel_title: ReadOnly[LogicalChannelTitle]
     channel_num: ReadOnly[ChannelNum]
     group_title: ReadOnly[TVGGroupTitle]
     tvg_id: ReadOnly[TVGId]
@@ -158,30 +158,30 @@ class LogicalChannelMetrics(TypedDict):
 
 class SourceMappingInfo(TypedDict):
     priority: ReadOnly[Priority]
-ChannelMappingsImpl = NewType("ChannelMappingsImpl", dict[SourceServiceId, SourceMappingInfo])
-_ChannelMappingsReadOnly = NewType("_ChannelMappingsReadOnly", Mapping[SourceServiceId, SourceMappingInfo])
+ChannelMappingsImpl = NewType("ChannelMappingsImpl", dict[SourceId, SourceMappingInfo])
+_ChannelMappingsReadOnly = NewType("_ChannelMappingsReadOnly", Mapping[SourceId, SourceMappingInfo])
 type ChannelMappings = ChannelMappingsImpl | _ChannelMappingsReadOnly
 ChannelMappingsDataImpl = NewType("ChannelMappingsDataImpl", dict[LogicalChannelId, ChannelMappingsImpl])
 _ChannelMappingsDataReadOnly = NewType("_ChannelMappingsDataReadOnly", Mapping[LogicalChannelId, _ChannelMappingsReadOnly])
 type ChannelMappingsData = ChannelMappingsDataImpl | _ChannelMappingsDataReadOnly
 class SourceMappingInfoWithId(SourceMappingInfo):
-    source_service_id: ReadOnly[SourceServiceId]
+    source_id: ReadOnly[SourceId]
 
 class SourceMetrics(TypedDict):
     priority: ReadOnly[Priority]
     uptime: ReadOnly[PercentDisplay | None]
 
 class SourceInfo(TypedDict):
-    source_service_id: ReadOnly[SourceServiceId]
+    source_id: ReadOnly[SourceId]
     priority: ReadOnly[Priority]
     provider_alias: ReadOnly[ProviderAlias]
     stream_url: ReadOnly[StreamURL]
 
-class ChannelInfo(LogicalChannelInfo):
+class ClientChannelInfo(LogicalChannelInfo):
     sources: ReadOnly[list[SourceInfo]]
-ChannelInfosImpl = NewType("ChannelInfosImpl", dict[LogicalChannelId, ChannelInfo])
-_ChannelInfosReadOnly = NewType("_ChannelInfosReadOnly", Mapping[LogicalChannelId, ChannelInfo])
-type ChannelInfos = ChannelInfosImpl | _ChannelInfosReadOnly
+ClientChannelInfosImpl = NewType("ClientChannelInfosImpl", dict[LogicalChannelId, ClientChannelInfo])
+_ClientChannelInfosReadOnly = NewType("_ClientChannelInfosReadOnly", Mapping[LogicalChannelId, ClientChannelInfo])
+type ClientChannelInfos = ClientChannelInfosImpl | _ClientChannelInfosReadOnly
 
 class QualityInfo(TypedDict):
     statuses: ReadOnly[tuple[Literal["online", "offline"], ...]]
@@ -197,8 +197,8 @@ class QualityInfoImpl(TypedDict):
     bitrates: list[Bitrate]
     framerates: list[Framerate]
     updated_at: DateTimeISO
-ServiceQualityCacheDataImpl = NewType("ServiceQualityCacheDataImpl", dict[SourceServiceId, QualityInfoImpl])
-_ServiceQualityCacheDataReadOnly = NewType("_ServiceQualityCacheDataReadOnly", Mapping[SourceServiceId, QualityInfo])
+ServiceQualityCacheDataImpl = NewType("ServiceQualityCacheDataImpl", dict[SourceId, QualityInfoImpl])
+_ServiceQualityCacheDataReadOnly = NewType("_ServiceQualityCacheDataReadOnly", Mapping[SourceId, QualityInfo])
 type ServiceQualityCacheData = ServiceQualityCacheDataImpl | _ServiceQualityCacheDataReadOnly
 
 class QualityScore(TypedDict):
@@ -212,8 +212,8 @@ class QualityScore(TypedDict):
     framerate_score: ReadOnly[FramerateScore]
     uptime_score: ReadOnly[UptimeScore]
     total_score: ReadOnly[TotalScore]
-QualityScoresImpl = NewType("QualityScoresImpl", dict[SourceServiceId, QualityScore])
-_QualityScoresReadOnly = NewType("_QualityScoresReadOnly", Mapping[SourceServiceId, QualityScore])
+QualityScoresImpl = NewType("QualityScoresImpl", dict[SourceId, QualityScore])
+_QualityScoresReadOnly = NewType("_QualityScoresReadOnly", Mapping[SourceId, QualityScore])
 type QualityScores = QualityScoresImpl | _QualityScoresReadOnly
 
 class ChannelListInfo(TypedDict):
@@ -242,8 +242,8 @@ class MPEGTSProcessInfo(TypedDict):
     video_type: ReadOnly[Literal[VideoType.MPEGTS]]
     provider_alias: ReadOnly[ProviderAlias]
     logical_channel_id: ReadOnly[LogicalChannelId]
-    source_service_id: ReadOnly[SourceServiceId]
-    logical_channel_name: ReadOnly[LogicalChannelName]
+    source_id: ReadOnly[SourceId]
+    logical_channel_title: ReadOnly[LogicalChannelTitle]
     channel_hls_dir: ReadOnly[None]
     last_access: ReadOnly[datetime]
     is_mpegts_active: ReadOnly[bool]
@@ -255,8 +255,8 @@ class HLSProcessInfo(TypedDict):
     video_type: ReadOnly[Literal[VideoType.HLS]]
     provider_alias: ReadOnly[ProviderAlias]
     logical_channel_id: ReadOnly[LogicalChannelId]
-    source_service_id: ReadOnly[SourceServiceId]
-    logical_channel_name: ReadOnly[LogicalChannelName]
+    source_id: ReadOnly[SourceId]
+    logical_channel_title: ReadOnly[LogicalChannelTitle]
     channel_hls_dir: ReadOnly[Path]
     last_access: ReadOnly[datetime]
     is_mpegts_active: ReadOnly[None]
@@ -294,14 +294,14 @@ def create_stream_key(video_type: VideoType, logical_channel_id: LogicalChannelI
     return StreamKey(f"{video_type}_{logical_channel_id}")
 
 
-def create_video_key(stream_key: StreamKey, source_service_id: SourceServiceId) -> VideoKey:
+def create_video_key(stream_key: StreamKey, source_id: SourceId) -> VideoKey:
     """Generates a unique key for the stream."""
-    return VideoKey(f"{stream_key}_{source_service_id}")
+    return VideoKey(f"{stream_key}_{source_id}")
 
 
-def create_video_name(logical_channel_name: LogicalChannelName, source_name: TVGDisplayName | TVGName, source_service_id: SourceServiceId) -> VideoName:
+def create_video_name(logical_channel_title: LogicalChannelTitle, source_name: TVGDisplayTitle | TVGName, source_id: SourceId) -> VideoName:
     """Generates a unique name for the stream."""
-    return VideoName(f"{logical_channel_name} - {source_name} ({source_service_id})")
+    return VideoName(f"{logical_channel_title} - {source_name} ({source_id})")
 
 
 def get_segment_format() -> str:
@@ -343,19 +343,19 @@ def relative_time(dt: datetime, reference_time: datetime | None = None) -> str:
         return f"in {value}{unit}"
 
 
-def sort_sources(sources: list[SourceInfo] | list[SourceMappingInfoWithId], quality_scores: QualityScores, *, reverse: bool) -> dict[SourceServiceId, Priority]:
+def sort_sources(sources: list[SourceInfo] | list[SourceMappingInfoWithId], quality_scores: QualityScores, *, reverse: bool) -> dict[SourceId, Priority]:
     """Sorts sources based on priority and quality."""
-    prev_score: tuple[Priority, float, float, SourceServiceId] | None = None
+    prev_score: tuple[Priority, float, float, SourceId] | None = None
     curr_priority: Priority = Priority(-1)
-    source_scores: list[tuple[Priority, float, float, SourceServiceId]] = sorted((source["priority"],
-                             -quality_scores.get(source["source_service_id"], {}).get("total_score", 0),
-                             -quality_scores.get(source["source_service_id"], {}).get("uptime", 0),
-                             source["source_service_id"]) for source in sources)
-    source_priorities: dict[SourceServiceId, Priority] = {}
+    source_scores: list[tuple[Priority, float, float, SourceId]] = sorted((source["priority"],
+                             -quality_scores.get(source["source_id"], {}).get("total_score", 0),
+                             -quality_scores.get(source["source_id"], {}).get("uptime", 0),
+                             source["source_id"]) for source in sources)
+    source_priorities: dict[SourceId, Priority] = {}
     for score in source_scores:
         if score != prev_score:
             prev_score = score
             curr_priority = Priority(curr_priority + 1)
         source_priorities[score[3]] = curr_priority
-    sources.sort(key=lambda x: source_priorities[x["source_service_id"]], reverse=reverse)
+    sources.sort(key=lambda x: source_priorities[x["source_id"]], reverse=reverse)
     return source_priorities
