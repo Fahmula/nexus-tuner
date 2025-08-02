@@ -240,7 +240,7 @@ class QualityMonitor:
                 tasks.append(
                     self._run_single_probe(
                         service_id, 
-                        service_details["actual_stream_url"], 
+                        service_details["stream_url"], 
                         service_details["provider_alias"]
                     )
                 )

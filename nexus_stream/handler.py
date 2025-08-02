@@ -10,7 +10,7 @@ from nexus_stream.config import Config
 from nexus_stream.slots import ProviderSlots
 from nexus_stream.utils import (DEFAULT_PRIORITY, M3UURL, NEXUS_STREAM_USER_AGENT, ChannelInfos, ChannelInfosImpl, ChannelListData, ChannelListDataImpl,
                                 ChannelListGroup, ChannelListInfo, ChannelMappingsData, ChannelMappingsDataImpl, ChannelNum, DateTimeISO,
-                                DiscoveredSource, DiscoveredSourcesData, DiscoveredSourcesDataImpl, LogicalChannelInfo, LogicalChannelName, LogicalChannelsDataImpl, Priority, ProviderInfo,
+                                DiscoveredSource, DiscoveredSourceWithId, DiscoveredSourcesData, DiscoveredSourcesDataImpl, LogicalChannelInfo, LogicalChannelName, LogicalChannelsDataImpl, Priority, ProviderInfo,
                                 ProviderStatuses, SourceInfo, SourcePriority, SourceServiceId, StreamURL, TVGGroupTitle, Label, LogicalChannelId,
                                 LogicalChannelsData, M3USource, MainM3UPlaylist, MaxStreams, ProviderAlias, ProvidersData, ProvidersDataImpl,
                                 StreamKey, TVGDisplayName, TVGId, TVGLogo, TVGName, VideoType, create_stream_key)
@@ -165,19 +165,19 @@ class ChannelHandler:
                 display_name_from_extinf = html.unescape(current_extinf.split(',')[-1].strip())
 
                 m3u_sources.append({
-                    "original_tvg_name": TVGName(tvg_name),
-                    "original_display_name_extinf": TVGDisplayName(display_name_from_extinf),
-                    "original_group_title": TVGGroupTitle(group_title),
-                    "original_tvg_id": TVGId(tvg_id),
-                    "original_tvg_logo": TVGLogo(tvg_logo),
-                    "actual_stream_url": StreamURL(line),
+                    "tvg_name": TVGName(tvg_name),
+                    "display_title": TVGDisplayName(display_name_from_extinf),
+                    "group_title": TVGGroupTitle(group_title),
+                    "tvg_id": TVGId(tvg_id),
+                    "tvg_log": TVGLogo(tvg_logo),
+                    "stream_url": StreamURL(line),
                 })
                 current_extinf = None
         return m3u_sources
 
-    def _generate_source_service_id(self, provider_alias: ProviderAlias, actual_stream_url: StreamURL) -> SourceServiceId:
+    def _generate_source_service_id(self, provider_alias: ProviderAlias, stream_url: StreamURL) -> SourceServiceId:
         """Creates a stable, unique ID for a source stream. (Sync - pure function)"""
-        id_material = f"{provider_alias}:{actual_stream_url}"
+        id_material = f"{provider_alias}:{stream_url}"
         return SourceServiceId(f"{provider_alias}:{hashlib.md5(id_material.encode('utf-8')).hexdigest()}")
     
     async def _fetch_and_parse_provider(self, session: aiohttp.ClientSession, provider_alias: ProviderAlias, m3u_url: M3UURL) -> DiscoveredSourcesData:
@@ -189,9 +189,8 @@ class ChannelHandler:
                 m3u_sources = self._parse_source_m3u_lines(await response.text())
 
                 for m3u_source in m3u_sources:
-                    service_id = self._generate_source_service_id(provider_alias, m3u_source["actual_stream_url"])
+                    service_id = self._generate_source_service_id(provider_alias, m3u_source["stream_url"])
                     discovered_sources[service_id] = {
-                        "id": service_id,
                         "provider_alias": provider_alias,
                         **m3u_source
                     }
@@ -244,12 +243,12 @@ class ChannelHandler:
                         "source_service_id": source_id,
                         "priority": priority,
                         "provider_alias": discovered_service["provider_alias"],
-                        "actual_stream_url": discovered_service["actual_stream_url"],
+                        "stream_url": discovered_service["stream_url"],
                     })
                 else:
                     if source_id in prev_discovered_source_services:
                         prev_discovered_source = prev_discovered_source_services[source_id]
-                        source_name = f"'{prev_discovered_source['original_display_name_extinf'] or prev_discovered_source['original_tvg_name']}' ({source_id})"
+                        source_name = f"'{prev_discovered_source['display_title'] or prev_discovered_source['tvg_name']}' ({source_id})"
                     else:
                         source_name = f"'Unknown Source' ({source_id})"
                     self.config.warn(self.label, f"Mapped source {source_name} for '{lc_def.get('display_name', logical_channel_id)}'{f' ({lc_def['channel_num']})' if 'channel_num' in lc_def else ''} not found in discovered services.")
@@ -460,11 +459,11 @@ class ChannelHandler:
             self._providers_data = new_providers_data
             return True
 
-    async def get_all_discovered_source_services_for_ui(self) -> list[DiscoveredSource]:
+    async def get_all_discovered_source_services_for_ui(self) -> list[DiscoveredSourceWithId]:
         """Gets a list of discovered services."""
         async with self._mutex:
-            all_services = list(self._discovered_source_services_data.values())
-            return sorted(all_services, key=lambda x: (x["provider_alias"], (x.get("original_tvg_name","") or x.get("original_display_name_extinf","")).lower()))
+            all_services = [DiscoveredSourceWithId({**source, "source_id": source_id}) for source_id, source in self._discovered_source_services_data.items()]
+            return sorted(all_services, key=lambda x: (x["provider_alias"], (x.get("tvg_name","") or x.get("display_title","")).lower()))
 
     async def get_logical_channel_by_id(self, logical_channel_id: LogicalChannelId) -> LogicalChannelInfo | None:
         """Gets a logical channel by its ID."""

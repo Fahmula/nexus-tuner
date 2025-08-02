@@ -132,7 +132,7 @@ class CreateStream:
                 self.config.warn(Label.HANDLER, f"{self.logical_channel_name}: Source '{source['source_service_id']}' not found in discovered sources, skipping use for stream creation.")
                 self._sources.remove(source)
                 continue
-            self._source_names[source["source_service_id"]] = discovered_source["original_display_name_extinf"] or discovered_source["original_tvg_name"]
+            self._source_names[source["source_service_id"]] = discovered_source["display_title"] or discovered_source["tvg_name"]
         if not self._sources:
             self._res = (404, f"[{self.video_type}] Logical channel '{self.logical_channel_name}' ({self.logical_channel_id}) not found or has no sources.")
             self._result_event.set()
@@ -310,9 +310,9 @@ class CreateStream:
         stderr_log_file: aiofiles.threadpool.text.AsyncTextIOWrapper | None = None
         try:
             if self.video_type == VideoType.HLS:
-                command, channel_hls_dir = await create_hls_ffmpeg_command(self.stream_manager, self.config, source["actual_stream_url"], video_key, self.logical_channel_id)
+                command, channel_hls_dir = await create_hls_ffmpeg_command(self.stream_manager, self.config, source["stream_url"], video_key, self.logical_channel_id)
             elif self.video_type == VideoType.MPEGTS:
-                command = create_mpegts_ffmpeg_command(self.config, source["actual_stream_url"])
+                command = create_mpegts_ffmpeg_command(self.config, source["stream_url"])
             else:
                 raise ValueError(f"Unsupported video type: {self.video_type}")
             log_path = self.config.get_ffmpeg_log_path(video_key)

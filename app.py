@@ -111,8 +111,8 @@ async def calculate_channel_metrics(mapped_services: list[SourcePriority], all_q
 
 def filter_sources(raw_query: str, service: DiscoveredSource) -> bool:
     """Filters sources based on a query. (Sync - pure function)"""
-    tvg_name = service.get('original_tvg_name', '').lower()
-    display_name = service.get('original_display_name_extinf', '').lower()
+    tvg_name = service.get('tvg_name', '').lower()
+    display_name = service.get('display_title', '').lower()
     for raw_q in raw_query.split(MULTI_SEARCH_QUERY_DELIMITER):
         words = raw_q.strip().lower().split()
         if all(word in tvg_name or word in display_name for word in words):
@@ -221,10 +221,10 @@ async def serve_hls_preview(logical_channel_id: LogicalChannelId) -> Response:
         abort(404, msg)
 
     sources: list[SourceInfo] = [{
-        'source_service_id': source_service['id'],
+        'source_service_id': source_service_id,
         'priority': await handler.get_source_priority(source_service_id) or Priority(DEFAULT_PRIORITY),
         'provider_alias': source_service['provider_alias'],
-        'actual_stream_url': source_service['actual_stream_url']
+        'stream_url': source_service['stream_url']
     }]
 
     return await serve_hls_playlist(logical_channel_id, logical_channel_name=LogicalChannelName('Preview'), sources=sources)
@@ -487,7 +487,7 @@ async def ui_source_services_list() -> str:
     providers = sorted(list(set(s['provider_alias'] for s in services_unfiltered)))
     filter_provider = request.args.get('provider_alias', '')
     filter_name = request.args.get('name_filter', '').lower()
-    services_filtered = [s for s in services_unfiltered if (not filter_provider or s['provider_alias'] == filter_provider) and (not filter_name or filter_name in s.get('original_tvg_name', '').lower() or filter_name in s.get('original_display_name_extinf', '').lower())]
+    services_filtered = [s for s in services_unfiltered if (not filter_provider or s['provider_alias'] == filter_provider) and (not filter_name or filter_name in s.get('tvg_name', '').lower() or filter_name in s.get('display_title', '').lower())]
     total_items = len(services_filtered)
     total_pages = math.ceil(total_items / per_page)
     services_for_page = services_filtered[(page - 1) * per_page:page * per_page]
@@ -603,8 +603,8 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     filter_query = search_query.strip().lower() if search_query else None
     all_services = await handler.get_all_discovered_source_services_for_ui()
     all_quality_scores = await quality_monitor.get_quality_scores()
-    
-    all_services_map = {s['id']: s for s in all_services}
+
+    all_services_map = {s['source_id']: s for s in all_services}
     mapped_services: list[DiscoveredSource] = []
     all_mapped_service_ids: set[SourceServiceId] = set()
     source_metrics: dict[SourceServiceId, SourceMetrics] = {}
@@ -628,8 +628,8 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     unmapped_suggestions: list[DiscoveredSource] = []
     if filter_query and search_query:
         for service in all_services:
-            if service['id'] not in all_mapped_service_ids and filter_sources(search_query, service):
-                service_id = service['id']
+            if service['source_id'] not in all_mapped_service_ids and filter_sources(search_query, service):
+                service_id = service['source_id']
                 raw_score = all_quality_scores.get(service_id, {}).get('uptime', None)
                 source_metrics[service_id] = SourceMetrics({
                     "priority": Priority(DEFAULT_PRIORITY),
@@ -817,7 +817,7 @@ async def ui_player_for_service(service_id: SourceServiceId) -> str:
     if not source_service:
         await flash(f"Error: source service ID not found.", "error")
         abort(404, f"Source service ID '{service_id}' not found.")
-    service_name = source_service.get('original_display_name_extinf', source_service.get('original_tvg_name', 'Preview'))
+    service_name = source_service.get('display_title', source_service.get('tvg_name', 'Preview'))
     logical_channel_id = f"preview_{service_id}"
     playlist_url = url_for('serve_hls_preview', logical_channel_id=logical_channel_id)
     return await render_template("_video_player_modal.html", playlist_url=playlist_url, logical_channel_id=logical_channel_id, service_name=service_name)

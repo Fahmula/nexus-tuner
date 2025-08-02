@@ -123,19 +123,20 @@ _ProvidersDataReadOnly = NewType("_ProvidersDataReadOnly", Mapping[ProviderAlias
 type ProvidersData = ProvidersDataImpl | _ProvidersDataReadOnly
 
 class M3USource(TypedDict):
-    original_tvg_name: ReadOnly[TVGName]
-    original_display_name_extinf: ReadOnly[TVGDisplayName]
-    original_group_title: ReadOnly[TVGGroupTitle]
-    original_tvg_id: ReadOnly[TVGId]
-    original_tvg_logo: ReadOnly[TVGLogo]
-    actual_stream_url: ReadOnly[StreamURL]
+    tvg_name: ReadOnly[TVGName]
+    display_title: ReadOnly[TVGDisplayName]
+    group_title: ReadOnly[TVGGroupTitle]
+    tvg_id: ReadOnly[TVGId]
+    tvg_log: ReadOnly[TVGLogo]
+    stream_url: ReadOnly[StreamURL]
 
 class DiscoveredSource(M3USource):
-    id: ReadOnly[SourceServiceId]
     provider_alias: ReadOnly[ProviderAlias]
 DiscoveredSourcesDataImpl = NewType("DiscoveredSourcesDataImpl", dict[SourceServiceId, DiscoveredSource])
 _DiscoveredSourcesDataReadOnly = NewType("_DiscoveredSourcesDataReadOnly", Mapping[SourceServiceId, DiscoveredSource])
 type DiscoveredSourcesData = DiscoveredSourcesDataImpl | _DiscoveredSourcesDataReadOnly
+class DiscoveredSourceWithId(DiscoveredSource):
+    source_id: ReadOnly[SourceServiceId]
 
 class LogicalChannelInfo(TypedDict):
     logical_channel_id: ReadOnly[LogicalChannelId]
@@ -169,7 +170,7 @@ class SourceInfo(TypedDict):
     source_service_id: ReadOnly[SourceServiceId]
     priority: ReadOnly[Priority]
     provider_alias: ReadOnly[ProviderAlias]
-    actual_stream_url: ReadOnly[StreamURL]
+    stream_url: ReadOnly[StreamURL]
 
 class ChannelInfo(LogicalChannelInfo):
     sources: ReadOnly[list[SourceInfo]]

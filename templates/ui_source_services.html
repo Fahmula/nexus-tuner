@@ -70,15 +70,15 @@
             {% if services %}
                 {% for service in services %}
                 <tr>
-                    <td><small class="text-muted">{{ service.id }}</small></td>
+                    <td><small class="text-muted">{{ service.source_id }}</small></td>
                     <td><span class="badge bg-secondary">{{ service.provider_alias }}</span></td>
-                    <td>{{ service.original_tvg_name if service.original_tvg_name else '-' }}</td>
-                    <td>{{ service.original_display_name_extinf if service.original_display_name_extinf else '-' }}</td>
-                    <td>{{ service.original_group_title if service.original_group_title else '-' }}</td>
-                    <td>{{ service.original_tvg_id if service.original_tvg_id else '-' }}</td>
+                    <td>{{ service.tvg_name if service.tvg_name else '-' }}</td>
+                    <td>{{ service.display_title if service.display_title else '-' }}</td>
+                    <td>{{ service.group_title if service.group_title else '-' }}</td>
+                    <td>{{ service.tvg_id if service.tvg_id else '-' }}</td>
                     <td>
-                        {% if service.original_tvg_logo %}
-                        <img src="{{ service.original_tvg_logo }}" alt="logo" style="max-height: 20px; max-width: 40px;" 
+                        {% if service.tvg_log %}
+                        <img src="{{ service.tvg_log }}" alt="logo" style="max-height: 20px; max-width: 40px;" 
                              onerror="this.style.display='none'" loading="lazy">
                         {% else %}
                         -
@@ -86,8 +86,8 @@
                     </td>
                     <td>
                         <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#previewModal"
-                            hx-get="{{ url_for('ui_player_for_service', service_id=service.id) }}" hx-target="#preview-modal-body"
-                            hx-trigger="click" title="Preview Stream URL for {{ service.original_tvg_name }}">
+                            hx-get="{{ url_for('ui_player_for_service', service_id=service.source_id) }}" hx-target="#preview-modal-body"
+                            hx-trigger="click" title="Preview Stream URL for {{ service.tvg_name }}">
                             <i class="fas fa-play"></i>
                         </button>
                     </td>
