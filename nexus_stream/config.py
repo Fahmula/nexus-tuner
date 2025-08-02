@@ -349,7 +349,7 @@ class Config:
 
     async def get_logical_channels_config(self) -> LogicalChannelsDataImpl:
         """Loads the logical channels configuration from logical_channels.json asynchronously."""
-        return await self._load_json_file(self.logical_channels_path, lambda: LogicalChannelsDataImpl([]))
+        return await self._load_json_file(self.logical_channels_path, lambda: LogicalChannelsDataImpl({}))
 
     async def save_logical_channels_config(self, data: LogicalChannelsData) -> bool:
         """Saves the logical channels configuration to logical_channels.json asynchronously."""

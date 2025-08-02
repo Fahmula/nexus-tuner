@@ -10,7 +10,7 @@ from nexus_stream.config import Config
 from nexus_stream.slots import ProviderSlots
 from nexus_stream.utils import (DEFAULT_PRIORITY, M3UURL, NEXUS_STREAM_USER_AGENT, ChannelInfos, ChannelInfosImpl, ChannelListData, ChannelListDataImpl,
                                 ChannelListGroup, ChannelListInfo, ChannelMappingsData, ChannelMappingsDataImpl, ChannelNum, DateTimeISO,
-                                DiscoveredSource, DiscoveredSourceWithId, DiscoveredSourcesData, DiscoveredSourcesDataImpl, LogicalChannelInfo, LogicalChannelName, LogicalChannelsDataImpl, Priority, ProviderInfo,
+                                DiscoveredSource, DiscoveredSourceWithId, DiscoveredSourcesData, DiscoveredSourcesDataImpl, LogicalChannelInfo, LogicalChannelInfoWithId, LogicalChannelName, LogicalChannelsDataImpl, Priority, ProviderInfo,
                                 ProviderStatuses, SourceInfo, SourcePriority, SourceServiceId, StreamURL, TVGGroupTitle, Label, LogicalChannelId,
                                 LogicalChannelsData, M3USource, MainM3UPlaylist, MaxStreams, ProviderAlias, ProvidersData, ProvidersDataImpl,
                                 StreamKey, TVGDisplayName, TVGId, TVGLogo, TVGName, VideoType, create_stream_key)
@@ -55,7 +55,7 @@ class ChannelHandler:
         # Data loaded from configuration files
         self._providers_data: ProvidersData = ProvidersDataImpl({})
         self._discovered_source_services_data: DiscoveredSourcesData = DiscoveredSourcesDataImpl({})
-        self._logical_channels_data: LogicalChannelsData = LogicalChannelsDataImpl([])
+        self._logical_channels_data: LogicalChannelsData = LogicalChannelsDataImpl({})
         self._channel_mappings_data: ChannelMappingsData = ChannelMappingsDataImpl({})
         self._channel_list_data: ChannelListData = ChannelListDataImpl({})
 
@@ -101,7 +101,7 @@ class ChannelHandler:
                 self._providers_data = await self.config.get_providers_config()
                 self._update_providers_slots()
 
-            prev_discovered_source_services = DiscoveredSourcesDataImpl({k: v for k, v in self._discovered_source_services_data.items()})
+            prev_discovered_source_services = DiscoveredSourcesDataImpl({**self._discovered_source_services_data})
             min_updated_at = min([p_data["updated_at"] or DateTimeISO("0001-01-01") for p_data in self._providers_data.values()], default=DateTimeISO("0001-01-01"))
             now = datetime.now()
             if force_discover_sources or datetime.fromisoformat(min_updated_at) < now - timedelta(seconds=DISCOVER_SOURCES_INTERVAL):
@@ -228,9 +228,7 @@ class ChannelHandler:
         """Builds the final list of channels exposed to clients."""
         self.config.info(self.label, "Building client-facing channels...")
         new_client_facing_channels = ChannelInfosImpl({})
-        for lc_def in self._logical_channels_data:
-            logical_channel_id = lc_def["logical_channel_id"]
-
+        for logical_channel_id, lc_def in self._logical_channels_data.items():
             mapped_sources_for_lc = [mapping for mapping in self._channel_mappings_data.get(logical_channel_id, [])]
             mapped_sources_for_lc.sort(key=lambda x: x.get("priority", DEFAULT_PRIORITY))
             processed_sources: list[SourceInfo] = []
@@ -255,7 +253,6 @@ class ChannelHandler:
 
             if processed_sources:
                 new_client_facing_channels[logical_channel_id] = {
-                    "logical_channel_id": logical_channel_id,
                     "logical_channel_name": lc_def["logical_channel_name"] or LogicalChannelName(logical_channel_id),
                     "group_title": lc_def["group_title"] or TVGGroupTitle("Uncategorized"),
                     "tvg_id": lc_def["tvg_id"],
@@ -287,14 +284,6 @@ class ChannelHandler:
         """Returns the number of logical channels."""
         async with self._mutex:
             return len(self._logical_channels_data)
-
-    async def copy_logical_channels_data(self, key: Callable[[LogicalChannelInfo], str] | None = None) -> LogicalChannelsData:
-        """Returns a copy of the logical channels data."""
-        async with self._mutex:
-            res = LogicalChannelsDataImpl([LogicalChannelInfo(**lc) for lc in self._logical_channels_data])
-        if key:
-            res.sort(key=key)
-        return res
 
     def reset_kill_provider_streams(self) -> set[ProviderAlias]:
         """Resets the kill_provider_streams, returns the aliases that should be killed."""
@@ -329,18 +318,19 @@ class ChannelHandler:
             self._main_m3u_playlist = MainM3UPlaylist("\n".join(m3u_lines) + "\n")
             return
 
-        sorted_channels = sorted(self._client_facing_channels.values(), key=lambda item: (item.get("group_title", "zzz").lower(), item.get("logical_channel_name", "zzz").lower()))
+        client_channels = [(logical_channel_id, logical_channel) for logical_channel_id, logical_channel in self._client_facing_channels.items()]
+        client_channels.sort(key=lambda item: (item[1].get("group_title", "zzz").lower(), item[1].get("logical_channel_name", "zzz").lower()))
 
-        for lc_data in sorted_channels:
-            name = lc_data.get("logical_channel_name", "")
+        for logical_channel_id, logical_channel in client_channels:
+            name = logical_channel.get("logical_channel_name", "")
             extinf_parts = [f'tvg-name="{name}"']
-            if ch_num := lc_data.get("channel_num"): extinf_parts.append(f'tvg-chno="{ch_num}"')
-            if tvg_id := lc_data.get("tvg_id"): extinf_parts.append(f'tvg-id="{tvg_id}"')
-            if logo := lc_data.get("tvg_logo"): extinf_parts.append(f'tvg-logo="{logo}"')
-            if group := lc_data.get("group_title"): extinf_parts.append(f'group-title="{group}"')
+            if ch_num := logical_channel.get("channel_num"): extinf_parts.append(f'tvg-chno="{ch_num}"')
+            if tvg_id := logical_channel.get("tvg_id"): extinf_parts.append(f'tvg-id="{tvg_id}"')
+            if logo := logical_channel.get("tvg_logo"): extinf_parts.append(f'tvg-logo="{logo}"')
+            if group := logical_channel.get("group_title"): extinf_parts.append(f'group-title="{group}"')
             
             m3u_lines.append(f"#EXTINF:-1 {' '.join(extinf_parts)},{name}")
-            m3u_lines.append(f"{self.config.nexus_url}/{VideoType.HLS}/{lc_data['logical_channel_id']}/playlist.m3u8")
+            m3u_lines.append(f"{self.config.nexus_url}/{VideoType.HLS}/{logical_channel_id}/playlist.m3u8")
         
         self._main_m3u_playlist = MainM3UPlaylist("\n".join(m3u_lines) + "\n")
         self.config.info(self.label, f"Generated main client M3U with {len(self._client_facing_channels)} channels.")
@@ -459,20 +449,30 @@ class ChannelHandler:
             self._providers_data = new_providers_data
             return True
 
-    async def get_all_discovered_source_services_for_ui(self) -> list[DiscoveredSourceWithId]:
+    async def get_discovered_source_services_for_ui(self) -> list[DiscoveredSourceWithId]:
         """Gets a list of discovered services."""
         async with self._mutex:
-            all_services = [DiscoveredSourceWithId({**source, "source_id": source_id}) for source_id, source in self._discovered_source_services_data.items()]
-            return sorted(all_services, key=lambda x: (x["provider_alias"], (x.get("tvg_name","") or x.get("display_title","")).lower()))
+            all_services = [DiscoveredSourceWithId({**source, "source_id": source_id})
+                            for source_id, source in self._discovered_source_services_data.items()]
+        return sorted(all_services, key=lambda x: (x["provider_alias"], (x.get("tvg_name","") or x.get("display_title","")).lower()))
+
+    async def get_logical_channels_for_ui(self, key: Callable[[LogicalChannelInfo], str] | None = None) -> list[LogicalChannelInfoWithId]:
+        """Returns a copy of the logical channels data."""
+        async with self._mutex:
+            res = [LogicalChannelInfoWithId({**lc, "logical_channel_id": logical_channel_id})
+                   for logical_channel_id, lc in self._logical_channels_data.items()]
+        if key:
+            res.sort(key=key)
+        return res
 
     async def get_logical_channel_by_id(self, logical_channel_id: LogicalChannelId) -> LogicalChannelInfo | None:
         """Gets a logical channel by its ID."""
         async with self._mutex:
-            return next((lc for lc in self._logical_channels_data if lc.get("logical_channel_id") == logical_channel_id), None)
+            return self._logical_channels_data.get(logical_channel_id)
 
     def _generate_next_logical_channel_id(self) -> LogicalChannelId:
         """Generates the next available ID. (Sync - CPU-bound)"""
-        existing_id_strings = [lc['logical_channel_id'] for lc in self._logical_channels_data]
+        existing_id_strings = self._logical_channels_data.keys()
         if not existing_id_strings: return INITIAL_LOGICAL_CHANNEL_ID
         numeric_ids = [int(id_str) for id_str in existing_id_strings]
         return LogicalChannelId(str(max(numeric_ids) + 1))
@@ -481,24 +481,25 @@ class ChannelHandler:
         """Adds a new logical channel to the configuration."""
         async with self._mutex:
             new_lc_id = self._generate_next_logical_channel_id()
-            new_lc_data = LogicalChannelInfo({**raw_lc_data, "logical_channel_id": new_lc_id})
-            new_data = LogicalChannelsDataImpl([*self._logical_channels_data, new_lc_data])
+            new_lc_data = LogicalChannelInfo({**raw_lc_data})
+            new_data = LogicalChannelsDataImpl({**self._logical_channels_data})
+            new_data[new_lc_id] = new_lc_data
             if not await self.config.save_logical_channels_config(new_data):
                 self.config.critical(self.label, f"Failed to save new logical channel configuration: {new_lc_data}")
                 return
             self._logical_channels_data = new_data
             return new_lc_id
 
-    async def update_logical_channel(self, updated_lc_data: LogicalChannelInfo) -> bool:
+    async def update_logical_channel(self, logical_channel_id: LogicalChannelId, updated_lc_data: LogicalChannelInfo) -> bool:
         """Updates a logical channel in the configuration."""
         async with self._mutex:
-            if not any(lc["logical_channel_id"] == updated_lc_data["logical_channel_id"] for lc in self._logical_channels_data):
-                self.config.error(self.label, f"Failed to update logical channel {updated_lc_data['logical_channel_id']}: not found.")
+            if logical_channel_id not in self._logical_channels_data:
+                self.config.error(self.label, f"Failed to find Logical Channel ID {logical_channel_id} for update: {updated_lc_data}")
                 return False
-            new_data = LogicalChannelsDataImpl([updated_lc_data if lc["logical_channel_id"] == updated_lc_data["logical_channel_id"]
-                                                                else lc for lc in self._logical_channels_data])
+            new_data = LogicalChannelsDataImpl({**self._logical_channels_data})
+            new_data[logical_channel_id] = LogicalChannelInfo({**updated_lc_data})
             if not await self.config.save_logical_channels_config(new_data):
-                self.config.critical(self.label, f"Failed to save updated logical channel configuration: {updated_lc_data}")
+                self.config.critical(self.label, f"Failed to save updated logical channel configuration for {logical_channel_id}: {updated_lc_data}")
                 return False
             self._logical_channels_data = new_data
             return True
@@ -506,7 +507,7 @@ class ChannelHandler:
     async def delete_logical_channel(self, logical_channel_id: LogicalChannelId) -> bool:
         """Deletes a logical channel from the configuration."""
         async with self._mutex:
-            if not any(lc["logical_channel_id"] == logical_channel_id for lc in self._logical_channels_data):
+            if logical_channel_id not in self._logical_channels_data:
                 self.config.error(self.label, f"Failed to delete logical channel {logical_channel_id}: not found.")
                 return False
             if logical_channel_id in self._channel_mappings_data:
@@ -517,10 +518,10 @@ class ChannelHandler:
                     return False
                 self._channel_mappings_data = new_mappings
 
-            new_data = LogicalChannelsDataImpl([lc for lc in self._logical_channels_data
-                                                if lc["logical_channel_id"] != logical_channel_id])
+            new_data = LogicalChannelsDataImpl({**self._logical_channels_data})
+            del_lc_data = new_data.pop(logical_channel_id)
             if not await self.config.save_logical_channels_config(new_data):
-                self.config.critical(self.label, f"Failed to save updated logical channels configuration after deleting {logical_channel_id}.")
+                self.config.critical(self.label, f"Failed to save updated logical channels configuration after deleting {logical_channel_id}: {del_lc_data}")
                 return False
             self._logical_channels_data = new_data
             return True
@@ -625,7 +626,7 @@ class ChannelHandler:
     async def copy_client_facing_channels(self) -> ChannelInfos:
         """Returns a copy of the client-facing channels."""
         async with self._mutex:
-            return ChannelInfosImpl({k: v for k, v in self._client_facing_channels.items()})
+            return ChannelInfosImpl({**self._client_facing_channels})
 
     async def get_main_m3u_playlist(self) -> MainM3UPlaylist:
         """Returns the main M3U playlist."""

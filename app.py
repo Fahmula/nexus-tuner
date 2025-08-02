@@ -483,7 +483,7 @@ async def ui_provider_status() -> str:
 async def ui_source_services_list() -> str:
     per_page = request.args.get('per_page', 100, type=int)
     page = request.args.get('page', 1, type=int)
-    services_unfiltered = await handler.get_all_discovered_source_services_for_ui()
+    services_unfiltered = await handler.get_discovered_source_services_for_ui()
     providers = sorted(list(set(s['provider_alias'] for s in services_unfiltered)))
     filter_provider = request.args.get('provider_alias', '')
     filter_name = request.args.get('name_filter', '').lower()
@@ -497,7 +497,7 @@ async def ui_source_services_list() -> str:
 @app.route("/ui/logical-channels")
 async def ui_logical_channels_list() -> str:
     """Renders the list of all configured logical channels."""
-    channels = await handler.copy_logical_channels_data(key=lambda x: x.get("logical_channel_name","").lower())
+    channels = await handler.get_logical_channels_for_ui(key=lambda x: x.get("logical_channel_name","").lower())
     all_quality_scores = await quality_monitor.get_quality_scores()
 
     all_channel_metrics: dict[LogicalChannelId, LogicalChannelMetrics] = {}
@@ -544,18 +544,18 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
         channel_log = f"'{logical_channel_name}' ({channel_num})"
         submitted_id = form_data.get("logical_channel_id")
         if submitted_id:
+            logical_channel_id = LogicalChannelId(submitted_id)
             lc_data: LogicalChannelInfo = {
-                "logical_channel_id": LogicalChannelId(submitted_id),
                 "logical_channel_name": logical_channel_name,
                 "channel_num": channel_num,
                 "group_title": group_title,
                 "tvg_id": tvg_id,
                 "tvg_logo": tvg_log,
             }
-            if not await handler.update_logical_channel(lc_data):
+            if not await handler.update_logical_channel(logical_channel_id, lc_data):
                 await flash(f"Failed to update channel {channel_log}.", "error")
                 return redirect(request.url)
-            if await handler.update_mappings_for_logical_channel(lc_data["logical_channel_id"], mappings_to_save):
+            if await handler.update_mappings_for_logical_channel(logical_channel_id, mappings_to_save):
                 await flash(f"Channel {channel_log} updated with {len(mappings_to_save)} mappings.", "success")
             else:
                 await flash(f"Successfully updated channel {channel_log}, but failed to update {len(mappings_to_save)} mappings.", "warning")
@@ -563,7 +563,6 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
             return redirect(url_for('ui_logical_channel_form', logical_channel_id=submitted_id))
         else:
             lc_data: LogicalChannelInfo = {
-                "logical_channel_id": LogicalChannelId("0"),
                 "logical_channel_name": logical_channel_name,
                 "channel_num": channel_num,
                 "group_title": group_title,
@@ -601,7 +600,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
             search_query = MULTI_SEARCH_QUERY_DELIMITER.join(predefined_channel['names']) if predefined_channel.get('names') else predefined_channel.get('title', channel.get('logical_channel_name'))
 
     filter_query = search_query.strip().lower() if search_query else None
-    all_services = await handler.get_all_discovered_source_services_for_ui()
+    all_services = await handler.get_discovered_source_services_for_ui()
     all_quality_scores = await quality_monitor.get_quality_scores()
 
     all_services_map = {s['source_id']: s for s in all_services}
@@ -745,7 +744,7 @@ async def ui_channel_populate_from_suggestion() -> str:
 
     # 2. Pre-filter services based on the suggested name
     filter_query = prefilled_data['logical_channel_name'].strip().lower()
-    all_services = await handler.get_all_discovered_source_services_for_ui()
+    all_services = await handler.get_discovered_source_services_for_ui()
     services_mapped_elsewhere = await handler.get_all_mapped_service_ids()
     unmapped_suggestions: list[DiscoveredSource] = []
 
@@ -862,7 +861,7 @@ async def hdhomerun_lineup() -> Response:
     """Returns the channel lineup in HDHomeRun format."""
     lineup: list[dict[str, str | int]] = []
     quality_scores = await quality_monitor.get_quality_scores()
-    for channel in await handler.copy_logical_channels_data():
+    for channel in await handler.get_logical_channels_for_ui():
         channel_number = channel.get('channel_num', '')
         if not channel_number:
             continue

@@ -46,7 +46,7 @@ class QualityMonitor:
     async def get_quality_scores(self) -> QualityScores:
         """Returns the current quality scores for all services."""
         async with self._mutex:
-            return QualityScoresImpl({k: v for k, v in self._quality_scores.items()})
+            return QualityScoresImpl({**self._quality_scores})
 
     async def remove_source_service(self, service_id: SourceServiceId) -> bool:
         """Removes a source service from the quality scores and cache."""
@@ -58,7 +58,7 @@ class QualityMonitor:
                     self.config.critical(Label.QUALITY, f"Failed to save service quality cache after removing {service_id}.")
                     return False
             if service_id in self._quality_scores:
-                new_quality_scores = QualityScoresImpl({k: v for k, v in self._quality_scores.items()})
+                new_quality_scores = QualityScoresImpl({**self._quality_scores})
                 del new_quality_scores[service_id]
                 self._quality_scores = new_quality_scores
             return True

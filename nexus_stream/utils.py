@@ -139,15 +139,16 @@ class DiscoveredSourceWithId(DiscoveredSource):
     source_id: ReadOnly[SourceServiceId]
 
 class LogicalChannelInfo(TypedDict):
-    logical_channel_id: ReadOnly[LogicalChannelId]
     logical_channel_name: ReadOnly[LogicalChannelName]
     channel_num: ReadOnly[ChannelNum]
     group_title: ReadOnly[TVGGroupTitle]
     tvg_id: ReadOnly[TVGId]
     tvg_logo: ReadOnly[TVGLogo]
-LogicalChannelsDataImpl = NewType("LogicalChannelsDataImpl", list[LogicalChannelInfo])
-_LogicalChannelsDataReadOnly = NewType("_LogicalChannelsDataReadOnly", tuple[LogicalChannelInfo, ...])
+LogicalChannelsDataImpl = NewType("LogicalChannelsDataImpl", dict[LogicalChannelId, LogicalChannelInfo])
+_LogicalChannelsDataReadOnly = NewType("_LogicalChannelsDataReadOnly", Mapping[LogicalChannelId, LogicalChannelInfo])
 type LogicalChannelsData = LogicalChannelsDataImpl | _LogicalChannelsDataReadOnly
+class LogicalChannelInfoWithId(LogicalChannelInfo):
+    logical_channel_id: ReadOnly[LogicalChannelId]
 
 class LogicalChannelMetrics(TypedDict):
     health_score: ReadOnly[PercentDisplay | None]
