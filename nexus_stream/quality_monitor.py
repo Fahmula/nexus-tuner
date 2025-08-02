@@ -228,7 +228,7 @@ class QualityMonitor:
             for source_id in source_ids:
                 service_details = await self.handler.get_discovered_source(source_id)
                 if not service_details:
-                    self.config.debug(Label.QUALITY, f"Logical Channel ID {logical_channel_id} service {source_id} not found in discovered services.")
+                    self.config.debug(Label.QUALITY, f"Logical Channel ID {logical_channel_id} service {source_id} not found in discovered sources.")
                     continue
                 provider_slots = await self.handler.get_provider_slots(service_details["provider_alias"])
                 if not provider_slots:

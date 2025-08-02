@@ -20,11 +20,11 @@
     </div>
     <div class="col-md-4">
         <div class="card text-white bg-success mb-3">
-            <div class="card-header">Discovered Services</div>
+            <div class="card-header">Discovered Sources</div>
             <div class="card-body">
-                <h5 class="card-title display-4">{{ discovered_services_count }}</h5>
-                <p class="card-text">Total raw services found across all providers.</p>
-                <a href="{{ url_for('ui_sources_list') }}" class="btn btn-light btn-sm">View Services <i class="fas fa-arrow-circle-right"></i></a>
+                <h5 class="card-title display-4">{{ discovered_sources_count }}</h5>
+                <p class="card-text">Total raw sources found across all providers.</p>
+                <a href="{{ url_for('ui_sources_list') }}" class="btn btn-light btn-sm">View Sources <i class="fas fa-arrow-circle-right"></i></a>
             </div>
         </div>
     </div>
@@ -48,7 +48,7 @@
         <button id="dashboard-reload-button" class="btn btn-secondary" hx-post="{{ url_for('reload_configuration') }}"
             hx-target="#flash-messages-container" hx-swap="afterbegin"
             hx-vals='{"update_providers": "true", "force_discover_sources": "true"}' data-bs-toggle="tooltip"
-            data-bs-placement="top" title="Reloads provider M3Us, re-parses services, and rebuilds the client M3U."
+            data-bs-placement="top" title="Reloads provider M3Us, re-parses sources, and rebuilds the client M3U."
             hx-indicator="#dashboard-reload-container">
             <i class="fas fa-sync-alt"></i> Full Reload (Providers & M3U)
         </button>
@@ -76,7 +76,7 @@
     </p>
     <p class="text-muted small">
         Use the "Reload Config" button in the top navigation for a quicker reload of JSON configurations and M3U generation without re-parsing all provider M3Us (if only logical channel definitions or mappings changed).
-        The button above performs a more thorough refresh including fetching all provider M3Us and re-discovering all services.
+        The button above performs a more thorough refresh including fetching all provider M3Us and re-discovering all sources.
     </p>
 </div>
 

@@ -388,7 +388,7 @@ async def ui_main_dashboard() -> str:
     """Renders the main dashboard page."""
     return await render_template("ui_dashboard.html",
                            provider_count=await handler.get_num_providers(),
-                           discovered_services_count=await handler.get_num_discovered_sources(),
+                           discovered_sources_count=await handler.get_num_discovered_sources(),
                            logical_channels_count=await handler.get_num_logical_channels())
 
 
@@ -780,7 +780,7 @@ async def ui_channel_populate_from_suggestion() -> str:
         total_unmapped_items=total_unmapped_items,
         filter_query=filter_query
     )
-    oob_search_card = f'<div id="service-mapping-section" hx-swap-oob="innerHTML">{search_card_html}</div>'
+    oob_search_card = f'<div id="source-mapping-section" hx-swap-oob="innerHTML">{search_card_html}</div>'
 
     # 5. OOB swap to clear the suggestion dropdown
     clear_suggestions_html = '<div id="suggestion-box" hx-swap-oob="true"></div>'
@@ -816,10 +816,10 @@ async def ui_player_for_service(source_id: SourceId) -> str:
     if not source_service:
         await flash(f"Error: source service ID not found.", "error")
         abort(404, f"Source service ID '{source_id}' not found.")
-    service_name = source_service.get('display_title', source_service.get('tvg_name', 'Preview'))
+    source_name = source_service.get('display_title', source_service.get('tvg_name', 'Preview'))
     logical_channel_id = f"preview_{source_id}"
     playlist_url = url_for('serve_hls_preview', logical_channel_id=logical_channel_id)
-    return await render_template("_video_player_modal.html", playlist_url=playlist_url, logical_channel_id=logical_channel_id, service_name=service_name)
+    return await render_template("_video_player_modal.html", playlist_url=playlist_url, logical_channel_id=logical_channel_id, source_name=source_name)
 
 
 # --- HDHomeRun Emulation Endpoints ---

@@ -248,7 +248,7 @@ class ChannelHandler:
                         source_name = f"'{prev_discovered_source['display_title'] or prev_discovered_source['tvg_name']}' ({source_id})"
                     else:
                         source_name = f"'Unknown Source' ({source_id})"
-                    self.config.warn(self.label, f"Mapped source {source_name} for '{lc_def.get('logical_channel_title', logical_channel_id)}'{f' ({lc_def['channel_num']})' if 'channel_num' in lc_def else ''} not found in discovered services.")
+                    self.config.warn(self.label, f"Mapped source {source_name} for '{lc_def.get('logical_channel_title', logical_channel_id)}'{f' ({lc_def['channel_num']})' if 'channel_num' in lc_def else ''} not found in discovered sources.")
 
             if processed_sources:
                 new_client_channels[logical_channel_id] = {
@@ -449,7 +449,7 @@ class ChannelHandler:
             return True
 
     async def get_discovered_sources_for_ui(self) -> list[DiscoveredSourceWithId]:
-        """Gets a list of discovered services."""
+        """Gets a list of discovered sources."""
         async with self._mutex:
             all_services = [DiscoveredSourceWithId({**source, "source_id": source_id})
                             for source_id, source in self._discovered_sources_data.items()]

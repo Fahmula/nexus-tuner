@@ -1,6 +1,6 @@
 <div class="card">
     <div class="card-header">
-        Map Source Services to "<span id="channel-name-header">{{ channel.logical_channel_title or 'New Channel'
+        Map Sources to "<span id="channel-name-header">{{ channel.logical_channel_title or 'New Channel'
             }}</span>"
         {% if channel_metrics.discovered_mappings != channel_metrics.enabled_mappings %}
         <button class="btn btn-sm btn-danger ms-2 float-end"
@@ -13,15 +13,15 @@
     </div>
     <div class="card-body">
 
-        <div id="service-search-wrapper">
+        <div id="source-search-wrapper">
             <p class="small text-muted">
                 If your channel wasn't pre-defined or you want a different filter, use the search below (tip: separate
                 multiple search
                 phrases with OR, e.g., "Title OR 3 Word Title OR Other Title"):
             </p>
             <div class="input-group mb-3">
-                <input type="search" class="form-control" id="service-search-input" name="search_query"
-                    value="{{ search_query or '' }}" placeholder="Search all available services..."
+                <input type="search" class="form-control" id="source-search-input" name="search_query"
+                    value="{{ search_query or '' }}" placeholder="Search all available sources..."
                     hx-get="{{ url_for('ui_logical_channel_form', logical_channel_id=channel.logical_channel_id) }}"
                     hx-trigger="keyup changed delay:500ms, search" hx-target="#source-list-container"
                     hx-indicator="#search-spinner">
