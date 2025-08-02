@@ -22,7 +22,7 @@ FRAMERATE_NORM: Final[int] = 60
 
 BACKGROUND_SLOT_WAIT_INTERVAL: Final[int] = 1
 QUALITY_MONITOR_TIMEOUT: Final[int] = 5
-MAX_HISTORY_PER_SERVICE: Final[int] = 10
+MAX_HISTORY_PER_SOURCE: Final[int] = 10
 MIN_DAYS_AT_MAX_HISTORY: Final[int] = 7
 MIN_DAYS_AT_NON_MAX_HISTORY: Final[int] = 1
 
@@ -44,18 +44,18 @@ class QualityMonitor:
         return instance
 
     async def get_quality_scores(self) -> QualityScores:
-        """Returns the current quality scores for all services."""
+        """Returns the current quality scores for all sources."""
         async with self._mutex:
             return QualityScoresImpl({**self._quality_scores})
 
-    async def remove_source_service(self, source_id: SourceId) -> bool:
-        """Removes a source service from the quality scores and cache."""
+    async def remove_source(self, source_id: SourceId) -> bool:
+        """Removes a source from the quality scores and cache."""
         async with self._mutex:
             quality_cache = await self.config.get_quality_cache()
             if source_id in quality_cache:
                 del quality_cache[source_id]
                 if not await self.config.save_quality_cache(quality_cache):
-                    self.config.critical(Label.QUALITY, f"Failed to save service quality cache after removing {source_id}.")
+                    self.config.critical(Label.QUALITY, f"Failed to save quality cache after removing {source_id}.")
                     return False
             if source_id in self._quality_scores:
                 new_quality_scores = QualityScoresImpl({**self._quality_scores})
@@ -190,62 +190,62 @@ class QualityMonitor:
             return source_id, {"status": "offline", "reason": f"Probe failed: {e}"}
     
     async def analyze_mapped_sources(self, input_lc_id: LogicalChannelId | None = None) -> None:
-        """Finds and probes all mapped services concurrently."""
+        """Finds and probes all mapped sources concurrently."""
         valid_mappings: list[tuple[LogicalChannelId, list[SourceId], DateTimeISO]] = []
         if input_lc_id:
             self.config.info(Label.QUALITY, f"Starting stream quality analysis for Logical Channel ID {input_lc_id}.")
-            services = await self.handler.get_mappings_for_logical_channel(input_lc_id)
-            if not services:
-                self.config.error(Label.QUALITY, f"No mapped services found for Logical Channel ID {input_lc_id}.")
+            sources = await self.handler.get_mappings_for_logical_channel(input_lc_id)
+            if not sources:
+                self.config.error(Label.QUALITY, f"No mapped sources found for Logical Channel ID {input_lc_id}.")
                 return
-            valid_mappings.append((input_lc_id, [source_id for source_id in services], DateTimeISO("0001-01-01")))
+            valid_mappings.append((input_lc_id, [source_id for source_id in sources], DateTimeISO("0001-01-01")))
         else:
             self.config.info(Label.QUALITY, "Starting stream quality analysis cycle.")
             all_mappings = await self.handler.copy_channel_mappings_data()
             if not all_mappings:
-                self.config.warn(Label.QUALITY, "No mapped services to analyze.")
+                self.config.warn(Label.QUALITY, "No mapped sources to analyze.")
                 return
 
             quality_cache = await self.config.get_quality_cache()
             now = datetime.now()
-            for logical_channel_id, services in all_mappings.items():
-                if not services:
-                    self.config.debug(Label.QUALITY, f"No valid services found for Logical Channel ID {logical_channel_id}.")
+            for logical_channel_id, sources in all_mappings.items():
+                if not sources:
+                    self.config.debug(Label.QUALITY, f"No valid sources found for Logical Channel ID {logical_channel_id}.")
                     continue
-                min_updated_at = min([quality_cache.get(source_id, {}).get("updated_at", "0001-01-01") for source_id in services])
-                at_max_history = all(len(quality_cache.get(source_id, {}).get("statuses", [])) >= MAX_HISTORY_PER_SERVICE for source_id in services)
+                min_updated_at = min([quality_cache.get(source_id, {}).get("updated_at", "0001-01-01") for source_id in sources])
+                at_max_history = all(len(quality_cache.get(source_id, {}).get("statuses", [])) >= MAX_HISTORY_PER_SOURCE for source_id in sources)
                 delta = timedelta(days=MIN_DAYS_AT_MAX_HISTORY) if at_max_history else timedelta(days=MIN_DAYS_AT_NON_MAX_HISTORY)
                 if datetime.fromisoformat(min_updated_at) > now - delta:
                     continue
-                valid_mappings.append((logical_channel_id, [source_id for source_id in services], min_updated_at))
+                valid_mappings.append((logical_channel_id, [source_id for source_id in sources], min_updated_at))
             if not valid_mappings:
-                self.config.info(Label.QUALITY, "No services are due for quality probing.")
+                self.config.info(Label.QUALITY, "No sources are due for quality probing.")
                 return
             valid_mappings.sort(key=lambda x: x[2])
 
         for logical_channel_id, source_ids, _ in valid_mappings:
             tasks: list[Coroutine[Any, Any, tuple[SourceId, ProbeInfo]]] = []
             for source_id in source_ids:
-                service_details = await self.handler.get_discovered_source(source_id)
-                if not service_details:
-                    self.config.debug(Label.QUALITY, f"Logical Channel ID {logical_channel_id} service {source_id} not found in discovered sources.")
+                discovered_source = await self.handler.get_discovered_source(source_id)
+                if not discovered_source:
+                    self.config.debug(Label.QUALITY, f"Logical Channel ID {logical_channel_id} source {source_id} not found in discovered sources.")
                     continue
-                provider_slots = await self.handler.get_provider_slots(service_details["provider_alias"])
+                provider_slots = await self.handler.get_provider_slots(discovered_source["provider_alias"])
                 if not provider_slots:
-                    self.config.error(Label.QUALITY, f"Provider slots for {service_details['provider_alias']} not found while probing service {source_id} for Logical Channel ID {logical_channel_id}.")
+                    self.config.error(Label.QUALITY, f"Provider slots for {discovered_source['provider_alias']} not found while probing source {source_id} for Logical Channel ID {logical_channel_id}.")
                     continue
                 if provider_slots.get_total_slots() <= 0:
-                    self.config.warn(Label.QUALITY, f"Provider {provider_slots.get_alias()} is configured with 0 slots, skipping probing for service {source_id} in Logical Channel ID {logical_channel_id}.")
+                    self.config.warn(Label.QUALITY, f"Provider {provider_slots.get_alias()} is configured with 0 slots, skipping probing for source {source_id} in Logical Channel ID {logical_channel_id}.")
                     continue
                 tasks.append(
                     self._run_single_probe(
                         source_id, 
-                        service_details["stream_url"], 
-                        service_details["provider_alias"]
+                        discovered_source["stream_url"], 
+                        discovered_source["provider_alias"]
                     )
                 )
             if not tasks:
-                self.config.debug(Label.QUALITY, f"No valid services found to probe for Logical Channel ID {logical_channel_id}.")
+                self.config.debug(Label.QUALITY, f"No valid sources found to probe for Logical Channel ID {logical_channel_id}.")
                 continue
 
             raw_results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -253,7 +253,7 @@ class QualityMonitor:
             for raw_result in raw_results:
                 if isinstance(raw_result, BaseException):
                     if not isinstance(raw_result, asyncio.CancelledError) and not isinstance(raw_result, Exception):
-                        self.config.error(Label.QUALITY, f"Error probing service for Logical Channel ID {logical_channel_id}: {raw_result}")
+                        self.config.error(Label.QUALITY, f"Error probing source for Logical Channel ID {logical_channel_id}: {raw_result}")
                     continue
                 stream_infos.append(raw_result)
 
@@ -263,34 +263,34 @@ class QualityMonitor:
                 for source_id, result in stream_infos:
                     if source_id not in quality_cache:
                         if not await self.handler.get_discovered_source(source_id):
-                            self.config.warn(Label.QUALITY, f"Logical Channel ID {logical_channel_id} service {source_id} not found in discovered sources, skipping.")
+                            self.config.warn(Label.QUALITY, f"Logical Channel ID {logical_channel_id} source {source_id} not found in discovered sources, skipping.")
                             continue  # Dead mapping that was removed after the start of this analysis
                         quality_cache[source_id] = QualityInfoImpl({
                             "updated_at": DateTimeISO(datetime.now().isoformat()), "statuses": [], "widths": [],
                             "heights": [], "bitrates": [], "framerates": []
                         })
-                    service_entry = quality_cache[source_id]
+                    source_entry = quality_cache[source_id]
 
-                    service_entry["updated_at"] = DateTimeISO(datetime.now().isoformat())
+                    source_entry["updated_at"] = DateTimeISO(datetime.now().isoformat())
                     if result["status"] == "online":
-                        service_entry["statuses"].append("online")
-                        service_entry["widths"].append(result["width"])
-                        service_entry["heights"].append(result["height"])
-                        service_entry["bitrates"].append(result["bitrate"])
-                        service_entry["framerates"].append(result["framerate"])
+                        source_entry["statuses"].append("online")
+                        source_entry["widths"].append(result["width"])
+                        source_entry["heights"].append(result["height"])
+                        source_entry["bitrates"].append(result["bitrate"])
+                        source_entry["framerates"].append(result["framerate"])
                     else:
-                        self.config.warn(Label.QUALITY, f"Logical Channel ID {logical_channel_id} service {source_id} is offline: {result.get('reason', 'Unknown')}")
-                        service_entry["statuses"].append("offline")
+                        self.config.warn(Label.QUALITY, f"Logical Channel ID {logical_channel_id} source {source_id} is offline: {result.get('reason', 'Unknown')}")
+                        source_entry["statuses"].append("offline")
 
-                    if len(service_entry["statuses"]) > MAX_HISTORY_PER_SERVICE:
-                        service_entry["statuses"] = service_entry["statuses"][-MAX_HISTORY_PER_SERVICE:]
-                        service_entry["widths"] = service_entry["widths"][-MAX_HISTORY_PER_SERVICE:]
-                        service_entry["heights"] = service_entry["heights"][-MAX_HISTORY_PER_SERVICE:]
-                        service_entry["bitrates"] = service_entry["bitrates"][-MAX_HISTORY_PER_SERVICE:]
-                        service_entry["framerates"] = service_entry["framerates"][-MAX_HISTORY_PER_SERVICE:]
-                    modified_cache[source_id] = service_entry
+                    if len(source_entry["statuses"]) > MAX_HISTORY_PER_SOURCE:
+                        source_entry["statuses"] = source_entry["statuses"][-MAX_HISTORY_PER_SOURCE:]
+                        source_entry["widths"] = source_entry["widths"][-MAX_HISTORY_PER_SOURCE:]
+                        source_entry["heights"] = source_entry["heights"][-MAX_HISTORY_PER_SOURCE:]
+                        source_entry["bitrates"] = source_entry["bitrates"][-MAX_HISTORY_PER_SOURCE:]
+                        source_entry["framerates"] = source_entry["framerates"][-MAX_HISTORY_PER_SOURCE:]
+                    modified_cache[source_id] = source_entry
                 if not await self.config.save_quality_cache(quality_cache):
-                    self.config.critical(Label.QUALITY, f"Failed to save service quality cache after analyzing Logical Channel ID {logical_channel_id}.")
+                    self.config.critical(Label.QUALITY, f"Failed to save quality cache after analyzing Logical Channel ID {logical_channel_id}.")
                     continue
                 self._build_quality_scores(modified_cache)
         if input_lc_id:

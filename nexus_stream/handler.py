@@ -105,10 +105,10 @@ class ChannelHandler:
             min_updated_at = min([p_data["updated_at"] or DateTimeISO("0001-01-01") for p_data in self._providers_data.values()], default=DateTimeISO("0001-01-01"))
             now = datetime.now()
             if force_discover_sources or datetime.fromisoformat(min_updated_at) < now - timedelta(seconds=DISCOVER_SOURCES_INTERVAL):
-                self.config.info(self.label, "Discovering source services from configured providers...")
-                await self._parse_all_provider_m3us_and_populate_discovered_services()
+                self.config.info(self.label, "Discovering sources from configured providers...")
+                await self._parse_all_provider_m3us_and_populate_discovered_sources()
                 if not await self.config.save_discovered_sources_config(self._discovered_sources_data):
-                    self.config.critical(self.label, "Failed to save discovered source services configuration.")
+                    self.config.critical(self.label, "Failed to save discovered sources configuration.")
                 new_providers_data = ProvidersDataImpl({alias: {
                     "m3u_url": details["m3u_url"],
                     "max_streams": details["max_streams"],
@@ -203,7 +203,7 @@ class ChannelHandler:
             self.config.error(self.label, f"An unexpected error occurred while processing provider '{provider_alias}': {e}")
             raise
 
-    async def _parse_all_provider_m3us_and_populate_discovered_services(self) -> None:
+    async def _parse_all_provider_m3us_and_populate_discovered_sources(self) -> None:
         """Uses asyncio.gather to fetch and parse all configured provider M3Us concurrently."""
         self.config.info(self.label, "Starting to parse all provider M3Us...")
         async with aiohttp.ClientSession() as session:
@@ -222,7 +222,7 @@ class ChannelHandler:
                     discovered_sources.update(res)
             self._discovered_sources_data = discovered_sources
 
-        self.config.info(self.label, f"Finished parsing. Total discovered source services: {len(self._discovered_sources_data)}")
+        self.config.info(self.label, f"Finished parsing. Total discovered sources: {len(self._discovered_sources_data)}")
 
     def _build_client_channels(self, prev_discovered_sources: DiscoveredSourcesData) -> None:
         """Builds the final list of channels exposed to clients."""
@@ -234,13 +234,13 @@ class ChannelHandler:
             mapped_sources_for_lc.sort(key=lambda x: x[0]) 
             processed_sources: list[SourceInfo] = []
             for priority, source_id in mapped_sources_for_lc:
-                discovered_service = self._discovered_sources_data.get(source_id)
-                if discovered_service:
+                discovered_source = self._discovered_sources_data.get(source_id)
+                if discovered_source:
                     processed_sources.append({
                         "source_id": source_id,
                         "priority": priority,
-                        "provider_alias": discovered_service["provider_alias"],
-                        "stream_url": discovered_service["stream_url"],
+                        "provider_alias": discovered_source["provider_alias"],
+                        "stream_url": discovered_source["stream_url"],
                     })
                 else:
                     if source_id in prev_discovered_sources:
@@ -451,9 +451,9 @@ class ChannelHandler:
     async def get_discovered_sources_for_ui(self) -> list[DiscoveredSourceWithId]:
         """Gets a list of discovered sources."""
         async with self._mutex:
-            all_services = [DiscoveredSourceWithId({**source, "source_id": source_id})
+            all_sources = [DiscoveredSourceWithId({**source, "source_id": source_id})
                             for source_id, source in self._discovered_sources_data.items()]
-        return sorted(all_services, key=lambda x: (x["provider_alias"], (x.get("tvg_name","") or x.get("display_title","")).lower()))
+        return sorted(all_sources, key=lambda x: (x["provider_alias"], (x.get("tvg_name","") or x.get("display_title","")).lower()))
 
     async def get_logical_channels_for_ui(self, key: Callable[[LogicalChannelInfo], str] | None = None) -> list[LogicalChannelInfoWithId]:
         """Returns a copy of the logical channels data."""
@@ -527,7 +527,7 @@ class ChannelHandler:
             return True
 
     async def get_source_priority(self, source_id: SourceId) -> Priority | None:
-        """Retrieves the priority of a source service."""
+        """Retrieves the priority of a source."""
         async with self._mutex:
             for channel_mapping in self._channel_mappings_data.values():
                 if source_id in channel_mapping:
@@ -535,7 +535,7 @@ class ChannelHandler:
             return None
 
     async def get_all_mapped_source_ids(self) -> set[SourceId]:
-        """Returns a set of all source service IDs that are mapped to logical channels."""
+        """Returns a set of all source IDs that are mapped to logical channels."""
         async with self._mutex:
             return {source_id for mappings in self._channel_mappings_data.values() for source_id in mappings}        
 

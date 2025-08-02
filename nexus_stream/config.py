@@ -340,11 +340,11 @@ class Config:
         return await self._save_json_file(self.providers_path, data)
 
     async def get_discovered_sources_config(self) -> DiscoveredSourcesDataImpl:
-        """Loads the discovered source services from discovered_sources.json asynchronously."""
+        """Loads the discovered sources from discovered_sources.json asynchronously."""
         return await self._load_json_file(self.discovered_sources_path, lambda: DiscoveredSourcesDataImpl({}))
 
     async def save_discovered_sources_config(self, data: DiscoveredSourcesData) -> bool:
-        """Saves the discovered source services to discovered_sources.json asynchronously."""
+        """Saves the discovered sources to discovered_sources.json asynchronously."""
         return await self._save_json_file(self.discovered_sources_path, data)
 
     async def get_logical_channels_config(self) -> LogicalChannelsDataImpl:
@@ -368,11 +368,11 @@ class Config:
         return await self._load_json_file(self.channel_list_path, lambda: ChannelListDataImpl({}))
 
     async def get_quality_cache(self) -> QualityCacheDataImpl:
-        """Loads the service quality cache from quality_cache.json asynchronously."""
+        """Loads the quality cache from quality_cache.json asynchronously."""
         return await self._load_json_file(self.quality_cache_path, lambda: QualityCacheDataImpl({}))
 
     async def save_quality_cache(self, data: QualityCacheData) -> bool:
-        """Saves the service quality cache to quality_cache.json asynchronously."""
+        """Saves the quality cache to quality_cache.json asynchronously."""
         return await self._save_json_file(self.quality_cache_path, data)
 
     async def get_jobs_config(self) -> JobsDataImpl:
