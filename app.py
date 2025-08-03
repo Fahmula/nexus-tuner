@@ -11,6 +11,7 @@ StreamManager, GhostSessionMonitor) and defines all the web routes for:
 """
 
 import asyncio
+from pathlib import Path
 import aiofiles.os
 import json
 import math
@@ -889,5 +890,107 @@ async def ping() -> Response:
     return Response(status=200)
 
 
+def migrate_providers_json(config_path: Path) -> None:
+    path = config_path / "providers.json"
+    if not path.exists():
+        return
+    with open(path, "r") as f:
+        old_data = json.load(f)
+    if "source_m3u_providers" not in old_data:
+        return
+    migration_dir = config_path / "migration"
+    migration_dir.mkdir(exist_ok=True)
+    new_data = {}
+    for provider_alias, provider_info in old_data["source_m3u_providers"].items():
+        new_data[provider_alias] = {
+            "m3u_url": provider_info["url"],
+            "max_streams": provider_info["max_concurrent_streams"],
+            "updated_at": provider_info.get("updated_at")
+        }
+    with open(migration_dir / "providers_backup.json", "w") as f:
+        json.dump(old_data, f, indent=2)
+    with open(path, "w") as f:
+        json.dump(new_data, f, indent=2)
+
+def migrate_discover_json(config_path: Path) -> None:
+    path = config_path / "discovered_source_services.json"
+    if not path.exists():
+        return
+    with open(path, "r") as f:
+        old_data = json.load(f)
+    migration_dir = config_path / "migration"
+    migration_dir.mkdir(exist_ok=True)
+    new_data = {}
+    for source_id, source_info in old_data.items():
+        new_data[source_id] = {
+            "provider_alias": source_info["provider_alias"],
+            "tvg_name": source_info.get("original_tvg_name", ""),
+            "display_title": source_info.get("original_display_name_extinf", ""),
+            "group_title": source_info.get("original_group_title", ""),
+            "tvg_id": source_info.get("original_tvg_id", ""),
+            "tvg_log": source_info.get("original_tvg_logo", ""),
+            "stream_url": source_info.get("actual_stream_url", ""),
+        }
+    with open(migration_dir / "discover_source_services_backup.json", "w") as f:
+        json.dump(old_data, f, indent=2)
+    with open(config_path / "discovered_sources.json", "w") as f:
+        json.dump(new_data, f, indent=2)
+    path.unlink()
+
+def migrate_logical_channels_json(config_path: Path) -> None:
+    path = config_path / "logical_channels.json"
+    if not path.exists():
+        return
+    with open(path, "r") as f:
+        old_data = json.load(f)
+    migration_dir = config_path / "migration"
+    migration_dir.mkdir(exist_ok=True)
+    new_data = {}
+    for lc_data in old_data:
+        new_data[lc_data["logical_channel_id"]] = {
+            "logical_channel_title": lc_data["display_name"],
+            "channel_num": lc_data["channel_num"],
+            "group_title": lc_data.get("group_title", "Uncategorized"),
+            "tvg_id": lc_data.get("tvg_id", ""),
+            "tvg_logo": lc_data.get("tvg_logo", ""),
+        }
+    with open(migration_dir / "logical_channels_backup.json", "w") as f:
+        json.dump(old_data, f, indent=2)
+    with open(path, "w") as f:
+        json.dump(new_data, f, indent=2)
+
+def migrate_channel_mappings_json(config_path: Path) -> None:
+    path = config_path / "channel_mappings.json"
+    if not path.exists():
+        return
+    with open(path, "r") as f:
+        old_data = json.load(f)
+    migration_dir = config_path / "migration"
+    migration_dir.mkdir(exist_ok=True)
+    new_data = {}
+    for lc_id, mappings in old_data.items():
+        new_data[lc_id] = {}
+        for mapping in mappings:
+            new_data[lc_id][mapping["source_service_id"]] = {
+                "priority": mapping.get("priority", DEFAULT_PRIORITY),
+            }
+    with open(migration_dir / "channel_mappings_backup.json", "w") as f:
+        json.dump(old_data, f, indent=2)
+    with open(path, "w") as f:
+        json.dump(new_data, f, indent=2)
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=NEXUS_STREAM_PORT, use_reloader=False)
+    # app.run(host="0.0.0.0", port=NEXUS_STREAM_PORT, use_reloader=False)
+    config_path_str = os.getenv("NEXUS_CONFIG_DIR")
+    if not config_path_str:
+        raise ValueError("NEXUS_CONFIG_DIR environment variable is not set.")
+    config_path = Path(config_path_str)
+    (config_path / "channel_list.json").unlink()
+    with open(config_path / "service_quality_cache.json", "r") as f:
+        json.dump(json.load(f), open(config_path / "migration" / "service_quality_cache.json", "w"), indent=2)
+    (config_path / "service_quality_cache.json").rename(config_path / "quality_cache.json")
+    migrate_providers_json(config_path)
+    migrate_discover_json(config_path)
+    migrate_logical_channels_json(config_path)
+    migrate_channel_mappings_json(config_path)
