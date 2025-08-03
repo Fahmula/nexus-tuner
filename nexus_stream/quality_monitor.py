@@ -293,7 +293,7 @@ class QualityMonitor:
                         source_entry["bitrates"].append(result["bitrate"])
                         source_entry["framerates"].append(result["framerate"])
                     else:
-                        self.config.warn(Label.QUALITY, f"'{logical_channel_title}' ({channel_num}) source {source_id} is offline: {result.get('reason', 'Unknown')}")
+                        self.config.warn(Label.QUALITY, f"'{logical_channel_title}' ({channel_num}) source {source_id} is offline: {result["reason"]}")
                         source_entry["statuses"].append("offline")
 
                     if len(source_entry["statuses"]) > MAX_HISTORY_PER_SOURCE:
@@ -313,12 +313,11 @@ class QualityMonitor:
     def _build_quality_scores(self, quality_cache: QualityCacheData) -> None:
         """Calculates quality scores and updates the internal state."""
         for source_id, cache_entry in quality_cache.items():
-            avg_width = Width(sum(cache_entry.get("widths", [])) / len(cache_entry["widths"]) if cache_entry.get("widths") else 0)
-            avg_height = Height(sum(cache_entry.get("heights", [])) / len(cache_entry["heights"]) if cache_entry.get("heights") else 0)
-            avg_bitrate = Bitrate(sum(cache_entry.get("bitrates", [])) / len(cache_entry["bitrates"]) if cache_entry.get("bitrates") else 0)
-            avg_framerate = Framerate(sum(cache_entry.get("framerates", [])) / len(cache_entry["framerates"]) if cache_entry.get("framerates") else 0)
-            statuses = cache_entry.get("statuses", [])
-            uptime = Percent(sum(1 for s in statuses if s == "online") / len(statuses) if statuses else 0)
+            avg_width = Width(sum(cache_entry["widths"]) / len(cache_entry["widths"]) if cache_entry["widths"] else 0)
+            avg_height = Height(sum(cache_entry["heights"]) / len(cache_entry["heights"]) if cache_entry["heights"] else 0)
+            avg_bitrate = Bitrate(sum(cache_entry["bitrates"]) / len(cache_entry["bitrates"]) if cache_entry["bitrates"] else 0)
+            avg_framerate = Framerate(sum(cache_entry["framerates"]) / len(cache_entry["framerates"]) if cache_entry["framerates"] else 0)
+            uptime = Percent(sum(1 for s in cache_entry["statuses"] if s == "online") / len(cache_entry["statuses"]) if cache_entry["statuses"] else 0)
             
             height_score = ResolutionScore(RESOLUTION_WEIGHT * min(avg_height / float(RESOLUTION_NORM), 1.0))
             bitrate_score = BitrateScore(BITRATE_WEIGHT * min(avg_bitrate / float(BITRATE_NORM), 1.0))

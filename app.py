@@ -10,12 +10,15 @@ StreamManager, GhostSessionMonitor) and defines all the web routes for:
 - A manual reload endpoint.
 """
 
+import sys
+if sys.version_info < (3, 13):
+    raise RuntimeError("NexusStream requires Python 3.13 or higher.")
+
 import asyncio
 import aiofiles.os
 import json
 import math
 import os
-import sys
 from collections import deque
 from datetime import UTC, datetime
 from typing import AsyncGenerator, Dict, Final, cast
@@ -93,9 +96,7 @@ async def calculate_channel_metrics(mapped_sources: list[SourceMappingInfoWithId
     uptime_scores: list[float] = []
     if mapped_sources:
         for mapped_source in mapped_sources[:HIGHEST_PRIORITY_SOURCES_NUM]:
-            source_id = mapped_source.get('source_id')
-            if not source_id: continue
-            raw_uptime = all_quality_scores.get(source_id, {}).get('uptime')
+            raw_uptime = all_quality_scores.get(mapped_source["source_id"], {}).get("uptime")
             if raw_uptime is not None: uptime_scores.append(raw_uptime)
 
     discovered_mappings = 0
@@ -111,8 +112,8 @@ async def calculate_channel_metrics(mapped_sources: list[SourceMappingInfoWithId
 
 def filter_sources(raw_query: str, discovered_source: DiscoveredSource) -> bool:
     """Filters sources based on a query. (Sync - pure function)"""
-    tvg_name = discovered_source.get('tvg_name', '').lower()
-    display_title = discovered_source.get('display_title', '').lower()
+    tvg_name = discovered_source["tvg_name"].lower()
+    display_title = discovered_source["display_title"].lower()
     for raw_q in raw_query.split(MULTI_SEARCH_QUERY_DELIMITER):
         words = raw_q.strip().lower().split()
         if all(word in tvg_name or word in display_title for word in words):
@@ -487,7 +488,7 @@ async def ui_sources_list() -> str:
     providers = sorted(list(set(s['provider_alias'] for s in sources_unfiltered)))
     filter_provider = request.args.get('provider_alias', '')
     filter_name = request.args.get('name_filter', '').lower()
-    sources_filtered = [s for s in sources_unfiltered if (not filter_provider or s['provider_alias'] == filter_provider) and (not filter_name or filter_name in s.get('tvg_name', '').lower() or filter_name in s.get('display_title', '').lower())]
+    sources_filtered = [s for s in sources_unfiltered if (not filter_provider or s['provider_alias'] == filter_provider) and (not filter_name or filter_name in s["tvg_name"].lower() or filter_name in s["display_title"].lower())]
     total_items = len(sources_filtered)
     total_pages = math.ceil(total_items / per_page)
     sources_for_page = sources_filtered[(page - 1) * per_page:page * per_page]
@@ -497,7 +498,7 @@ async def ui_sources_list() -> str:
 @app.route("/ui/logical-channels")
 async def ui_logical_channels_list() -> str:
     """Renders the list of all configured logical channels."""
-    channels = await handler.get_logical_channels_for_ui(key=lambda x: x.get("logical_channel_title","").lower())
+    channels = await handler.get_logical_channels_for_ui(key=lambda x: x["logical_channel_title"])
     all_quality_scores = await quality_monitor.get_quality_scores()
 
     all_channel_metrics: dict[LogicalChannelId, LogicalChannelMetrics] = {}
@@ -597,7 +598,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     if channel and search_query is None and not is_htmx_source_list_request:
         predefined_channel = await handler.find_matching_predefined_channel(channel['logical_channel_title'], channel['channel_num'])
         if predefined_channel:
-            search_query = MULTI_SEARCH_QUERY_DELIMITER.join(predefined_channel['aliases']) if predefined_channel.get('aliases') else predefined_channel.get('title', channel.get('logical_channel_title'))
+            search_query = MULTI_SEARCH_QUERY_DELIMITER.join(predefined_channel['aliases']) if predefined_channel["aliases"] else predefined_channel["title"]
 
     filter_query = search_query.strip().lower() if search_query else None
     all_discovered_sources = await handler.get_discovered_sources_for_ui()
@@ -751,8 +752,8 @@ async def ui_channel_populate_from_suggestion() -> str:
     search_query = prefilled_data['logical_channel_title']
     for channel_list in handler.get_channel_lists():
         for pre_channel in channel_list:
-            if search_query == pre_channel.get('title'):  # Only need this check since we are populating this
-                search_query = MULTI_SEARCH_QUERY_DELIMITER.join(pre_channel.get('aliases', []))
+            if search_query == pre_channel["title"]:  # Only need this check since we are populating this
+                search_query = MULTI_SEARCH_QUERY_DELIMITER.join(pre_channel["aliases"])
                 break
 
     if filter_query:
@@ -816,7 +817,7 @@ async def ui_player_for_source(source_id: SourceId) -> str:
     if not discovered_source:
         await flash(f"Error: source ID not found.", "error")
         abort(404, f"Source ID '{source_id}' not found.")
-    source_name = discovered_source.get('display_title', discovered_source.get('tvg_name', 'Preview'))
+    source_name = discovered_source["display_title"] or discovered_source["tvg_name"] or "Preview"
     logical_channel_id = f"preview_{source_id}"
     playlist_url = url_for('serve_hls_preview', logical_channel_id=logical_channel_id)
     return await render_template("_video_player_modal.html", playlist_url=playlist_url, logical_channel_id=logical_channel_id, source_name=source_name)
@@ -862,7 +863,7 @@ async def hdhomerun_lineup() -> Response:
     lineup: list[dict[str, str | int]] = []
     quality_scores = await quality_monitor.get_quality_scores()
     for channel in await handler.get_logical_channels_for_ui():
-        channel_number = channel.get('channel_num', '')
+        channel_number = channel["channel_num"]
         if not channel_number:
             continue
         is_hd = 1
@@ -873,7 +874,7 @@ async def hdhomerun_lineup() -> Response:
             is_hd = 0
         lineup.append({
             "GuideNumber": channel_number,
-            "GuideName": channel.get('logical_channel_title', channel_number),
+            "GuideName": channel["logical_channel_title"],
             "HD": is_hd,
             "URL": f"{config.nexus_url}/{VideoType.MPEGTS}/{channel['logical_channel_id']}"
         })

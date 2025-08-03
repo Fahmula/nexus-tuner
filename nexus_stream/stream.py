@@ -212,7 +212,7 @@ class StreamManager:
         process: Process = data_to_cleanup['process']
         alias = data_to_cleanup['provider_alias']
         hls_dir: Path | None = data_to_cleanup['channel_hls_dir']
-        log_file: aiofiles.threadpool.text.AsyncTextIOWrapper | None = data_to_cleanup.get('stderr_log_file_obj')
+        log_file: aiofiles.threadpool.text.AsyncTextIOWrapper = data_to_cleanup["stderr_log_file_obj"]
 
         if process.returncode is None:
             try:
@@ -227,11 +227,10 @@ class StreamManager:
                 self.config.error(video_type, f"{name} [{video_key}]: Error terminating FFmpeg process: {e}")
                 process.kill()
         
-        if log_file:
-            try:
-                await log_file.close()
-            except Exception as e:
-                self.config.error(video_type, f"{name} [{video_key}]: Error closing FFmpeg log file: {e}")
+        try:
+            await log_file.close()
+        except Exception as e:
+            self.config.error(video_type, f"{name} [{video_key}]: Error closing FFmpeg log file: {e}")
 
         provider_slots = await self.handler.get_provider_slots(alias)
         if provider_slots:

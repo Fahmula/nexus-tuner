@@ -248,7 +248,7 @@ class ChannelHandler:
                         source_name = f"'{prev_discovered_source['display_title'] or prev_discovered_source['tvg_name']}' ({source_id})"
                     else:
                         source_name = f"'Unknown Source' ({source_id})"
-                    self.config.warn(self.label, f"Mapped source {source_name} for '{lc_def.get('logical_channel_title', logical_channel_id)}'{f' ({lc_def['channel_num']})' if 'channel_num' in lc_def else ''} not found in discovered sources.")
+                    self.config.warn(self.label, f"Mapped source {source_name} for '{lc_def["logical_channel_title"]}'{f' ({lc_def['channel_num']})' if 'channel_num' in lc_def else ''} not found in discovered sources.")
 
             if processed_sources:
                 new_client_channels[logical_channel_id] = {
@@ -317,16 +317,16 @@ class ChannelHandler:
             self._main_m3u_playlist = MainM3UPlaylist("\n".join(m3u_lines) + "\n")
             return
 
-        client_channels = [(logical_channel_id, logical_channel) for logical_channel_id, logical_channel in self._client_channels.items()]
+        client_channels = [(logical_channel_id, client_channel) for logical_channel_id, client_channel in self._client_channels.items()]
         client_channels.sort(key=lambda item: (item[1].get("group_title", "zzz").lower(), item[1].get("logical_channel_title", "zzz").lower()))
 
-        for logical_channel_id, logical_channel in client_channels:
-            name = logical_channel.get("logical_channel_title", "")
+        for logical_channel_id, client_channel in client_channels:
+            name = client_channel.get("logical_channel_title", "")
             extinf_parts = [f'tvg-name="{name}"']
-            if ch_num := logical_channel.get("channel_num"): extinf_parts.append(f'tvg-chno="{ch_num}"')
-            if tvg_id := logical_channel.get("tvg_id"): extinf_parts.append(f'tvg-id="{tvg_id}"')
-            if logo := logical_channel.get("tvg_logo"): extinf_parts.append(f'tvg-logo="{logo}"')
-            if group := logical_channel.get("group_title"): extinf_parts.append(f'group-title="{group}"')
+            extinf_parts.append(f'tvg-chno="{client_channel['channel_num']}"')
+            extinf_parts.append(f'tvg-id="{client_channel['tvg_id']}"')
+            extinf_parts.append(f'tvg-logo="{client_channel['tvg_logo']}"')
+            extinf_parts.append(f'group-title="{client_channel['group_title']}"')
             
             m3u_lines.append(f"#EXTINF:-1 {' '.join(extinf_parts)},{name}")
             m3u_lines.append(f"{self.config.nexus_url}/{VideoType.HLS}/{logical_channel_id}/playlist.m3u8")
@@ -449,9 +449,9 @@ class ChannelHandler:
         async with self._mutex:
             all_sources = [DiscoveredSourceWithId({**source, "source_id": source_id})
                             for source_id, source in self._discovered_sources_data.items()]
-        return sorted(all_sources, key=lambda x: (x["provider_alias"], (x.get("tvg_name","") or x.get("display_title","")).lower()))
+        return sorted(all_sources, key=lambda x: (x["provider_alias"], (x["tvg_name"] or x["display_title"]).lower()))
 
-    async def get_logical_channels_for_ui(self, key: Callable[[LogicalChannelInfo], str] | None = None) -> list[LogicalChannelInfoWithId]:
+    async def get_logical_channels_for_ui(self, key: Callable[[LogicalChannelInfo], str | int] | None = None) -> list[LogicalChannelInfoWithId]:
         """Returns a copy of the logical channels data."""
         async with self._mutex:
             res = [LogicalChannelInfoWithId({**lc, "logical_channel_id": logical_channel_id})
@@ -589,21 +589,21 @@ class ChannelHandler:
             predefined_channel_lists = self.get_channel_lists()
         for channel_list in predefined_channel_lists:
             for pre_channel in channel_list:
-                if channel_name == pre_channel.get('title'): return pre_channel
+                if channel_name == pre_channel["title"]: return pre_channel
         for channel_list in predefined_channel_lists:
             for pre_channel in channel_list:
-                if channel_name in pre_channel.get('aliases', []): return pre_channel
+                if channel_name in pre_channel["aliases"]: return pre_channel
         for channel_list in predefined_channel_lists:
             for pre_channel in channel_list:
-                pre_channel_title = pre_channel.get('title', '')
+                pre_channel_title = pre_channel["title"]
                 if channel_name in pre_channel_title: return pre_channel
                 if pre_channel_title and pre_channel_title in channel_name: return pre_channel
-                for pre_channel_name in pre_channel.get('aliases', []):
+                for pre_channel_name in pre_channel["aliases"]:
                     if channel_name in pre_channel_name: return pre_channel
                     if pre_channel_name in channel_name: return pre_channel
         for channel_list in predefined_channel_lists:
             for pre_channel in channel_list:
-                if channel_num == pre_channel.get('num'): return pre_channel
+                if channel_num == pre_channel["num"]: return pre_channel
         return None
 
     async def search_predefined_channels(self, raw_query: str) -> list[ChannelListGroup]:
@@ -615,19 +615,19 @@ class ChannelHandler:
         found_with: dict[str, str] = {}
         for group, channels in (await self.copy_channel_list_data()).items():
             for channel in channels:
-                title = channel.get('title', '').lower()
+                title = channel["title"].lower()
                 words = query.split()
                 if all(word in title for word in words):
                     matches.append({**channel, 'group': group})
                     found_with[channel['title']] = channel['title']
                     continue
-                for name in channel.get('aliases', []):
+                for name in channel["aliases"]:
                     title = name.lower()
                     if all(word in title for word in words):
                         matches.append({**channel, 'group': group})
-                        found_with[channel.get('title', channel.get('num', ''))] = name
+                        found_with[channel["title"]] = name
                         break
-        matches.sort(key=lambda x: found_with[x.get('title', x.get('num', ''))].lower().find(query))
+        matches.sort(key=lambda x: found_with[x["title"]].lower().find(query))
         return matches[:10]
 
     async def get_provider_slots(self, alias: ProviderAlias) -> ProviderSlots | None:
