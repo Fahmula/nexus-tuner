@@ -39,7 +39,7 @@
         .table-responsive { margin-top: 1rem; }
         .card { margin-bottom: 1.5rem; }
 
-         /* Custom Orange Badge Style --- */
+        /* Custom Orange Badge Style --- */
         .bg-orange {
             background-color: #fd7e14 !important;
             color: #fff !important;
@@ -115,19 +115,49 @@
         }
 
         /* --- Custom Dark Mode Overrides --- */
+
+        /* Badges */
+        [data-bs-theme="dark"] .badge.bg-warning {
+            background-color: #ffc107aa !important;
+            color: #f8f9fa !important;
+        }
+        [data-bs-theme="dark"] .badge.bg-orange {
+            background-color: #fd7e14aa !important;
+            color: #f8f9fa !important;
+        }
+
+        /* Table header cells in dark mode */
+        [data-bs-theme="dark"] thead.table-light th,
+        [data-bs-theme="dark"] thead.table-light td {
+            background-color: #2b3035 !important;
+            color: var(--bs-body-color) !important;
+        }
+
         /* Style for the "Quick Actions" box */
         [data-bs-theme="dark"] .bg-white {
             background-color: var(--bs-body-bg) !important;
         }
 
-        /* Override dashboard card colors for dark mode */
-        [data-bs-theme="dark"] .card.bg-primary,
-        [data-bs-theme="dark"] .card.bg-success,
-        [data-bs-theme="dark"] .card.bg-info,
+        /* Dashboard card colors for dark mode */
+        [data-bs-theme="dark"] .card.bg-primary {
+            background-color: #0d6efd80 !important;
+            border-color: #0d6efd !important;
+            color: #fff !important;
+        }
+        [data-bs-theme="dark"] .card.bg-success {
+            background-color: #19875480 !important;
+            border-color: #198754 !important;
+            color: #fff !important;
+        }
+        [data-bs-theme="dark"] .card.bg-info {
+            background-color: #0dcaf080 !important;
+            border-color: #0dcaf0 !important;
+            color: #fff !important;
+        }
         [data-bs-theme="dark"] .card.bg-warning {
-            background-color: var(--bs-tertiary-bg) !important;
-            border-color: var(--bs-border-color-translucent) !important;
-            color: var(--bs-body-color) !important; /* Overrides .text-white */
+            background-color: #ffc10780 !important;
+            border-color: #ffc107 !important;
+            color: #212529 !important;
         }
 
         /* Style card headers for a slightly different look */
@@ -135,8 +165,8 @@
         [data-bs-theme="dark"] .card.bg-success .card-header,
         [data-bs-theme="dark"] .card.bg-info .card-header,
         [data-bs-theme="dark"] .card.bg-warning .card-header {
-            background-color: var(--bs-secondary-bg);
-            color: var(--bs-emphasis-color);
+            background-color: rgba(0, 0, 0, 0.15);
+            color: inherit;
         }
     </style>
 </head>
