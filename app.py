@@ -35,7 +35,7 @@ from nexus_stream.stream import StreamManager
 from nexus_stream.scheduler import Scheduler
 from nexus_stream.utils import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL,
                                 DEFAULT_PRIORITY, M3UURL, NEXUS_STREAM_PORT, NEXUS_STREAM_VERSION, ChannelNum, DiscoveredSource,
-                                Label, LogicalChannelId, LogicalChannelInfo, LogicalChannelMetrics, LogicalChannelTitle, MaxStreams, 
+                                Label, LogicalChannelId, LogicalChannelInfo, LogicalChannelInfoWithId, LogicalChannelMetrics, LogicalChannelTitle, MaxStreams, 
                                 PercentDisplay, Priority, ProviderAlias, ProviderStatus, QualityScores, SourceInfo, SourceMappingInfoWithId, SourceMetrics,
                                 SourceId, TVGGroupTitle, TVGId, TVGLogo, VideoType, is_valid_url, run_bg, sort_sources)
 
@@ -586,9 +586,9 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     # --- GET Request Handling ---
 
     is_htmx_source_list_request = (request.headers.get('HX-Request') and request.headers.get('HX-Target') == 'source-list-container')
-    channel: LogicalChannelInfo | None = None
+    channel: LogicalChannelInfoWithId | None = None
     if logical_channel_id:
-        channel = await handler.get_logical_channel_by_id(logical_channel_id)
+        channel = await handler.get_logical_channel_with_id(logical_channel_id)
         if not channel:
             await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
             return redirect(url_for('ui_logical_channels_list'))

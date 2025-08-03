@@ -114,7 +114,7 @@ class ChannelHandler:
                     "max_streams": details["max_streams"],
                     "updated_at": DateTimeISO(now.isoformat())
                 } for alias, details in self._providers_data.items()})
-                if await self._save_providers_for_ui(new_providers_data, update_slots=False):
+                if await self.config.save_providers_config(new_providers_data):
                     self._providers_data = new_providers_data
                 else:
                     self.config.critical(self.label, "Failed to save updated provider configuration after discovery.")
@@ -386,13 +386,6 @@ class ChannelHandler:
             } for alias, provider_slots in self._slots.items()})
 
     # --- UI Interaction Methods ---
-
-    async def _save_providers_for_ui(self, new_providers_data: ProvidersData, *, update_slots: bool) -> bool:
-        """Saves the provider configuration and updates internal state asynchronously."""
-        save_successful = await self.config.save_providers_config(new_providers_data)
-        if save_successful and update_slots:
-            self._update_providers_slots()
-        return save_successful
     
     async def add_provider(self, alias: ProviderAlias, m3u_url: M3UURL, max_streams: MaxStreams) -> bool:
         """Adds a new provider to the configuration asynchronously."""
@@ -409,10 +402,11 @@ class ChannelHandler:
                 "max_streams": max_streams,
                 "updated_at": None
             })})
-            if not await self._save_providers_for_ui(new_providers_data, update_slots=True):
+            if not await self.config.save_providers_config(new_providers_data):
                 self.config.critical(self.label, f"Failed to save new provider configuration for '{alias}'.")
                 return False
             self._providers_data = new_providers_data
+            self._update_providers_slots()
             return True
 
     async def update_provider(self, alias: ProviderAlias, m3u_url: M3UURL, max_streams: MaxStreams) -> bool:
@@ -429,10 +423,11 @@ class ChannelHandler:
                 "max_streams": max_streams,
                 "updated_at": self._providers_data[alias]["updated_at"]
             })
-            if not await self._save_providers_for_ui(new_providers_data, update_slots=True):
+            if not await self.config.save_providers_config(new_providers_data):
                 self.config.critical(self.label, f"Failed to save updated provider configuration for '{alias}'.")
                 return False
             self._providers_data = new_providers_data
+            self._update_providers_slots()
             return True
 
     async def delete_provider(self, alias: ProviderAlias) -> bool:
@@ -442,10 +437,11 @@ class ChannelHandler:
 
             new_providers_data = ProvidersDataImpl({**self._providers_data})
             del new_providers_data[alias]
-            if not await self._save_providers_for_ui(new_providers_data, update_slots=True):
+            if not await self.config.save_providers_config(new_providers_data):
                 self.config.critical(self.label, f"Failed to save updated provider configuration after deleting '{alias}'.")
                 return False
             self._providers_data = new_providers_data
+            self._update_providers_slots()
             return True
 
     async def get_discovered_sources_for_ui(self) -> list[DiscoveredSourceWithId]:
@@ -468,6 +464,14 @@ class ChannelHandler:
         """Gets a logical channel by its ID."""
         async with self._mutex:
             return self._logical_channels_data.get(logical_channel_id)
+
+    async def get_logical_channel_with_id(self, logical_channel_id: LogicalChannelId) -> LogicalChannelInfoWithId | None:
+        """Gets a logical channel with its ID for UI display."""
+        async with self._mutex:
+            lc_info = self._logical_channels_data.get(logical_channel_id)
+            if lc_info:
+                return LogicalChannelInfoWithId({**lc_info, "logical_channel_id": logical_channel_id})
+            return
 
     def _generate_next_logical_channel_id(self) -> LogicalChannelId:
         """Generates the next available ID. (Sync - CPU-bound)"""
@@ -577,8 +581,7 @@ class ChannelHandler:
 
     async def get_channel_lists(self) -> tuple[tuple[ChannelListInfo, ...], ...]:
         """Returns a tuple of tuples containing channel list groups."""
-        async with self._mutex:
-            return tuple(tuple(c for c in v) for v in self._channel_list_data.values())
+        return tuple(tuple(c for c in v) for v in self._channel_list_data.values())
 
     async def find_matching_predefined_channel(self, channel_name: LogicalChannelTitle, channel_num: ChannelNum) -> ChannelListInfo | None:
         """Finds a matching predefined channel based on name or number."""
