@@ -50,7 +50,7 @@
             hx-vals='{"update_providers": "true", "force_discover_sources": "true"}' data-bs-toggle="tooltip"
             data-bs-placement="top" title="Reloads provider M3Us, re-parses sources, and rebuilds the client M3U."
             hx-indicator="#dashboard-reload-container">
-            <i class="fas fa-sync-alt"></i> Full Reload (Providers & M3U)
+            <i class="fas fa-sync-alt"></i> Full Reload (Providers & Sources)
         </button>
         <div id="dashboard-reload-spinner" class="htmx-indicator d-flex align-items-center btn btn-secondary">
             <div class="spinner-border spinner-border-sm me-2" role="status">
@@ -75,7 +75,7 @@
     </div>
     </p>
     <p class="text-muted small">
-        Use the "Reload Config" button in the top navigation for a quicker reload of JSON configurations and M3U generation without re-parsing all provider M3Us (if only logical channel definitions or mappings changed).
+        Use the "Reload Config" button in the top navigation for a quicker reload of JSON configurations and M3U generation without re-parsing all provider M3Us.
         The button above performs a more thorough refresh including fetching all provider M3Us and re-discovering all sources.
     </p>
 </div>

@@ -579,14 +579,14 @@ class ChannelHandler:
         async with self._mutex:
             return ChannelListDataImpl({k: [c for c in v] for k, v in self._channel_list_data.items()})
 
-    async def get_channel_lists(self) -> tuple[tuple[ChannelListInfo, ...], ...]:
+    def get_channel_lists(self) -> tuple[tuple[ChannelListInfo, ...], ...]:
         """Returns a tuple of tuples containing channel list groups."""
-        return tuple(tuple(c for c in v) for v in self._channel_list_data.values())
+        return tuple(tuple(c for c in v) for v in self._channel_list_data.values())  # No mutex since we never modify this data
 
     async def find_matching_predefined_channel(self, channel_name: LogicalChannelTitle, channel_num: ChannelNum) -> ChannelListInfo | None:
         """Finds a matching predefined channel based on name or number."""
         async with self._mutex:
-            predefined_channel_lists = await self.get_channel_lists()
+            predefined_channel_lists = self.get_channel_lists()
         for channel_list in predefined_channel_lists:
             for pre_channel in channel_list:
                 if channel_name == pre_channel.get('title'): return pre_channel

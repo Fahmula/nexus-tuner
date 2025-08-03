@@ -410,7 +410,7 @@ async def ui_provider_add() -> Response | str:
             if not is_valid_url(m3u_url):
                 raise ValueError(f"Invalid URL format: {m3u_url}")
             if await handler.add_provider(alias, m3u_url, max_streams):
-                await flash(f"Provider '{alias}' added successfully.", "success")
+                await flash(f"Provider '{alias}' added successfully, perform a 'Full Reload' on the dashboard to discover sources.", "success")
                 all_providers = sorted((await handler.get_provider_stream_status()).values(), key=lambda p: p['alias'])
                 table_body_html = await render_template("_providers_table_body.html", providers=all_providers)
                 form_removal_html = '<div id="add-provider-form-wrapper" hx-swap-oob="true"></div>'
@@ -444,7 +444,7 @@ async def ui_provider_edit(alias: ProviderAlias) -> Response | str:
         if not is_valid_url(m3u_url):
             raise ValueError(f"Invalid URL format: {m3u_url}")
         if await handler.update_provider(alias, m3u_url, max_streams):
-            await flash(f"Provider '{alias}' updated successfully.", "success")
+            await flash(f"Provider '{alias}' updated successfully, perform a 'Full Reload' on the dashboard to re-discover sources.", "success")
             updated_provider_data = ProviderStatus({**provider, "m3u_url": m3u_url, "max_streams": max_streams})
             response = Response(await render_template("_provider_row.html", provider=updated_provider_data))
         else:
@@ -460,7 +460,7 @@ async def ui_provider_edit(alias: ProviderAlias) -> Response | str:
 async def ui_provider_delete(alias: ProviderAlias) -> Response:
     try:
         if await handler.delete_provider(alias):
-            await flash(f"Provider '{alias}' deleted successfully.", "success")
+            await flash(f"Provider '{alias}' deleted successfully, perform a 'Full Reload' on the dashboard to re-discover sources.", "success")
             response = Response("", 200)
         else:
             raise ValueError(f"Failed to delete provider '{alias}'.")
@@ -749,7 +749,7 @@ async def ui_channel_populate_from_suggestion() -> str:
     unmapped_suggestions: list[DiscoveredSource] = []
 
     search_query = prefilled_data['logical_channel_title']
-    for channel_list in await handler.get_channel_lists():
+    for channel_list in handler.get_channel_lists():
         for pre_channel in channel_list:
             if search_query == pre_channel.get('title'):  # Only need this check since we are populating this
                 search_query = MULTI_SEARCH_QUERY_DELIMITER.join(pre_channel.get('aliases', []))
