@@ -3,7 +3,7 @@
         <label for="logical_channel_title" class="form-label">Display Name</label>
         <input type="text" class="form-control" id="logical_channel_title" name="logical_channel_title"
             value="{{ channel.logical_channel_title if channel else '' }}" required {# SIMPLIFIED: Only targets its own
-            suggestion box now. #} hx-get="{{ url_for('ui_channel_suggest') }}"
+            suggestion box now. #} hx-get="{{ url_for('ui_channel_suggest', logical_channel_id=channel.logical_channel_id if channel else None) }}"
             hx-trigger="input changed delay:500ms, search" hx-target="#suggestion-box" hx-indicator="#search-indicator"
             autocomplete="off">
         <div class="form-text">Start typing to search for a pre-defined channel. <span id="search-indicator"

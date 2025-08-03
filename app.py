@@ -94,10 +94,9 @@ async def shutdown() -> None:
 async def calculate_channel_metrics(mapped_sources: list[SourceMappingInfoWithId], all_quality_scores: QualityScores) -> LogicalChannelMetrics:
     """Calculates uptime metrics for a channel. (Sync, CPU-bound logic)."""
     uptime_scores: list[float] = []
-    if mapped_sources:
-        for mapped_source in mapped_sources[:HIGHEST_PRIORITY_SOURCES_NUM]:
-            raw_uptime = all_quality_scores.get(mapped_source["source_id"], {}).get("uptime")
-            if raw_uptime is not None: uptime_scores.append(raw_uptime)
+    for mapped_source in mapped_sources[:HIGHEST_PRIORITY_SOURCES_NUM]:
+        raw_uptime = all_quality_scores.get(mapped_source["source_id"], {}).get("uptime")
+        if raw_uptime is not None: uptime_scores.append(raw_uptime)
 
     discovered_mappings = 0
     for source in mapped_sources:
@@ -607,7 +606,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     all_sources_map = {s['source_id']: s for s in all_discovered_sources}
     mapped_sources: list[DiscoveredSource] = []
     all_mapped_source_ids: set[SourceId] = set()
-    source_metrics: dict[SourceId, SourceMetrics] = {}
+    all_source_metrics: dict[SourceId, SourceMetrics] = {}
     current_mappings = await handler.get_channel_mappings_for_ui(logical_channel_id) if logical_channel_id else []
     sort_sources(current_mappings, all_quality_scores, reverse=False)
     sources_mapped_elsewhere = await handler.get_all_mapped_source_ids()
@@ -618,7 +617,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
         if source_id in all_sources_map:
             source_details = all_sources_map[source_id].copy()
             raw_score = all_quality_scores.get(source_id, {}).get('uptime', None)
-            source_metrics[source_id] = SourceMetrics({
+            all_source_metrics[source_id] = SourceMetrics({
                 "priority": mapping["priority"],
                 "uptime": PercentDisplay(int(raw_score * 100)) if raw_score is not None else None
             })
@@ -631,7 +630,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
             if discovered_source['source_id'] not in all_mapped_source_ids and filter_sources(search_query, discovered_source):
                 source_id = discovered_source['source_id']
                 raw_score = all_quality_scores.get(source_id, {}).get('uptime', None)
-                source_metrics[source_id] = SourceMetrics({
+                all_source_metrics[source_id] = SourceMetrics({
                     "priority": Priority(DEFAULT_PRIORITY),
                     "uptime": PercentDisplay(int(raw_score * 100)) if raw_score is not None else None
                 })
@@ -647,7 +646,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     template_to_render = "_source_list_content.html" if is_htmx_source_list_request else "ui_logical_channel_form.html"
 
     return await render_template(
-        template_to_render, channel=channel, channel_metrics=channel_metrics, source_metrics=source_metrics,
+        template_to_render, channel=channel, channel_metrics=channel_metrics, all_source_metrics=all_source_metrics,
         unmapped_suggestions_for_page=unmapped_suggestions_for_page,
         mapped_sources=mapped_sources, sources_mapped_elsewhere=sources_mapped_elsewhere,
         current_page=page, total_pages=total_pages, total_unmapped_items=total_unmapped_items,
@@ -735,6 +734,8 @@ async def ui_channel_populate_from_suggestion() -> str:
     3. Clear the suggestion dropdown.
     """
     # 1. Populate the channel details form with pre-filled data
+    id_str = request.args.get('logical_channel_id')
+    logical_channel_id = LogicalChannelId(id_str) if id_str else None
     prefilled_data = {
         'logical_channel_title': request.args.get('title', ''),
         'channel_num': request.args.get('num', ''),
@@ -748,6 +749,10 @@ async def ui_channel_populate_from_suggestion() -> str:
     all_discovered_sources = await handler.get_discovered_sources_for_ui()
     sources_mapped_elsewhere = await handler.get_all_mapped_source_ids()
     unmapped_suggestions: list[DiscoveredSource] = []
+    current_mappings = await handler.get_channel_mappings_for_ui(logical_channel_id) if logical_channel_id else []
+    all_quality_scores = await quality_monitor.get_quality_scores()
+    sort_sources(current_mappings, all_quality_scores, reverse=False)
+    channel_metrics = await calculate_channel_metrics(current_mappings, all_quality_scores)
 
     search_query = prefilled_data['logical_channel_title']
     for channel_list in handler.get_channel_lists():
@@ -761,6 +766,15 @@ async def ui_channel_populate_from_suggestion() -> str:
             if filter_sources(search_query, discovered_source):
                 unmapped_suggestions.append(discovered_source)
 
+    all_source_metrics: dict[SourceId, SourceMetrics] = {}
+    for discovered_source in all_discovered_sources:
+        source_id = discovered_source["source_id"]
+        raw_score = all_quality_scores.get(source_id, {}).get('uptime', None)
+        all_source_metrics[source_id] = SourceMetrics({
+            "priority": Priority(DEFAULT_PRIORITY),
+            "uptime": PercentDisplay(int(raw_score * 100)) if raw_score is not None else None
+        })
+
     # 3. Paginate the pre-filtered results
     page = 1
     per_page = 100
@@ -773,6 +787,8 @@ async def ui_channel_populate_from_suggestion() -> str:
         "_source_mapping_card.html",
         search_query=search_query,
         channel={},
+        channel_metrics=channel_metrics,
+        all_source_metrics=all_source_metrics,
         unmapped_suggestions_for_page=unmapped_suggestions_for_page,
         mapped_sources=[], # New channel has no mapped sources
         sources_mapped_elsewhere=sources_mapped_elsewhere,
@@ -791,10 +807,11 @@ async def ui_channel_populate_from_suggestion() -> str:
 
 @app.route("/ui/channels/suggest", methods=["GET"])
 async def ui_channel_suggest() -> str:
+    logical_channel_id = request.args.get('logical_channel_id')
     query = request.args.get('logical_channel_title', '')
     if len(query) < 2: return ""
     suggestions = await handler.search_predefined_channels(query)
-    return await render_template("_channel_suggestions.html", suggestions=suggestions)
+    return await render_template("_channel_suggestions.html", logical_channel_id=logical_channel_id, suggestions=suggestions)
 
 
 @app.route("/ui/logs/modal")

@@ -19,7 +19,7 @@
             <div class="card mb-4">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     Logical Channel Details
-                    {% if channel_metrics.health_score is defined and channel_metrics.health_score is not none %}
+                    {% if channel_metrics.health_score is not none %}
                         {% set health_score = channel_metrics.health_score|int %}
                         {% if health_score >= 75 %}
                             <span class="badge bg-success">Health: {{ health_score }}%</span>
@@ -33,7 +33,7 @@
                     {% elif channel.logical_channel_id %}
                         <span class="badge bg-secondary">Health: N/A</span>
                     {% endif %}
-                    {% if channel_metrics.lowest_uptime is defined and channel_metrics.lowest_uptime is not none %}
+                    {% if channel_metrics.lowest_uptime is not none %}
                         {% set lowest_uptime = channel_metrics.lowest_uptime|int %}
                         {% if lowest_uptime >= 75 %}
                             <span class="badge bg-success">Lowest Uptime: {{ lowest_uptime }}%</span>
