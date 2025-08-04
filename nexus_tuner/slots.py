@@ -4,7 +4,7 @@ import os
 import sys
 from typing import Any, Literal
 
-from nexus_stream.utils import M3UURL, ActiveStreams, AvailableStreams, MaxStreams, ProviderAlias
+from nexus_tuner.utils import M3UURL, ActiveStreams, AvailableStreams, MaxStreams, ProviderAlias
 
 
 class CountingSemaphore(asyncio.Semaphore):

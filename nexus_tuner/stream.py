@@ -7,9 +7,9 @@ from typing import Any, Coroutine, Final, Iterable, NoReturn, Self, cast
 
 from asyncio.subprocess import Process
 
-from nexus_stream.config import Config
-from nexus_stream.handler import ChannelHandler
-from nexus_stream.utils import (CREATE_STREAM_DEADLINE, FFMPEG_TERMINATE_TIMEOUT, NEW_DEADLINE_NON_BEST, FFmpegProcessInfo, FFmpegProcessInfoMutable, FFmpegProcessInfos, FFmpegProcessInfosMutable,
+from nexus_tuner.config import Config
+from nexus_tuner.handler import ChannelHandler
+from nexus_tuner.utils import (CREATE_STREAM_DEADLINE, FFMPEG_TERMINATE_TIMEOUT, NEW_DEADLINE_NON_BEST, FFmpegProcessInfo, FFmpegProcessInfoMutable, FFmpegProcessInfos, FFmpegProcessInfosMutable,
                                 Label, LogicalChannelId, LogicalChannelTitle, ProviderAlias, SegmentNum, VideoKey, VideoName, VideoType, get_segment_number, run_bg)
 
 

@@ -2,9 +2,9 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import Awaitable, Callable, Final, NoReturn, Self, cast
 
-from nexus_stream.config import Config
-from nexus_stream.stream import StreamManager
-from nexus_stream.utils import MPEGTS_PACKET_SIZE, FFmpegProcessInfoMutable, MPEGTSProcessInfo, ReaderId, VideoKey, VideoType, run_bg
+from nexus_tuner.config import Config
+from nexus_tuner.stream import StreamManager
+from nexus_tuner.utils import MPEGTS_PACKET_SIZE, FFmpegProcessInfoMutable, MPEGTSProcessInfo, ReaderId, VideoKey, VideoType, run_bg
 
 BUFFER_CLEANUP_INTERVAL: Final[int] = 10
 BUFFER_SIZE_LIMIT: Final[int] = 100 * 1024 * 1024

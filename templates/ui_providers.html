@@ -1,18 +1,16 @@
 {% extends "layout.html" %}
 
-{% block title %}Manage Providers - NexusStream{% endblock %}
+{% block title %}Manage Providers - NexusTuner{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
     <h1 class="h2">Manage Providers</h1>
     <div class="btn-toolbar mb-2 mb-md-0">
-        <button type="button" class="btn btn-sm btn-outline-success"
-                hx-get="{{ url_for('ui_provider_add') }}"
-                hx-target="#add-provider-form-container"
-                hx-swap="innerHTML"
-                hx-indicator="#add-form-indicator">
+        <button type="button" class="btn btn-sm btn-outline-success" hx-get="{{ url_for('ui_provider_add') }}"
+            hx-target="#add-provider-form-container" hx-swap="innerHTML" hx-indicator="#add-form-indicator">
             <i class="fas fa-plus"></i> Add New Provider
-            <span id="add-form-indicator" class="htmx-indicator spinner-border spinner-border-sm ms-1" role="status" aria-hidden="true"></span>
+            <span id="add-form-indicator" class="htmx-indicator spinner-border spinner-border-sm ms-1" role="status"
+                aria-hidden="true"></span>
         </button>
     </div>
 </div>
@@ -30,7 +28,7 @@
             Manage your M3U source providers. Use the "Add New Provider" button to add a new source.
             Click "Edit" to modify an existing provider's URL or max streams, or "Delete" to remove it.
         </p>
-        
+
         {% if providers %}
         <div class="table-responsive">
             <table class="table table-striped table-hover table-sm">

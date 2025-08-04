@@ -1,10 +1,10 @@
 import asyncio
 from datetime import datetime, timedelta
 from typing import Awaitable, Callable, Final, NoReturn, Self
-from nexus_stream.config import Config
-from nexus_stream.handler import ChannelHandler
-from nexus_stream.quality_monitor import QualityMonitor
-from nexus_stream.utils import DateTimeISO, JobName, JobsDataImpl, Label, relative_time
+from nexus_tuner.config import Config
+from nexus_tuner.handler import ChannelHandler
+from nexus_tuner.quality_monitor import QualityMonitor
+from nexus_tuner.utils import DateTimeISO, JobName, JobsDataImpl, Label, relative_time
 
 
 SCHEDULER_TICK_INTERVAL_SECONDS: Final[int] = 60

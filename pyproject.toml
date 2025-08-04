@@ -5,8 +5,8 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "nexus-stream"
+name = "nexus-tuner"
 version = "0.0.1"  # placeholder for local installation
 
 [tool.setuptools]
-package-dir = {"" = "nexus_stream"}
+package-dir = {"" = "nexus_tuner"}

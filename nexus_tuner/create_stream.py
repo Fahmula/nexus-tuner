@@ -8,13 +8,13 @@ from typing import IO, Any, Self, cast
 import aiofiles.os
 import aioshutil
 
-from nexus_stream.config import Config
-from nexus_stream.quality_monitor import QualityMonitor
-from nexus_stream.slots import ProviderSlots
-from nexus_stream.handler import ChannelHandler
-from nexus_stream.stream import StreamManager
-from nexus_stream.utils import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL, FFMPEG_TERMINATE_TIMEOUT,
-                                MPEGTS_PACKET_SIZE, NEW_DEADLINE_NON_BEST, NEXUS_STREAM_USER_AGENT, FFmpegProcessInfosMutable, Label,
+from nexus_tuner.config import Config
+from nexus_tuner.quality_monitor import QualityMonitor
+from nexus_tuner.slots import ProviderSlots
+from nexus_tuner.handler import ChannelHandler
+from nexus_tuner.stream import StreamManager
+from nexus_tuner.utils import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL, FFMPEG_TERMINATE_TIMEOUT,
+                                MPEGTS_PACKET_SIZE, NEW_DEADLINE_NON_BEST, NEXUS_TUNER_USER_AGENT, FFmpegProcessInfosMutable, Label,
                                 LogicalChannelId, LogicalChannelTitle, Priority, ProviderAlias, QualityScores, QualityScoresImpl, SourceInfo, SourceId, TVGDisplayTitle, TVGName, VideoKey, VideoName,
                                 VideoType, create_stream_key, create_video_key, create_video_name, get_segment_format, run_bg, sort_sources)
 
@@ -33,7 +33,7 @@ async def create_hls_ffmpeg_command(stream_manager: StreamManager, config: Confi
         "-hide_banner", "-loglevel", "info",
         "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "4",
         "-reconnect_on_network_error", "1", "-reconnect_on_http_error", "5xx",
-        "-user_agent", NEXUS_STREAM_USER_AGENT,
+        "-user_agent", NEXUS_TUNER_USER_AGENT,
         "-i", input_url,
         "-codec", "copy",
         "-map", "0:v:0?", "-map", "0:a:0?",
@@ -55,7 +55,7 @@ def create_mpegts_ffmpeg_command(config: Config, input_url: str) -> list[str]:
         "-hide_banner", "-loglevel", "info",
         "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "4",
         "-reconnect_on_network_error", "1", "-reconnect_on_http_error", "5xx",
-        "-user_agent", NEXUS_STREAM_USER_AGENT,
+        "-user_agent", NEXUS_TUNER_USER_AGENT,
         "-i", input_url,
         "-c:v", "copy",
         "-c:a", "libmp3lame",

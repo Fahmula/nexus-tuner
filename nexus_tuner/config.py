@@ -13,7 +13,7 @@ import asyncio
 import aiofiles.os
 import aioshutil
 
-from nexus_stream.utils import (NEXUS_STREAM_PORT, NEXUS_STREAM_VERSION, ChannelListDataImpl, ChannelMappingsData, ChannelMappingsDataImpl, DiscoveredSourcesData, DiscoveredSourcesDataImpl, JobName, JobsData, JobsDataImpl,
+from nexus_tuner.utils import (NEXUS_TUNER_PORT, NEXUS_TUNER_VERSION, ChannelListDataImpl, ChannelMappingsData, ChannelMappingsDataImpl, DiscoveredSourcesData, DiscoveredSourcesDataImpl, JobName, JobsData, JobsDataImpl,
                                 Label, LogicalChannelsData, LogicalChannelsDataImpl, ProvidersData, ProvidersDataImpl, QualityCacheData, QualityCacheDataImpl, VideoKey, VideoType, is_valid_url)
 
 
@@ -65,7 +65,7 @@ class Config:
         if not nexus_url:
             raise ValueError("NEXUS_URL environment variable is not set.")
         self.nexus_url: Final[str] = nexus_url
-        self.nexus_port: Final[int] = NEXUS_STREAM_PORT
+        self.nexus_port: Final[int] = NEXUS_TUNER_PORT
         
         # --- Logging ---
         self.logs_dir: Final[Path] = self.config_dir / "logs"
@@ -142,7 +142,7 @@ class Config:
         Performs all asynchronous I/O operations required for initialization.
         """
         self._initialize_logger()
-        self.info(Label.STARTUP, f"NexusStream v{NEXUS_STREAM_VERSION}")
+        self.info(Label.STARTUP, f"NexusTuner v{NEXUS_TUNER_VERSION}")
         await aiofiles.os.makedirs(self.logs_dir, exist_ok=True)
         await aiofiles.os.makedirs(self.config_dir, exist_ok=True)
         await aiofiles.os.makedirs(self.backups_scheduled_path, exist_ok=True)
@@ -608,7 +608,7 @@ class Config:
         """Creates a zip backup of the current configuration files."""
         try:
             base_path = self.backups_scheduled_path if scheduled else self.backups_manual_path
-            backup_folder = base_path / f"nexus_stream_backup_{datetime.now().isoformat(timespec='seconds').replace(':', '-')}"
+            backup_folder = base_path / f"nexus_tuner_backup_{datetime.now().isoformat(timespec='seconds').replace(':', '-')}"
             await aiofiles.os.makedirs(backup_folder, exist_ok=True)
             backup_path = backup_folder.with_name(f"{backup_folder.name}.zip")
             self.info(Label.CONFIG, f"Creating backup at {backup_path}")

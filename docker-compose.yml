@@ -1,10 +1,10 @@
 # docker-compose.yml
 services:
-  nexus-stream:
+  nexus-tuner:
     # Use the image you built and pushed to the GitHub Container Registry.
     # Docker will automatically pull the 'latest' tag if it's not available locally.
-    image: ghcr.io/fahmula/nexus-stream:latest
-    container_name: nexus-stream
+    image: ghcr.io/fahmula/nexus-tuner:latest
+    container_name: nexus-tuner
     
     # Ensures the container restarts automatically if it crashes or the server reboots,
     # unless you explicitly stop it yourself.

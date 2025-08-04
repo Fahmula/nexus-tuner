@@ -6,9 +6,9 @@ import asyncio
 from typing import TYPE_CHECKING, Callable, Final, Self
 
 import aiohttp
-from nexus_stream.config import Config
-from nexus_stream.slots import ProviderSlots
-from nexus_stream.utils import (M3UURL, NEXUS_STREAM_USER_AGENT, ClientChannelInfos, ClientChannelInfosImpl, ChannelListData, ChannelListDataImpl,
+from nexus_tuner.config import Config
+from nexus_tuner.slots import ProviderSlots
+from nexus_tuner.utils import (M3UURL, NEXUS_TUNER_USER_AGENT, ClientChannelInfos, ClientChannelInfosImpl, ChannelListData, ChannelListDataImpl,
                                 ChannelListGroup, ChannelListInfo, ChannelMappings, ChannelMappingsImpl, ChannelMappingsData, ChannelMappingsDataImpl, ChannelNum, DateTimeISO,
                                 DiscoveredSource, DiscoveredSourceWithId, DiscoveredSourcesData, DiscoveredSourcesDataImpl, LogicalChannelInfo, LogicalChannelInfoWithId, LogicalChannelTitle, LogicalChannelsDataImpl, Priority, ProviderInfo,
                                 ProviderStatuses, SourceInfo, SourceMappingInfoWithId, SourceId, StreamURL, TVGGroupTitle, Label, LogicalChannelId,
@@ -16,7 +16,7 @@ from nexus_stream.utils import (M3UURL, NEXUS_STREAM_USER_AGENT, ClientChannelIn
                                 StreamKey, TVGDisplayTitle, TVGId, TVGLogo, TVGName, VideoType, create_stream_key, run_bg)
 
 if TYPE_CHECKING:
-    from nexus_stream.quality_monitor import QualityMonitor
+    from nexus_tuner.quality_monitor import QualityMonitor
 
 # --- Constants ---
 INITIAL_LOGICAL_CHANNEL_ID: Final[LogicalChannelId] = LogicalChannelId("1000")
@@ -235,7 +235,7 @@ class ChannelHandler:
         """Fetches and parses a single provider's M3U asynchronously."""
         try:
             discovered_sources = DiscoveredSourcesDataImpl({})
-            async with session.get(m3u_url, timeout=PROVIDER_FETCH_TIMEOUT, headers={'User-Agent': NEXUS_STREAM_USER_AGENT}) as response:
+            async with session.get(m3u_url, timeout=PROVIDER_FETCH_TIMEOUT, headers={'User-Agent': NEXUS_TUNER_USER_AGENT}) as response:
                 response.raise_for_status()           
                 m3u_sources = self._parse_source_m3u_lines(await response.text())
 

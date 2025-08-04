@@ -3,9 +3,9 @@ import json
 from datetime import datetime, timedelta
 from typing import Coroutine, Final, Any, Self
 
-from nexus_stream.config import Config
-from nexus_stream.handler import ChannelHandler
-from nexus_stream.utils import (NEXUS_STREAM_USER_AGENT, Bitrate, BitrateScore, ChannelNum, DateTimeISO, Framerate, FramerateScore, Height,
+from nexus_tuner.config import Config
+from nexus_tuner.handler import ChannelHandler
+from nexus_tuner.utils import (NEXUS_TUNER_USER_AGENT, Bitrate, BitrateScore, ChannelNum, DateTimeISO, Framerate, FramerateScore, Height,
                                 Label, LogicalChannelId, LogicalChannelTitle, Percent, ProbeInfo, ProbeSuccess, ProviderAlias, QualityInfoImpl, QualityScores,
                                 QualityScoresImpl, ResolutionScore, QualityCacheData, QualityCacheDataImpl, SourceId,
                                 StreamURL, TotalScore, UptimeScore, Width, run_bg)
@@ -94,7 +94,7 @@ class QualityMonitor:
         cmd: list[str] = [
             "ffprobe",
             "-v", "error",
-            "-user_agent", NEXUS_STREAM_USER_AGENT,
+            "-user_agent", NEXUS_TUNER_USER_AGENT,
             "-select_streams", "v:0",
             "-show_entries", "stream=width,height,r_frame_rate",
             "-show_entries", "packet=pts_time,size",

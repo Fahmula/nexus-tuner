@@ -2,10 +2,10 @@ import asyncio
 import aiohttp
 from typing import Coroutine, Final, NoReturn, Self, Set, Any
 
-from nexus_stream.config import Config
-from nexus_stream.handler import ChannelHandler
-from nexus_stream.stream import StreamManager
-from nexus_stream.utils import Label, LogicalChannelId, LogicalChannelTitle, VideoKey
+from nexus_tuner.config import Config
+from nexus_tuner.handler import ChannelHandler
+from nexus_tuner.stream import StreamManager
+from nexus_tuner.utils import Label, LogicalChannelId, LogicalChannelTitle, VideoKey
 
 # --- Constants ---
 SESSION_MONITOR_STARTUP_DELAY: Final[int] = 15

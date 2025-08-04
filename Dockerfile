@@ -24,7 +24,7 @@ COPY --from=builder-image /app/venv /app/venv
 USER app
 WORKDIR /app
 COPY app.py /app
-COPY nexus_stream /app/nexus_stream
+COPY nexus_tuner /app/nexus_tuner
 COPY templates /app/templates
 COPY entrypoint.sh /app
 COPY VERSION /app
@@ -33,7 +33,7 @@ ENV NEXUS_CONFIG_DIR=/config
 ENV NEXUS_PORT=4040
 
 ENV LANG=C.UTF-8
-ENV PYTHONPATH=/app/nexus_stream
+ENV PYTHONPATH=/app/nexus_tuner
 ENV PYTHONUNBUFFERED=1
 
 ENV VIRTUAL_ENV=/app/venv

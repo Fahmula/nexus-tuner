@@ -1,10 +1,11 @@
 <!DOCTYPE html>
 <html lang="en" class="h-100">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="htmx-config" content='{"logLevel": "debug"}'>
-    <title>{% block title %}NexusStream{% endblock %}</title>
+    <title>{% block title %}NexusTuner{% endblock %}</title>
 
     <script>
         // Immediately-invoked function to set the theme on initial load to prevent FOUC.
@@ -25,19 +26,36 @@
     </script>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"
-          integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
+        integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css"
-          integrity="sha512-z3gLpd7yknf1YoNbCzqRKc4qyor8gaKU1qmn+CShxbuBusANI9QpRohGBreCFkKxLhei6S9CQXFEbbKuqLg0DA=="
-          crossorigin="anonymous" referrerpolicy="no-referrer" />
+        integrity="sha512-z3gLpd7yknf1YoNbCzqRKc4qyor8gaKU1qmn+CShxbuBusANI9QpRohGBreCFkKxLhei6S9CQXFEbbKuqLg0DA=="
+        crossorigin="anonymous" referrerpolicy="no-referrer" />
     <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <style>
-        body { padding-top: 3.5rem; }
-        .htmx-indicator { display: none; }
-        .htmx-request .htmx-indicator { display: inline; }
-        .htmx-request.htmx-indicator { display: inline; }
-        .table-responsive { margin-top: 1rem; }
-        .card { margin-bottom: 1.5rem; }
+        body {
+            padding-top: 3.5rem;
+        }
+
+        .htmx-indicator {
+            display: none;
+        }
+
+        .htmx-request .htmx-indicator {
+            display: inline;
+        }
+
+        .htmx-request.htmx-indicator {
+            display: inline;
+        }
+
+        .table-responsive {
+            margin-top: 1rem;
+        }
+
+        .card {
+            margin-bottom: 1.5rem;
+        }
 
         /* Custom Orange Badge Style --- */
         .bg-orange {
@@ -48,19 +66,32 @@
         /* Custom styles for the top status bar */
         #provider-status-bar {
             padding: 0.25rem 0;
-            background-color: var(--bs-body-bg); /* Match body background */
+            background-color: var(--bs-body-bg);
+            /* Match body background */
             border-bottom: 1px solid var(--bs-border-color-translucent);
             position: sticky;
-            top: 3.5rem; /* Height of the fixed navbar */
-            z-index: 1020; /* Below navbar (1030) but above other content */
+            top: 3.5rem;
+            /* Height of the fixed navbar */
+            z-index: 1020;
+            /* Below navbar (1030) but above other content */
         }
 
         /* --- Theme Toggle Button Icons --- */
-        #theme-toggle-button .fa-sun { display: none; }
-        #theme-toggle-button .fa-moon { display: inline-block; }
+        #theme-toggle-button .fa-sun {
+            display: none;
+        }
 
-        [data-bs-theme="dark"] #theme-toggle-button .fa-sun { display: inline-block; }
-        [data-bs-theme="dark"] #theme-toggle-button .fa-moon { display: none; }
+        #theme-toggle-button .fa-moon {
+            display: inline-block;
+        }
+
+        [data-bs-theme="dark"] #theme-toggle-button .fa-sun {
+            display: inline-block;
+        }
+
+        [data-bs-theme="dark"] #theme-toggle-button .fa-moon {
+            display: none;
+        }
 
         /* --- Dashboard Button Spinners --- */
         #dashboard-reload-container,
@@ -68,10 +99,12 @@
             position: relative;
             display: inline-block;
         }
+
         #dashboard-reload-container.htmx-request #dashboard-reload-button,
         #dashboard-backup-container.htmx-request #dashboard-backup-button {
             visibility: hidden;
         }
+
         #dashboard-reload-spinner,
         #dashboard-backup-spinner {
             position: absolute;
@@ -84,6 +117,7 @@
             align-items: center;
             pointer-events: none;
         }
+
         #dashboard-reload-container.htmx-request #dashboard-reload-spinner,
         #dashboard-backup-container.htmx-request #dashboard-backup-spinner {
             display: flex !important;
@@ -95,9 +129,11 @@
             position: relative;
             display: inline-block;
         }
+
         #analyze-button-container.htmx-request #analyze-button {
             visibility: hidden;
         }
+
         #analyze-spinner {
             position: absolute;
             top: 0;
@@ -109,6 +145,7 @@
             align-items: center;
             pointer-events: none;
         }
+
         #analyze-button-container.htmx-request #analyze-spinner {
             display: flex !important;
             pointer-events: auto;
@@ -121,6 +158,7 @@
             background-color: #ffc107aa !important;
             color: #f8f9fa !important;
         }
+
         [data-bs-theme="dark"] .badge.bg-orange {
             background-color: #fd7e14aa !important;
             color: #f8f9fa !important;
@@ -144,16 +182,19 @@
             border-color: #0d6efd !important;
             color: #fff !important;
         }
+
         [data-bs-theme="dark"] .card.bg-success {
             background-color: #19875480 !important;
             border-color: #198754 !important;
             color: #fff !important;
         }
+
         [data-bs-theme="dark"] .card.bg-info {
             background-color: #0dcaf080 !important;
             border-color: #0dcaf0 !important;
             color: #fff !important;
         }
+
         [data-bs-theme="dark"] .card.bg-warning {
             background-color: #ffc10780 !important;
             border-color: #ffc107 !important;
@@ -170,49 +211,49 @@
         }
     </style>
 </head>
+
 <body class="d-flex flex-column h-100">
     <nav class="navbar navbar-expand-md navbar-dark fixed-top bg-dark">
         <div class="container-fluid">
-            <a class="navbar-brand" href="{{ url_for('ui_main_dashboard') }}">NexusStream</a>
+            <a class="navbar-brand" href="{{ url_for('ui_main_dashboard') }}">NexusTuner</a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse"
-                    aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation">
+                aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarCollapse">
                 <ul class="navbar-nav me-auto mb-2 mb-md-0">
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'ui_main_dashboard' %}active{% endif %}" aria-current="page" href="{{ url_for('ui_main_dashboard') }}">Dashboard</a>
+                        <a class="nav-link {% if request.endpoint == 'ui_main_dashboard' %}active{% endif %}"
+                            aria-current="page" href="{{ url_for('ui_main_dashboard') }}">Dashboard</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'ui_providers_manage' %}active{% endif %}" href="{{ url_for('ui_providers_manage') }}">Providers</a>
+                        <a class="nav-link {% if request.endpoint == 'ui_providers_manage' %}active{% endif %}"
+                            href="{{ url_for('ui_providers_manage') }}">Providers</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'ui_sources_list' %}active{% endif %}" href="{{ url_for('ui_sources_list') }}">Sources</a>
+                        <a class="nav-link {% if request.endpoint == 'ui_sources_list' %}active{% endif %}"
+                            href="{{ url_for('ui_sources_list') }}">Sources</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'ui_logical_channels_list' or request.endpoint == 'ui_logical_channel_edit' or request.endpoint == 'ui_logical_channel_add' %}active{% endif %}" href="{{ url_for('ui_logical_channels_list') }}">Logical Channels</a>
+                        <a class="nav-link {% if request.endpoint == 'ui_logical_channels_list' or request.endpoint == 'ui_logical_channel_edit' or request.endpoint == 'ui_logical_channel_add' %}active{% endif %}"
+                            href="{{ url_for('ui_logical_channels_list') }}">Logical Channels</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link"
-                        href="#"
-                        hx-get="/ui/logs/modal"
-                        hx-target="#modal-log-content"
-                        data-bs-toggle="modal"
-                        data-bs-target="#modal-logs">
-                        Logs
+                        <a class="nav-link" href="#" hx-get="/ui/logs/modal" hx-target="#modal-log-content"
+                            data-bs-toggle="modal" data-bs-target="#modal-logs">
+                            Logs
                         </a>
                     </li>
                 </ul>
                 <div class="d-flex align-items-center">
-                    <button class="btn btn-outline-light me-2" type="button" id="theme-toggle-button" title="Toggle theme">
+                    <button class="btn btn-outline-light me-2" type="button" id="theme-toggle-button"
+                        title="Toggle theme">
                         <i class="fas fa-moon"></i>
                         <i class="fas fa-sun"></i>
                     </button>
-                    <form class="d-flex" role="search"
-                          hx-post="{{ url_for('reload_configuration') }}"
-                          hx-target="#flash-messages-container"
-                          hx-swap="innerHTML"
-                          hx-vals='{"update_providers": "true", "force_discover_sources": "false"}'>
+                    <form class="d-flex" role="search" hx-post="{{ url_for('reload_configuration') }}"
+                        hx-target="#flash-messages-container" hx-swap="innerHTML"
+                        hx-vals='{"update_providers": "true", "force_discover_sources": "false"}'>
                         <button class="btn btn-outline-light" type="submit">
                             <i class="fas fa-sync-alt"></i> Reload Config
                         </button>
@@ -222,11 +263,8 @@
         </div>
     </nav>
 
-    <div class="container-fluid"
-         id="provider-status-bar"
-         hx-get="{{ url_for('ui_provider_status') }}"
-         hx-trigger="load, every 1s"
-         hx-swap="innerHTML">
+    <div class="container-fluid" id="provider-status-bar" hx-get="{{ url_for('ui_provider_status') }}"
+        hx-trigger="load, every 1s" hx-swap="innerHTML">
         <span class="text-muted small">Loading provider status...</span>
     </div>
 
@@ -239,13 +277,13 @@
 
     <footer class="footer mt-auto py-3 bg-body-tertiary border-top">
         <div class="container text-center">
-            <span class="text-muted">NexusStream v{{ app_version }} © {{ now.year }}</span>
+            <span class="text-muted">NexusTuner v{{ app_version }} © {{ now.year }}</span>
         </div>
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"
-            integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL"
-            crossorigin="anonymous"></script>
+        integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL"
+        crossorigin="anonymous"></script>
     <script>
         document.body.addEventListener('htmx:afterSwap', function (event) {
             document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (tooltipEl) {
@@ -270,7 +308,8 @@
     </script>
     {% block extra_js %}{% endblock %}
     <div id="modal-logs" class="modal fade" tabindex="-1" aria-labelledby="modal-logs-label" aria-hidden="true">
-        <div id="modal-log-content" class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" role="document">
+        <div id="modal-log-content" class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable"
+            role="document">
             <!-- HTMX will load the modal's content here -->
             <div class="modal-content">
                 <div class="modal-body">
@@ -280,4 +319,5 @@
         </div>
     </div>
 </body>
+
 </html>

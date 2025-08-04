@@ -1,5 +1,5 @@
 """
-The main Quart application file for NexusStream.
+The main Quart application file for NexusTuner.
 
 This file initializes the Quart app and its async components (Config, ChannelHandler, 
 StreamManager, GhostSessionMonitor) and defines all the web routes for:
@@ -12,7 +12,7 @@ StreamManager, GhostSessionMonitor) and defines all the web routes for:
 
 import sys
 if sys.version_info < (3, 13):
-    raise RuntimeError("NexusStream requires Python 3.13 or higher.")
+    raise RuntimeError("NexusTuner requires Python 3.13 or higher.")
 
 import asyncio
 import aiofiles.os
@@ -28,16 +28,16 @@ from quart import send_from_directory  # type: ignore
 from werkzeug.wrappers import Response as WerkzeugResponse
 from werkzeug.datastructures import ImmutableMultiDict
 
-from nexus_stream.config import Config
-from nexus_stream.create_stream import CreateStream
-from nexus_stream.handler import ChannelHandler
-from nexus_stream.mpegts import MPEGTSStream
-from nexus_stream.quality_monitor import QualityMonitor
-from nexus_stream.session_monitor import GhostSessionMonitor
-from nexus_stream.stream import StreamManager
-from nexus_stream.scheduler import Scheduler
-from nexus_stream.utils import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL,
-                                DEFAULT_PRIORITY, M3UURL, NEXUS_STREAM_PORT, NEXUS_STREAM_VERSION, ChannelNum, DiscoveredSource,
+from nexus_tuner.config import Config
+from nexus_tuner.create_stream import CreateStream
+from nexus_tuner.handler import ChannelHandler
+from nexus_tuner.mpegts import MPEGTSStream
+from nexus_tuner.quality_monitor import QualityMonitor
+from nexus_tuner.session_monitor import GhostSessionMonitor
+from nexus_tuner.stream import StreamManager
+from nexus_tuner.scheduler import Scheduler
+from nexus_tuner.utils import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL,
+                                DEFAULT_PRIORITY, M3UURL, NEXUS_TUNER_PORT, NEXUS_TUNER_VERSION, ChannelNum, DiscoveredSource,
                                 Label, LogicalChannelId, LogicalChannelInfo, LogicalChannelInfoWithId, LogicalChannelMetrics, LogicalChannelTitle, MaxStreams, 
                                 PercentDisplay, Priority, ProviderAlias, ProviderStatus, QualityScores, SourceInfo, SourceMappingInfoWithId, SourceMetrics,
                                 SourceId, TVGGroupTitle, TVGId, TVGLogo, VideoType, is_valid_url, run_bg, sort_sources)
@@ -126,7 +126,7 @@ def inject_global_vars() -> Dict[str, datetime | str]:
     """Injects global variables into the context of all templates."""
     return {
         'now': datetime.now(UTC),
-        'app_version': NEXUS_STREAM_VERSION
+        'app_version': NEXUS_TUNER_VERSION
     }
 
 
@@ -482,9 +482,9 @@ async def ui_provider_delete(alias: ProviderAlias) -> Response:
 
 @app.route("/ui/provider-status")
 async def ui_provider_status() -> str:
-    statues = await handler.get_provider_stream_status()
-    active_streams = sum(status['active_streams'] for status in statues.values())
-    max_total_streams = sum(status['max_streams'] for status in statues.values())
+    statuses = await handler.get_provider_stream_status()
+    active_streams = sum(status['active_streams'] for status in statuses.values())
+    max_total_streams = sum(status['max_streams'] for status in statuses.values())
     return await render_template("_provider_status_bar.html", active_streams=active_streams, max_total_streams=max_total_streams)
 
 
@@ -677,7 +677,7 @@ async def ui_logical_channel_delete(logical_channel_id: LogicalChannelId) -> Res
     if channel:
         channel_log = f"'{channel['logical_channel_title']}' ({channel['channel_num']})"
         if await handler.delete_logical_channel(logical_channel_id):
-            config.info(Label.SERVER, f"Logical Channel {logical_channel_id} deleted successfully.")
+            config.info(Label.SERVER, f"Channel {channel_log} deleted successfully.")
             await flash(f"Channel {channel_log} deleted.", "success")
             await handler.reload_handler_config()
         else:
@@ -697,13 +697,13 @@ async def ui_analyze_mappings(logical_channel_id: LogicalChannelId) -> Response:
         config.warn(Label.SERVER, f"Logical Channel with ID '{logical_channel_id}' not found for analysis.")
         await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
         return Response("", 404)
+    channel_log = f"'{channel['logical_channel_title']}' ({channel['channel_num']})"
     sources = await handler.get_channel_mappings_for_ui(logical_channel_id)
     if not sources:
-        config.info(Label.SERVER, f"No mappings found for logical channel '{logical_channel_id}'.")
-        await flash(f"No mappings found for logical channel '{logical_channel_id}'.", "info")
+        config.info(Label.SERVER, f"No mappings found for {channel_log}.")
+        await flash(f"No mappings found for {channel_log}.", "info")
         return Response("", 204)
 
-    channel_log = f"'{channel['logical_channel_title']}' ({channel['channel_num']})"
     await quality_monitor.analyze_mapped_sources(logical_channel_id)
     await flash(f"Quality analysis completed for {len(sources)} mapping(s) in {channel_log}", "success")
 
@@ -721,6 +721,7 @@ async def ui_remove_dead_mappings(logical_channel_id: LogicalChannelId) -> Respo
         config.warn(Label.SERVER, f"Logical Channel with ID '{logical_channel_id}' not found for dead mapping removal.")
         await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
         return Response("", 404)
+    channel_log = f"'{channel['logical_channel_title']}' ({channel['channel_num']})"
     discovered_mappings: list[SourceMappingInfoWithId] = []
     removed_count = 0
     for source in await handler.get_channel_mappings_for_ui(logical_channel_id):
@@ -728,21 +729,20 @@ async def ui_remove_dead_mappings(logical_channel_id: LogicalChannelId) -> Respo
             discovered_mappings.append(source)
         else:
             if not await quality_monitor.remove_source(source['source_id']):
-                config.warn(Label.SERVER, f"Failed to remove dead source {source['source_id']} from quality monitor.")
-                await flash(f"Failed to remove dead source {source['source_id']} from quality monitor.", "error")
+                config.warn(Label.SERVER, f"Failed to remove dead source {source['source_id']} from quality monitor for {channel_log}.")
+                await flash(f"Failed to remove dead source {source['source_id']} from quality monitor for {channel_log}.", "error")
                 return Response("", 500)
             removed_count += 1
     if not await handler.update_mappings_for_logical_channel(logical_channel_id, discovered_mappings):
-        config.error(Label.SERVER, f"Failed to update mappings for logical channel '{logical_channel_id}' after removing dead sources.")
-        await flash(f"Failed to update mappings for logical channel '{logical_channel_id}' after removing dead sources.", "error")
+        config.error(Label.SERVER, f"Failed to update mappings for {channel_log} after removing dead sources.")
+        await flash(f"Failed to update mappings for {channel_log} after removing dead sources.", "error")
         return Response("", 500)
 
-    channel_log = f"'{channel['logical_channel_title']}' ({channel['channel_num']})"
     if removed_count > 0:
-        config.info(Label.SERVER, f"Removed {removed_count} dead mappings from logical channel '{logical_channel_id}'.")
+        config.info(Label.SERVER, f"Removed {removed_count} dead mappings from {channel_log}.")
         await flash(f"Removed {removed_count} dead mapping(s) from {channel_log}.", "success")
     else:
-        config.info(Label.SERVER, f"No dead mappings found to remove from logical channel '{logical_channel_id}'.")
+        config.info(Label.SERVER, f"No dead mappings found to remove from {channel_log}.")
         await flash(f"No dead mappings found to remove from {channel_log}.", "info")
 
     response = Response("", 200)
@@ -875,13 +875,13 @@ async def hdhomerun_discover() -> Response:
     """Emulates HDHomeRun device discovery API endpoint."""
     
     response_dict: dict[str, str | int] = {
-        "FriendlyName": "NexusStream",
-        "DeviceAuth": "nexus-stream",
-        "ModelNumber": NEXUS_STREAM_VERSION,
-        "FirmwareName": f"nexus-stream_{NEXUS_STREAM_VERSION}",
-        "FirmwareVersion": NEXUS_STREAM_VERSION,
+        "FriendlyName": "NexusTuner",
+        "DeviceAuth": "nexus-tuner",
+        "ModelNumber": NEXUS_TUNER_VERSION,
+        "FirmwareName": f"nexus-tuner_{NEXUS_TUNER_VERSION}",
+        "FirmwareVersion": NEXUS_TUNER_VERSION,
         "DeviceID": "12345678",
-        "Manufacturer": "nexus-stream",
+        "Manufacturer": "nexus-tuner",
         "BaseURL": f"{config.nexus_url}",
         "LineupURL": f"{config.nexus_url}/lineup.json",
         "TunerCount": sum(p["max_streams"] for p in (await handler.get_provider_stream_status()).values())
@@ -935,4 +935,4 @@ async def ping() -> Response:
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=NEXUS_STREAM_PORT, use_reloader=False)
+    app.run(host="0.0.0.0", port=NEXUS_TUNER_PORT, use_reloader=False)

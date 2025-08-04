@@ -1,6 +1,6 @@
 {% extends "layout.html" %}
 
-{% block title %}Logical Channels - NexusStream{% endblock %}
+{% block title %}Logical Channels - NexusTuner{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
@@ -85,46 +85,46 @@
                         <span class="badge {% if discovered_percent == 100 %}bg-info
                                         {% elif discovered_percent > 75 %}bg-warning
                                         {% else %}bg-danger{% endif %}" data-bs-toggle="tooltip"
-                            title="Discovered {{ channel_metrics.discovered_mappings }} of {{ channel_metrics.enabled_mappings }} Enabled mappings">
-                            {{ channel_metrics.enabled_mappings }}
-                        </span>
+                        title="Discovered {{ channel_metrics.discovered_mappings }} of {{ channel_metrics.enabled_mappings }} Enabled mappings">
+                        {{ channel_metrics.enabled_mappings }}
+                    </span>
                     {% else %}
-                        <span class="badge bg-secondary" data-bs-toggle="tooltip"
-                            title="Discovered 0 of 0 Enabled mappings">0</span>
+                    <span class="badge bg-secondary" data-bs-toggle="tooltip"
+                        title="Discovered 0 of 0 Enabled mappings">0</span>
                     {% endif %}
                 </td>
 
                 <td class="text-center align-middle" data-sort-value="{{ channel_metrics.health_score|default(0) }}">
                     {% if channel_metrics.health_score is defined and channel_metrics.health_score is not none %}
-                        {% set score = channel_metrics.health_score %}
-                        {% if score >= 75 %}<span class="badge bg-success" data-bs-toggle="tooltip"
-                            title="Overall Channel Uptime (with failover)">{{ score }}%</span>
-                        {% elif score >= 50 %}<span class="badge bg-warning" data-bs-toggle="tooltip"
-                            title="Overall Channel Uptime (with failover)">{{ score }}%</span>
-                        {% elif score >= 25 %}<span class="badge bg-orange" data-bs-toggle="tooltip"
-                            title="Overall Channel Uptime (with failover)">{{ score }}%</span>
-                        {% else %}<span class="badge bg-danger" data-bs-toggle="tooltip"
-                            title="Overall Channel Uptime (with failover)">{{ score }}%</span>
-                        {% endif %}
+                    {% set score = channel_metrics.health_score %}
+                    {% if score >= 75 %}<span class="badge bg-success" data-bs-toggle="tooltip"
+                        title="Overall Channel Uptime (with failover)">{{ score }}%</span>
+                    {% elif score >= 50 %}<span class="badge bg-warning" data-bs-toggle="tooltip"
+                        title="Overall Channel Uptime (with failover)">{{ score }}%</span>
+                    {% elif score >= 25 %}<span class="badge bg-orange" data-bs-toggle="tooltip"
+                        title="Overall Channel Uptime (with failover)">{{ score }}%</span>
+                    {% else %}<span class="badge bg-danger" data-bs-toggle="tooltip"
+                        title="Overall Channel Uptime (with failover)">{{ score }}%</span>
+                    {% endif %}
                     {% else %}
-                        <span class="badge bg-secondary">N/A</span>
+                    <span class="badge bg-secondary">N/A</span>
                     {% endif %}
                 </td>
 
                 <td class="text-center align-middle" data-sort-value="{{ channel_metrics.lowest_uptime|default(0) }}">
                     {% if channel_metrics.lowest_uptime is defined and channel_metrics.lowest_uptime is not none %}
-                        {% set score = channel_metrics.lowest_uptime %}
-                        {% if score >= 75 %}<span class="badge bg-success" data-bs-toggle="tooltip"
-                            title="Uptime of the least reliable mapped source">{{ score }}%</span>
-                        {% elif score >= 50 %}<span class="badge bg-warning" data-bs-toggle="tooltip"
-                            title="Uptime of the least reliable mapped source">{{ score }}%</span>
-                        {% elif score >= 25 %}<span class="badge bg-orange" data-bs-toggle="tooltip"
-                            title="Uptime of the least reliable mapped source">{{ score }}%</span>
-                        {% else %}<span class="badge bg-danger" data-bs-toggle="tooltip"
-                            title="Uptime of the least reliable mapped source">{{ score }}%</span>
-                        {% endif %}
+                    {% set score = channel_metrics.lowest_uptime %}
+                    {% if score >= 75 %}<span class="badge bg-success" data-bs-toggle="tooltip"
+                        title="Uptime of the least reliable mapped source">{{ score }}%</span>
+                    {% elif score >= 50 %}<span class="badge bg-warning" data-bs-toggle="tooltip"
+                        title="Uptime of the least reliable mapped source">{{ score }}%</span>
+                    {% elif score >= 25 %}<span class="badge bg-orange" data-bs-toggle="tooltip"
+                        title="Uptime of the least reliable mapped source">{{ score }}%</span>
+                    {% else %}<span class="badge bg-danger" data-bs-toggle="tooltip"
+                        title="Uptime of the least reliable mapped source">{{ score }}%</span>
+                    {% endif %}
                     {% else %}
-                        <span class="badge bg-secondary">N/A</span>
+                    <span class="badge bg-secondary">N/A</span>
                     {% endif %}
                 </td>
 

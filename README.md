@@ -1,20 +1,20 @@
-# NexusStream
+# NexusTuner
 
-[![Latest Release](https://img.shields.io/github/v/release/Fahmula/nexus-stream?style=for-the-badge&logo=github)](https://github.com/Fahmula/nexus-stream/releases/latest)
-[![License](https://img.shields.io/github/license/Fahmula/nexus-stream?style=for-the-badge)](https://github.com/Fahmula/nexus-stream/blob/main/LICENSE)
+[![Latest Release](https://img.shields.io/github/v/release/Fahmula/nexus-tuner?style=for-the-badge&logo=github)](https://github.com/Fahmula/nexus-tuner/releases/latest)
+[![License](https://img.shields.io/github/license/Fahmula/nexus-tuner?style=for-the-badge)](https://github.com/Fahmula/nexus-tuner/blob/main/LICENSE)
 
-NexusStream is a smart, self-hosted IPTV proxy that empowers you to aggregate multiple M3U sources into a single, stable, and feature-rich playlist for your clients (like Plex, Jellyfin, or Emby). It solves common IPTV pain points by introducing powerful features like seamless configuration with previews, multiple channel sources, parallel stream initiation, automatic source priority by stream quality, provider-level concurrent stream limiting, and intelligent session management, all controlled through an intuitive web interface.
+NexusTuner is a smart, self-hosted IPTV proxy that empowers you to aggregate multiple M3U sources into a single, stable, and feature-rich playlist for your clients (like Plex, Jellyfin, or Emby). It solves common IPTV pain points by introducing powerful features like seamless configuration with previews, multiple channel sources, parallel stream initiation, automatic source priority by stream quality, provider-level concurrent stream limiting, and intelligent session management, all controlled through an intuitive web interface.
 
 ## Key Features
 
-*   **`Automatic Quality Monitoring:`** NexusStream continuously monitors the health of each source along with its resolution, bitrate, and framerate. No more endless tinkering to find the best source, just select them all and NexusStream automatically chooses the highest quality and most reliable stream from your configured sources when a channel is requested.
-*   **`Fast & Reliable Streams:`** When a channel is requested, NexusStream starts multiple mapped sources in parallel (up to the provider's limit). It then instantly selects the best healthy stream based on priority and quality, leading to faster, more reliable, and more consistent channel startup times. Additionally, it will automatically switch to another source if the current one fails, ensuring uninterrupted viewing.
+*   **`Automatic Quality Monitoring:`** NexusTuner continuously monitors the health of each source along with its resolution, bitrate, and framerate. No more endless tinkering to find the best source, just select them all and NexusTuner automatically chooses the highest quality and most reliable stream from your configured sources when a channel is requested.
+*   **`Fast & Reliable Streams:`** When a channel is requested, NexusTuner starts multiple mapped sources in parallel (up to the provider's limit). It then instantly selects the best healthy stream based on priority and quality, leading to faster, more reliable, and more consistent channel startup times. Additionally, it will automatically switch to another source if the current one fails, ensuring uninterrupted viewing.
 *   **`In-Browser Previews:`** Easily preview streams directly in your browser while configuring channels. No more guesswork and fiddling with external players to check stream region and language.
 *   **`Web-Based UI:`** A modern, user-friendly UI to manage providers, create logical channels, map sources, and view application logs. Mapping channels has never been easier with automatic suggestions and prefilled data to make the setup process frictionless.
-*   **`M3U Aggregation:`** Combine multiple IPTV provider playlists into one unified and consistent channel lineup. Each provider can be configured with their maximum concurrent streams, which NexusStream will manage intelligently.
+*   **`M3U Aggregation:`** Combine multiple IPTV provider playlists into one unified and consistent channel lineup. Each provider can be configured with their maximum concurrent streams, which NexusTuner will manage intelligently.
 *   **`Dead Source Detection:`** Automatically detects dead mapped sources (e.g. stream url changed) and intelligently tries to remap them based on their tvg data. If it's not possible, channels with dead sources will be marked in the UI and logs with a convenient button to remove them.
 *   **`On-the-Fly Remux:`** All streams are processed via FFmpeg to produce an HLS or MPEGTS format, maximizing compatibility across a wide range of client devices and applications. Each stream type also supports sharing the same FFmpeg process for multiple simultaneous connections automatically, reducing resource usage and provider slot usage.
-*   **`HDHomeRun Server:`** NexusStream can act as an HDHomeRun server, allowing you to use your IPTV channels with compatible clients that support HDHomeRun such as Plex.
+*   **`HDHomeRun Server:`** NexusTuner can act as an HDHomeRun server, allowing you to use your IPTV channels with compatible clients that support HDHomeRun such as Plex.
 *   **`Ghost Session Cleanup:`** Integrates with Emby and Jellyfin to detect and terminate "ghost" streams, FFmpeg processes that are still running after a client has disconnected improperly, freeing up valuable provider slots.
 
 ## Getting Started
@@ -31,11 +31,11 @@ This project is designed to be run as a Docker container, which is the recommend
 
 1.  **Clone the Repository**
 
-    Clone the NexusStream repository to your local machine.
+    Clone the NexusTuner repository to your local machine.
 
     ```bash
-    git clone https://github.com/Fahmula/nexus-stream.git
-    cd nexus-stream
+    git clone https://github.com/Fahmula/nexus-tuner.git
+    cd nexus-tuner
     ```
 
 2.  **Create Configuration Directory**
@@ -60,7 +60,7 @@ This project is designed to be run as a Docker container, which is the recommend
 
     | Variable                              | Description                                                                                             | Example                               |
     | :------------------------------------ | :------------------------------------------------------------------------------------------------------ | :------------------------------------ |
-    | **`NEXUS_URL`** (Required)            | The full public URL of your NexusStream instance, including the port. Used to build playlist URLs.        | `http://192.168.1.100:4040`             |
+    | **`NEXUS_URL`** (Required)            | The full URL of your NexusTuner instance, including the port. Used to build playlist URLs.        | `http://192.168.1.100:4040`             |
     | `NEXUS_PORT`                          | The internal port the application listens on. Default is `4040`.                                        | `4040`                                |
     | `NEXUS_FFMPEG_INACTIVITY_TIMEOUT` | Seconds of inactivity before a stream is automatically stopped. Default is `900`.                    | `900`                                 |
     | `NEXUS_LOG_LEVEL`                     | Sets the logging verbosity. Options: `DEBUG`, `INFO`, `WARNING`, `ERROR`. Default is `INFO`.              | `DEBUG`                               |

@@ -1,6 +1,6 @@
 {% extends "layout.html" %}
 
-{% block title %}NexusStream Dashboard{% endblock %}
+{% block title %}NexusTuner Dashboard{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
@@ -14,7 +14,8 @@
             <div class="card-body">
                 <h5 class="card-title display-4">{{ provider_count }}</h5>
                 <p class="card-text">Configured M3U source providers.</p>
-                <a href="{{ url_for('ui_providers_manage') }}" class="btn btn-light btn-sm">Manage Providers <i class="fas fa-arrow-circle-right"></i></a>
+                <a href="{{ url_for('ui_providers_manage') }}" class="btn btn-light btn-sm">Manage Providers <i
+                        class="fas fa-arrow-circle-right"></i></a>
             </div>
         </div>
     </div>
@@ -24,7 +25,8 @@
             <div class="card-body">
                 <h5 class="card-title display-4">{{ discovered_sources_count }}</h5>
                 <p class="card-text">Total raw sources found across all providers.</p>
-                <a href="{{ url_for('ui_sources_list') }}" class="btn btn-light btn-sm">View Sources <i class="fas fa-arrow-circle-right"></i></a>
+                <a href="{{ url_for('ui_sources_list') }}" class="btn btn-light btn-sm">View Sources <i
+                        class="fas fa-arrow-circle-right"></i></a>
             </div>
         </div>
     </div>
@@ -34,7 +36,8 @@
             <div class="card-body">
                 <h5 class="card-title display-4">{{ logical_channels_count }}</h5>
                 <p class="card-text">User-defined channels for client M3U.</p>
-                <a href="{{ url_for('ui_logical_channels_list') }}" class="btn btn-light btn-sm">Manage Logical Channels <i class="fas fa-arrow-circle-right"></i></a>
+                <a href="{{ url_for('ui_logical_channels_list') }}" class="btn btn-light btn-sm">Manage Logical Channels
+                    <i class="fas fa-arrow-circle-right"></i></a>
             </div>
         </div>
     </div>
@@ -59,7 +62,7 @@
             <span>Reloading...</span>
         </div>
     </div>
-    
+
     <div id="dashboard-backup-container" class="d-inline-block ms-2">
         <button id="dashboard-backup-button" class="btn btn-secondary" hx-post="{{ url_for('backup_configuration') }}"
             hx-target="#flash-messages-container" hx-swap="afterbegin" data-bs-toggle="tooltip" data-bs-placement="top"
@@ -75,8 +78,10 @@
     </div>
     </p>
     <p class="text-muted small">
-        Use the "Reload Config" button in the top navigation for a quicker reload of JSON configurations and M3U generation without re-parsing all provider M3Us.
-        The button above performs a more thorough refresh including fetching all provider M3Us and re-discovering all sources.
+        Use the "Reload Config" button in the top navigation for a quicker reload of JSON configurations and M3U
+        generation without re-parsing all provider M3Us.
+        The button above performs a more thorough refresh including fetching all provider M3Us and re-discovering all
+        sources.
     </p>
 </div>
 
@@ -87,7 +92,7 @@
     // Initialize Bootstrap tooltips
     var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
     var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-      return new bootstrap.Tooltip(tooltipTriggerEl)
+        return new bootstrap.Tooltip(tooltipTriggerEl)
     })
 </script>
 {% endblock %}
