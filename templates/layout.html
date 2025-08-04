@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="h-100">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -170,7 +170,7 @@
         }
     </style>
 </head>
-<body>
+<body class="d-flex flex-column h-100">
     <nav class="navbar navbar-expand-md navbar-dark fixed-top bg-dark">
         <div class="container-fluid">
             <a class="navbar-brand" href="{{ url_for('ui_main_dashboard') }}">NexusStream</a>
@@ -230,7 +230,7 @@
         <span class="text-muted small">Loading provider status...</span>
     </div>
 
-    <main class="container mt-4 mb-5">
+    <main class="container mt-4 mb-5 flex-shrink-0">
         <div id="flash-messages-container" hx-trigger="flashMessagesUpdated from:body" hx-get="{{ url_for('ui_flash_messages') }}" hx-swap="innerHTML">
             {% include "_flash_messages.html" %}
         </div>
