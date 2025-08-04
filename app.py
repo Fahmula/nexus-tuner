@@ -310,10 +310,12 @@ async def serve_hls_segment(logical_channel_id: LogicalChannelId, segment_filena
     """Serves an HLS video segment (.ts file) asynchronously."""
     run_bg(stream_manager.record_video_access(logical_channel_id, VideoType.HLS, segment_filename=segment_filename))
     if not segment_filename.endswith(".ts") or ".." in segment_filename:
+        config.error(VideoType.HLS, f"Invalid segment filename: {segment_filename}")
         abort(400, f"Invalid segment filename: {segment_filename}")
     
     segment_path = await stream_manager.get_hls_segment_path(logical_channel_id, VideoType.HLS, segment_filename)
     if not segment_path or not await aiofiles.os.path.isfile(segment_path):
+        config.error(VideoType.HLS, f"HLS segment not found for channel '{logical_channel_id}' with filename '{segment_filename}'.")
         abort(404, f"HLS segment not found for channel '{logical_channel_id}'")
 
     return await send_from_directory(str(segment_path.parent), segment_path.name, mimetype="video/mp2t")
@@ -410,6 +412,7 @@ async def ui_provider_add() -> Response | str:
             if not is_valid_url(m3u_url):
                 raise ValueError(f"Invalid URL format: {m3u_url}")
             if await handler.add_provider(alias, m3u_url, max_streams):
+                config.info(Label.SERVER, f"Provider '{alias}' added with max streams {max_streams}.")
                 await flash(f"Provider '{alias}' added successfully, perform a 'Full Reload' on the dashboard to discover sources.", "success")
                 all_providers = sorted((await handler.get_provider_stream_status()).values(), key=lambda p: p['alias'])
                 table_body_html = await render_template("_providers_table_body.html", providers=all_providers)
@@ -418,6 +421,7 @@ async def ui_provider_add() -> Response | str:
             else:
                 raise ValueError(f"Failed to add provider '{alias}'.")
         except ValueError as e:
+            config.error(Label.SERVER, f"Failed to add provider '{alias}': {e}")
             await flash(f"Failed to add provider '{alias}`: {e}", "error")
             response = Response(await render_template("_provider_add_form.html", alias=alias, m3u_url=m3u_url, max_streams=max_streams_str))
         response.headers["HX-Trigger"] = "flashMessagesUpdated"
@@ -444,12 +448,14 @@ async def ui_provider_edit(alias: ProviderAlias) -> Response | str:
         if not is_valid_url(m3u_url):
             raise ValueError(f"Invalid URL format: {m3u_url}")
         if await handler.update_provider(alias, m3u_url, max_streams):
+            config.info(Label.SERVER, f"Provider '{alias}' updated with max streams {max_streams}.")
             await flash(f"Provider '{alias}' updated successfully, perform a 'Full Reload' on the dashboard to re-discover sources.", "success")
             updated_provider_data = ProviderStatus({**provider, "m3u_url": m3u_url, "max_streams": max_streams})
             response = Response(await render_template("_provider_row.html", provider=updated_provider_data))
         else:
             raise ValueError(f"Failed to update provider '{alias}'.")
     except ValueError as e:
+        config.error(Label.SERVER, f"Failed to update provider '{alias}': {e}")
         await flash(f"Failed to update provider '{alias}': {e}", "error")
         response = Response(await render_template("_provider_edit_form.html", provider={**provider, "m3u_url": m3u_url, "max_streams": max_streams_str}))
     response.headers["HX-Trigger"] = "flashMessagesUpdated"
@@ -460,11 +466,13 @@ async def ui_provider_edit(alias: ProviderAlias) -> Response | str:
 async def ui_provider_delete(alias: ProviderAlias) -> Response:
     try:
         if await handler.delete_provider(alias):
+            config.info(Label.SERVER, f"Provider '{alias}' deleted successfully.")
             await flash(f"Provider '{alias}' deleted successfully, perform a 'Full Reload' on the dashboard to re-discover sources.", "success")
             response = Response("", 200)
         else:
             raise ValueError(f"Failed to delete provider '{alias}'.")
     except ValueError as e:
+        config.error(Label.SERVER, f"Failed to delete provider '{alias}': {e}")
         await flash(f"Failed to delete provider '{alias}': {e}", "error")
         response = Response("", 400)
     response.headers["HX-Trigger"] = "flashMessagesUpdated"
@@ -523,11 +531,13 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
         tvg_log: TVGLogo = TVGLogo(form_data.get("tvg_logo", "").strip())
 
         if not logical_channel_title or not channel_num:
+            config.warn(Label.SERVER, "Display Name and Channel Number are required.")
             await flash("Display Name and Channel Number are required.", "error") 
             return redirect(request.url)
         try:
             int(channel_num)
         except ValueError:
+            config.warn(Label.SERVER, f"Channel Number must be a valid integer, received: {channel_num}")
             await flash(f"Channel Number must be a valid integer, received: {channel_num}", "error")
             return redirect(request.url)
 
@@ -539,6 +549,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
                     'priority': Priority(int(form_data.get(f"priority_{source_id_str}", DEFAULT_PRIORITY)))
                 }))
             except (ValueError, TypeError):
+                config.warn(Label.SERVER, f"Skipping mapping with invalid priority for source '{source_id_str}'.")
                 await flash(f"Skipping a mapping with invalid priority for source '{source_id_str}'.", "warning")
 
         channel_log = f"'{logical_channel_title}' ({channel_num})"
@@ -556,8 +567,10 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
                 await flash(f"Failed to update channel {channel_log}.", "error")
                 return redirect(request.url)
             if await handler.update_mappings_for_logical_channel(logical_channel_id, mappings_to_save):
+                config.info(Label.SERVER, f"Channel {channel_log} updated with {len(mappings_to_save)} mappings.")
                 await flash(f"Channel {channel_log} updated with {len(mappings_to_save)} mappings.", "success")
             else:
+                config.warn(Label.SERVER, f"Channel {channel_log} updated, but failed to update {len(mappings_to_save)} mappings.")
                 await flash(f"Successfully updated channel {channel_log}, but failed to update {len(mappings_to_save)} mappings.", "warning")
             await handler.reload_handler_config()
             return redirect(url_for('ui_logical_channel_form', logical_channel_id=submitted_id))
@@ -571,14 +584,18 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
             }
             new_id = await handler.add_logical_channel(lc_data)
             if not new_id:
+                config.error(Label.SERVER, f"Failed to create channel {channel_log}.")
                 await flash(f"Failed to create channel {channel_log}.", "error")
                 return redirect(request.url)
             if mappings_to_save:
                 if await handler.update_mappings_for_logical_channel(new_id, mappings_to_save):
+                    config.info(Label.SERVER, f"Channel {channel_log} created with {len(mappings_to_save)} mappings.")
                     await flash(f"Channel {channel_log} created with {len(mappings_to_save)} mappings.", "success")
                 else:
+                    config.warn(Label.SERVER, f"Channel {channel_log} created, but failed to add {len(mappings_to_save)} mappings.")
                     await flash(f"Successfully created channel {channel_log}, but failed to add {len(mappings_to_save)} mappings.", "warning")
             else:
+                config.info(Label.SERVER, f"Channel {channel_log} created with no mappings.")
                 await flash(f"Channel {channel_log} created with no mappings.", "success")
             await handler.reload_handler_config()
             return redirect(url_for('ui_logical_channel_form', logical_channel_id=new_id))
@@ -590,6 +607,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     if logical_channel_id:
         channel = await handler.get_logical_channel_with_id(logical_channel_id)
         if not channel:
+            config.warn(Label.SERVER, f"Logical Channel with ID '{logical_channel_id}' not found.")
             await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
             return redirect(url_for('ui_logical_channels_list'))
     
@@ -609,10 +627,8 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     all_source_metrics: dict[SourceId, SourceMetrics] = {}
     current_mappings = await handler.get_channel_mappings_for_ui(logical_channel_id) if logical_channel_id else []
     sort_sources(current_mappings, all_quality_scores, reverse=False)
-    sources_mapped_elsewhere = await handler.get_all_mapped_source_ids()
     for mapping in current_mappings:
         source_id = mapping['source_id']
-        sources_mapped_elsewhere.discard(source_id)
         all_mapped_source_ids.add(source_id)
         if source_id in all_sources_map:
             source_details = all_sources_map[source_id].copy()
@@ -648,7 +664,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     return await render_template(
         template_to_render, channel=channel, channel_metrics=channel_metrics, all_source_metrics=all_source_metrics,
         unmapped_suggestions_for_page=unmapped_suggestions_for_page,
-        mapped_sources=mapped_sources, sources_mapped_elsewhere=sources_mapped_elsewhere,
+        mapped_sources=mapped_sources, sources_mapped_elsewhere=await handler.get_sources_mapped_elsewhere(logical_channel_id),
         current_page=page, total_pages=total_pages, total_unmapped_items=total_unmapped_items,
         search_query=search_query, filter_query=filter_query,
     )
@@ -660,11 +676,14 @@ async def ui_logical_channel_delete(logical_channel_id: LogicalChannelId) -> Res
     if channel:
         channel_log = f"'{channel['logical_channel_title']}' ({channel['channel_num']})"
         if await handler.delete_logical_channel(logical_channel_id):
+            config.info(Label.SERVER, f"Logical Channel {logical_channel_id} deleted successfully.")
             await flash(f"Channel {channel_log} deleted.", "success")
             await handler.reload_handler_config()
         else:
+            config.error(Label.SERVER, f"Failed to delete logical channel {channel_log}.")
             await flash(f"Error deleting channel {channel_log}.", "error")
     else:
+        config.warn(Label.SERVER, f"Logical Channel with ID '{logical_channel_id}' not found for deletion.")
         await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "warning")
     return redirect(url_for('ui_logical_channels_list'))
 
@@ -674,10 +693,12 @@ async def ui_analyze_mappings(logical_channel_id: LogicalChannelId) -> Response:
     """Analyzes the mappings for a logical channel asynchronously."""
     channel = await handler.get_logical_channel_by_id(logical_channel_id)
     if not channel:
+        config.warn(Label.SERVER, f"Logical Channel with ID '{logical_channel_id}' not found for analysis.")
         await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
         return Response("", 404)
     sources = await handler.get_channel_mappings_for_ui(logical_channel_id)
     if not sources:
+        config.info(Label.SERVER, f"No mappings found for logical channel '{logical_channel_id}'.")
         await flash(f"No mappings found for logical channel '{logical_channel_id}'.", "info")
         return Response("", 204)
 
@@ -696,6 +717,7 @@ async def ui_remove_dead_mappings(logical_channel_id: LogicalChannelId) -> Respo
     """Removes dead mappings from logical channels asynchronously."""
     channel = await handler.get_logical_channel_by_id(logical_channel_id)
     if not channel:
+        config.warn(Label.SERVER, f"Logical Channel with ID '{logical_channel_id}' not found for dead mapping removal.")
         await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
         return Response("", 404)
     discovered_mappings: list[SourceMappingInfoWithId] = []
@@ -705,17 +727,21 @@ async def ui_remove_dead_mappings(logical_channel_id: LogicalChannelId) -> Respo
             discovered_mappings.append(source)
         else:
             if not await quality_monitor.remove_source(source['source_id']):
+                config.warn(Label.SERVER, f"Failed to remove dead source {source['source_id']} from quality monitor.")
                 await flash(f"Failed to remove dead source {source['source_id']} from quality monitor.", "error")
                 return Response("", 500)
             removed_count += 1
     if not await handler.update_mappings_for_logical_channel(logical_channel_id, discovered_mappings):
+        config.error(Label.SERVER, f"Failed to update mappings for logical channel '{logical_channel_id}' after removing dead sources.")
         await flash(f"Failed to update mappings for logical channel '{logical_channel_id}' after removing dead sources.", "error")
         return Response("", 500)
 
     channel_log = f"'{channel['logical_channel_title']}' ({channel['channel_num']})"
     if removed_count > 0:
+        config.info(Label.SERVER, f"Removed {removed_count} dead mappings from logical channel '{logical_channel_id}'.")
         await flash(f"Removed {removed_count} dead mapping(s) from {channel_log}.", "success")
     else:
+        config.info(Label.SERVER, f"No dead mappings found to remove from logical channel '{logical_channel_id}'.")
         await flash(f"No dead mappings found to remove from {channel_log}.", "info")
 
     response = Response("", 200)
@@ -747,7 +773,6 @@ async def ui_channel_populate_from_suggestion() -> str:
     # 2. Pre-filter sources based on the suggested name
     filter_query = prefilled_data['logical_channel_title'].strip().lower()
     all_discovered_sources = await handler.get_discovered_sources_for_ui()
-    sources_mapped_elsewhere = await handler.get_all_mapped_source_ids()
     unmapped_suggestions: list[DiscoveredSource] = []
     current_mappings = await handler.get_channel_mappings_for_ui(logical_channel_id) if logical_channel_id else []
     all_quality_scores = await quality_monitor.get_quality_scores()
@@ -791,7 +816,7 @@ async def ui_channel_populate_from_suggestion() -> str:
         all_source_metrics=all_source_metrics,
         unmapped_suggestions_for_page=unmapped_suggestions_for_page,
         mapped_sources=[], # New channel has no mapped sources
-        sources_mapped_elsewhere=sources_mapped_elsewhere,
+        sources_mapped_elsewhere=await handler.get_sources_mapped_elsewhere(logical_channel_id),
         current_page=page,
         total_pages=total_pages,
         total_unmapped_items=total_unmapped_items,
@@ -832,6 +857,7 @@ async def ui_logs_modal() -> str:
 async def ui_player_for_source(source_id: SourceId) -> str:
     discovered_source = await handler.get_discovered_source(source_id)
     if not discovered_source:
+        config.warn(Label.SERVER, f"Source ID '{source_id}' not found for preview.")
         await flash(f"Error: source ID not found.", "error")
         abort(404, f"Source ID '{source_id}' not found.")
     source_name = discovered_source["display_title"] or discovered_source["tvg_name"] or "Preview"

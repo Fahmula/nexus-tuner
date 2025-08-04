@@ -136,6 +136,10 @@
         sources.
     </p>
     {% if total_pages > 1 %}
+    <div class="alert alert-warning small py-1 mb-2 text-center">
+        <i class="fas fa-exclamation-triangle me-1"></i>
+        <strong>Warning:</strong> Navigating to another page will remove any selected and unsaved mappings.
+    </div>
     <nav aria-label="Suggestions navigation" class="mt-2">
         <ul class="pagination justify-content-center">
             <li class="page-item {% if current_page <= 1 %}disabled{% endif %}">

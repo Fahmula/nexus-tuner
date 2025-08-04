@@ -4,7 +4,7 @@ from typing import Awaitable, Callable, Final, NoReturn, Self
 from nexus_stream.config import Config
 from nexus_stream.handler import ChannelHandler
 from nexus_stream.quality_monitor import QualityMonitor
-from nexus_stream.utils import DateTimeISO, JobName, Label, relative_time
+from nexus_stream.utils import DateTimeISO, JobName, JobsDataImpl, Label, relative_time
 
 
 SCHEDULER_TICK_INTERVAL_SECONDS: Final[int] = 60
@@ -27,20 +27,23 @@ class Job:
         self.func: Callable[[], Awaitable[None]] = func
         self.active: bool = False
 
-    async def run(self, config: Config, start_time: datetime, set_last_run: Callable[[JobName, datetime], Awaitable[None]]) -> None:
+    async def run(self, config: Config, start_time: datetime, set_last_run: Callable[[JobName, datetime], Awaitable[bool]]) -> bool:
         """Runs the job function and updates its last run time."""
         if self.active:
-            return
+            return True
         self.active = True
         try:
             config.info(Label.SCHEDULER, f"starting job: {self.name}")
             await self.func()
-            await set_last_run(self.name, start_time)
+            if not await set_last_run(self.name, start_time):
+                config.critical(Label.SCHEDULER, f"Failed to set last run for job {self.name}.")
+                return False
             self.log_next_run(config, start_time)
         except Exception as e:
             config.error(Label.SCHEDULER, f"Job failed with exception: {e}")
         finally:
             self.active = False
+        return True
 
     def get_next_run(self, last_run: datetime | None) -> datetime:
         """Calculates the next run time based on the last run time and the job's schedule."""
@@ -67,7 +70,7 @@ class Scheduler:
         self.handler: ChannelHandler = handler
         self.quality_monitor: QualityMonitor = quality_monitor
         self._mutex: asyncio.Lock = asyncio.Lock()
-        self._tasks: list[asyncio.Task[None]] = []
+        self._tasks: list[asyncio.Task[bool]] = []
 
         async def scheduled_backup() -> None:
             await self.config.backup_config(scheduled=True)
@@ -102,37 +105,58 @@ class Scheduler:
         for task in self._tasks:
             task.cancel()
 
-    async def set_last_run(self, job_name: JobName, last_run: datetime) -> None:
+    async def set_last_run(self, job_name: JobName, last_run: datetime) -> bool:
         """Sets the last run time of a job by its name."""
         async with self._mutex:
             jobs_data = await self.config.get_jobs_config()
+            if jobs_data is None:
+                return False
             if job_name in jobs_data:
                 jobs_data[job_name]["last_run"] = DateTimeISO(last_run.isoformat())
             else:
                 jobs_data[job_name] = {"last_run": DateTimeISO(last_run.isoformat())}
             if not await self.config.save_jobs_config(jobs_data):
-                self.config.critical(Label.SCHEDULER, f"Failed to save last run time for job {job_name}.")
+                return False
+        return True
 
     async def _run(self) -> NoReturn:
         """The main execution loop for the scheduler, run as an asyncio task."""
-        jobs_data = await self.config.get_jobs_config()
+        jobs_data = await self.config.get_jobs_config(label=Label.STARTUP)
+        if not jobs_data:
+            new_jobs_data = JobsDataImpl({})
+            for job_name in JobName:
+                new_jobs_data[job_name] = {"last_run": DateTimeISO(datetime.fromtimestamp(0).isoformat())}
+            if not await self.config.save_jobs_config(new_jobs_data):
+                self.config.critical(Label.SCHEDULER, f"Failed to initialize {self.config.jobs_name} config, cannot run jobs.")
+                raise RuntimeError(f"Failed to initialize {self.config.jobs_name} config, cannot run jobs.")
+            self.config.info(Label.SCHEDULER, f"Initialized {self.config.jobs_name} config with default values.")
+            jobs_data = await self.config.get_jobs_config()
         for job in self.jobs:
-            last_run_iso = jobs_data.get(job.name, {}).get("last_run")
+            last_run_iso = jobs_data.get(job.name, {}).get("last_run") if jobs_data else None
             job.log_next_run(self.config, datetime.fromisoformat(last_run_iso) if last_run_iso else None)
         while True:
             try:
                 now = datetime.now()
                 jobs_data = await self.config.get_jobs_config()
+                if jobs_data is None:
+                    self.config.critical(Label.SCHEDULER, f"{self.config.jobs_name} was removed/corrupted after startup, no longer running jobs.")
+                    raise RuntimeError(f"{self.config.jobs_name} was removed after startup, no longer running jobs.")
                 for job in self.jobs:
                     last_run_iso = jobs_data.get(job.name, {}).get("last_run")
                     if now >= job.get_next_run(datetime.fromisoformat(last_run_iso) if last_run_iso else None):
                         self._tasks.append(asyncio.create_task(job.run(self.config, now, self.set_last_run)))
             except Exception as e:
+                if isinstance(e, RuntimeError):
+                    self.config.critical(Label.SCHEDULER, f"Scheduler encountered a critical error: {e}")
+                    raise
                 self.config.error(Label.SCHEDULER, f"Scheduler encountered an error: {e}")
             to_delete = [task for task in self._tasks if task.done()]
             for task in to_delete:
                 e = task.exception()
                 if e:
                     self.config.error(Label.SCHEDULER, f"Task failed with: {e}")
+                elif not task.cancelled() and not task.result():
+                    self.config.critical(Label.SCHEDULER, f"Failed to save to {self.config.jobs_name}, no longer running jobs.")
+                    raise RuntimeError(f"Failed to save to {self.config.jobs_name}, no longer running jobs.")
                 self._tasks.remove(task)
             await asyncio.sleep(SCHEDULER_TICK_INTERVAL_SECONDS)

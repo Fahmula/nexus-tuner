@@ -40,7 +40,9 @@ class QualityMonitor:
     async def create(cls, config: Config, handler: ChannelHandler) -> Self:
         """Asynchronous factory for creating and initializing a QualityMonitor instance."""
         instance = cls(config, handler)
-        instance._build_quality_scores(await config.get_quality_cache())
+        quality_cache = await config.get_quality_cache(label=Label.STARTUP)
+        if quality_cache:
+            instance._build_quality_scores(quality_cache)
         return instance
 
     async def get_quality_scores(self) -> QualityScores:
@@ -52,6 +54,9 @@ class QualityMonitor:
         """Removes a source from the quality scores and cache."""
         async with self._mutex:
             quality_cache = await self.config.get_quality_cache()
+            if quality_cache is None:
+                self.config.critical(Label.QUALITY, f"Quality cache was removed/corrupted after startup, cannot remove {source_id}.")
+                return False
             if source_id in quality_cache:
                 del quality_cache[source_id]
                 if not await self.config.save_quality_cache(quality_cache):
@@ -213,6 +218,9 @@ class QualityMonitor:
                 return
 
             quality_cache = await self.config.get_quality_cache()
+            if quality_cache is None:
+                self.config.critical(Label.QUALITY, "Quality cache was removed/corrupted after startup, cannot analyze sources.")
+                return
             now = datetime.now()
             for logical_channel_id, sources in all_mappings.items():
                 logical_channel = await self.handler.get_logical_channel_by_id(logical_channel_id)
@@ -273,6 +281,9 @@ class QualityMonitor:
 
             async with self._mutex:
                 quality_cache = await self.config.get_quality_cache()
+                if quality_cache is None:
+                    self.config.critical(Label.QUALITY, f"Quality cache was removed/corrupted after startup, stopping analysis at '{logical_channel_title}' ({channel_num}).")
+                    return
                 modified_cache = QualityCacheDataImpl({})
                 for source_id, result in stream_infos:
                     if source_id not in quality_cache:
@@ -304,8 +315,8 @@ class QualityMonitor:
                         source_entry["framerates"] = source_entry["framerates"][-MAX_HISTORY_PER_SOURCE:]
                     modified_cache[source_id] = source_entry
                 if not await self.config.save_quality_cache(quality_cache):
-                    self.config.critical(Label.QUALITY, f"Failed to save quality cache after analyzing '{logical_channel_title}' ({channel_num}).")
-                    continue
+                    self.config.critical(Label.QUALITY, f"Failed to save quality cache, stopping analysis at '{logical_channel_title}' ({channel_num}).")
+                    return
                 self._build_quality_scores(modified_cache)
         if input_lc_id:
             self.config.info(Label.QUALITY, f"Completed analysis for {len(valid_mappings[0][3])} mappings(s) in '{valid_mappings[0][1]}' ({valid_mappings[0][2]}).")

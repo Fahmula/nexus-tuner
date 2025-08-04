@@ -7,14 +7,14 @@ import time
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from dotenv import load_dotenv
-from typing import Callable, Final, Mapping, Self
+from typing import Any, Final, Mapping, Self
 
 import asyncio
 import aiofiles.os
 import aioshutil
 
-from nexus_stream.utils import (NEXUS_STREAM_PORT, NEXUS_STREAM_VERSION, ChannelListDataImpl, ChannelMappingsData, ChannelMappingsDataImpl, DiscoveredSourcesData, DiscoveredSourcesDataImpl, JobsData, JobsDataImpl,
-                                Label, LogicalChannelsData, LogicalChannelsDataImpl, ProvidersData, ProvidersDataImpl, QualityCacheData, QualityCacheDataImpl, VideoKey, VideoType)
+from nexus_stream.utils import (NEXUS_STREAM_PORT, NEXUS_STREAM_VERSION, ChannelListDataImpl, ChannelMappingsData, ChannelMappingsDataImpl, DiscoveredSourcesData, DiscoveredSourcesDataImpl, JobName, JobsData, JobsDataImpl,
+                                Label, LogicalChannelsData, LogicalChannelsDataImpl, ProvidersData, ProvidersDataImpl, QualityCacheData, QualityCacheDataImpl, VideoKey, VideoType, is_valid_url)
 
 
 NOT_ALPHANUM_REGEX: Final[re.Pattern[str]] = re.compile(r'[^a-zA-Z0-9_-]')
@@ -34,7 +34,7 @@ class Config:
         'discovered_sources_name', 'discovered_sources_path',
         'logical_channels_name', 'logical_channels_path',
         'channel_mappings_name', 'channel_mappings_path',
-        'channel_list_name', 'channel_list_path',
+        'channel_list_name', 'channel_list_path', 'channel_list_default_path',
         'quality_cache_name', 'quality_cache_path',
         'jobs_name', 'jobs_path',
         'backups_base_path', 'backups_scheduled_path', 'backups_manual_path', 'backup_count',
@@ -89,6 +89,7 @@ class Config:
         
         self.channel_list_name: Final[str] = "channel_list.json"
         self.channel_list_path: Final[Path] = self.config_dir / self.channel_list_name
+        self.channel_list_default_path: Final[Path] = Path(__file__).parent / "channel_list.json.default"
         
         self.quality_cache_name: Final[str] = "quality_cache.json"
         self.quality_cache_path: Final[Path] = self.config_dir / self.quality_cache_name
@@ -149,9 +150,8 @@ class Config:
 
         if not await aiofiles.os.path.exists(self.channel_list_path):
             self.debug(Label.STARTUP, f"Creating default channel list at {self.channel_list_path}")
-            default_list_path = Path(__file__).parent / "channel_list.json.default"
-            await aioshutil.copy(default_list_path, self.channel_list_path)
-        
+            await aioshutil.copy(self.channel_list_default_path, self.channel_list_path)
+
         self.debug(Label.STARTUP, f"Cleaning HLS directory: {self.hls_base_segment_dir}")
         await aioshutil.rmtree(self.hls_base_segment_dir, ignore_errors=True)
         await aiofiles.os.makedirs(self.hls_base_segment_dir, exist_ok=True)
@@ -283,31 +283,11 @@ class Config:
         finally:
             self._cleaning_up_ffmpeg_logs = False
 
-    async def _load_json_file[JsonType](self, file_path: Path, default_content_factory: Callable[[], JsonType]) -> JsonType:
-        """
-        Loads data from a JSON file asynchronously and in a coroutine-safe manner.
-        """
+    async def _load_json_file(self, file_path: Path) -> Any:
+        """Loads data from a JSON file."""
         async with self.file_lock:
-            try:
-                if not await aiofiles.os.path.exists(file_path):
-                    self.debug(Label.CONFIG, f"{file_path} not found. Creating with default content.")
-                    default_content = default_content_factory()
-                    async with aiofiles.open(file_path, "w") as f:
-                        await f.write(json.dumps(default_content, indent=2))
-                    return default_content
-                
-                async with aiofiles.open(file_path, "r") as f:
-                    content = await f.read()
-                    if not content.strip():
-                         self.debug(Label.CONFIG, f"{file_path} is empty. Initializing with default content.")
-                         default_content = default_content_factory()
-                         async with aiofiles.open(file_path, "w") as wf:
-                            await wf.write(json.dumps(default_content, indent=2))
-                         return default_content
-                    return json.loads(content)
-            except BaseException as e:
-                self.critical(Label.CONFIG, f"Could not load or parse {file_path}: {e}")
-                raise
+            async with aiofiles.open(file_path, "r") as f:
+                return json.loads(await f.read())
 
     async def _save_json_file[K: str, V](self, file_path: Path, data: Mapping[K, V] | list[V] | tuple[V, ...]) -> bool:
         """
@@ -331,53 +311,294 @@ class Config:
                 return False
             raise
 
-    async def get_providers_config(self) -> ProvidersDataImpl:
+    async def get_providers_config(self, *, label: Label | None = None) -> ProvidersDataImpl | None:
         """Loads the providers configuration from providers.json asynchronously."""
-        return await self._load_json_file(self.providers_path, lambda: ProvidersDataImpl({}))
+        try:
+            data: ProvidersDataImpl = await self._load_json_file(self.providers_path)
+            if type(data) is not dict:
+                raise ValueError(f"Invalid providers configuration format in {self.providers_path}")
+            for key1, val1 in data.items():
+                if type(key1) is not str:
+                    raise ValueError(f'"{key1}": expected str, got {type(key1)}')
+                if type(val1) is not dict:
+                    raise ValueError(f'"{key1}" val: expected dict, got {type(val1)}')
+                for key2 in ("m3u_url", "max_streams", "updated_at"):
+                    if key2 not in val1:
+                        raise ValueError(f'"{key1}" - missing required key "{key2}"')
+                    val2 = val1[key2]
+                    if key2 == "m3u_url":
+                        if type(val2) is not str or not is_valid_url(val2):
+                            raise ValueError(f'"{key1}" - "m3u_url": expected valid URL, got {val2}')
+                    elif key2 == "max_streams":
+                        if type(val2) is not int or val2 < 0:
+                            raise ValueError(f'"{key1}" - "max_streams": expected non-negative int, got {val2}')
+                    elif key2 == "updated_at":
+                        try:
+                            if type(val2) is not str:
+                                raise ValueError()
+                            datetime.fromisoformat(val2)
+                        except Exception:
+                            raise ValueError(f'"{key1}" - "updated_at": expected ISO 8601 date string, got {val2}')
+                    else:
+                        raise ValueError(f'"{key1}" - unexpected key "{key2}"')
+            return data
+        except BaseException as e:
+            if label == Label.STARTUP and isinstance(e, FileNotFoundError):
+                self.info(label, f"No providers configuration found at {self.providers_path}, using default...")
+                return ProvidersDataImpl({})
+            self.critical(label or Label.CONFIG, f"Failed to load providers configuration from {self.providers_path}: {e}")
+            if isinstance(e, Exception):
+                return
+            raise
 
     async def save_providers_config(self, data: ProvidersData) -> bool:
         """Saves the providers configuration to providers.json asynchronously."""
         return await self._save_json_file(self.providers_path, data)
 
-    async def get_discovered_sources_config(self) -> DiscoveredSourcesDataImpl:
+    async def get_discovered_sources_config(self, *, label: Label | None = None) -> DiscoveredSourcesDataImpl | None:
         """Loads the discovered sources from discovered_sources.json asynchronously."""
-        return await self._load_json_file(self.discovered_sources_path, lambda: DiscoveredSourcesDataImpl({}))
+        try:
+            data: DiscoveredSourcesDataImpl = await self._load_json_file(self.discovered_sources_path)
+            if type(data) is not dict:
+                raise ValueError(f"Invalid discovered sources configuration format in {self.discovered_sources_path}")
+            for key1, val1 in data.items():
+                if type(key1) is not str:
+                    raise ValueError(f'"{key1}": expected str, got {type(key1)}')
+                if type(val1) is not dict:
+                    raise ValueError(f'"{key1}" val: expected dict, got {type(val1)}')
+                for key2 in ("provider_alias", "tvg_name", "display_title", "group_title", "tvg_id", "tvg_logo", "stream_url"):
+                    if key2 not in val1:
+                        raise ValueError(f'"{key1}" - missing required key "{key2}"')
+                    val2 = val1[key2]
+                    if type(val2) is not str:
+                        raise ValueError(f'"{key1}" - "{key2}": expected str, got {type(val2)}')
+                    if key2 == "stream_url" and not is_valid_url(val2):
+                        raise ValueError(f'"{key1}" - "stream_url": expected valid URL, got {val2}')
+            return data
+        except BaseException as e:
+            if label == Label.STARTUP and isinstance(e, FileNotFoundError):
+                self.info(label, f"No discovered sources configuration found at {self.discovered_sources_path}, using default...")
+                return DiscoveredSourcesDataImpl({})
+            self.critical(label or Label.CONFIG, f"Failed to load discovered sources configuration from {self.discovered_sources_path}: {e}")
+            if isinstance(e, Exception):
+                return
+            raise
 
     async def save_discovered_sources_config(self, data: DiscoveredSourcesData) -> bool:
         """Saves the discovered sources to discovered_sources.json asynchronously."""
         return await self._save_json_file(self.discovered_sources_path, data)
 
-    async def get_logical_channels_config(self) -> LogicalChannelsDataImpl:
+    async def get_logical_channels_config(self, *, label: Label | None = None) -> LogicalChannelsDataImpl | None:
         """Loads the logical channels configuration from logical_channels.json asynchronously."""
-        return await self._load_json_file(self.logical_channels_path, lambda: LogicalChannelsDataImpl({}))
+        try:
+            data: LogicalChannelsDataImpl = await self._load_json_file(self.logical_channels_path)
+            if type(data) is not dict:
+                raise ValueError(f"Invalid logical channels configuration format in {self.logical_channels_path}")
+            for key1, val1 in data.items():
+                if type(key1) is not str or not key1.isdigit():
+                    raise ValueError(f'"{key1}": expected int str, got {type(key1)}')
+                if type(val1) is not dict:
+                    raise ValueError(f'"{key1}" val: expected dict, got {type(val1)}')
+                for key2 in ("logical_channel_title", "channel_num", "group_title", "tvg_id", "tvg_logo"):
+                    if key2 not in val1:
+                        raise ValueError(f'"{key1}" - missing required key "{key2}"')
+                    val2 = val1[key2]
+                    if type(val2) is not str:
+                        raise ValueError(f'"{key1}" - "{key2}": expected str, got {type(val2)}')
+                    if key2 == "channel_num" and not val2.isdigit():
+                        raise ValueError(f'"{key1}" - "channel_num": expected int string, got {val2}')
+            return data
+        except BaseException as e:
+            if label == Label.STARTUP and isinstance(e, FileNotFoundError):
+                self.info(label, f"No logical channels configuration found at {self.logical_channels_path}, using default...")
+                return LogicalChannelsDataImpl({})
+            self.critical(label or Label.CONFIG, f"Failed to load logical channels configuration from {self.logical_channels_path}: {e}")
+            if isinstance(e, Exception):
+                return
+            raise
 
     async def save_logical_channels_config(self, data: LogicalChannelsData) -> bool:
         """Saves the logical channels configuration to logical_channels.json asynchronously."""
         return await self._save_json_file(self.logical_channels_path, data)
 
-    async def get_channel_mappings_config(self) -> ChannelMappingsDataImpl:
+    async def get_channel_mappings_config(self, *, label: Label | None = None) -> ChannelMappingsDataImpl | None:
         """Loads the channel mappings from channel_mappings.json asynchronously."""
-        return await self._load_json_file(self.channel_mappings_path, lambda: ChannelMappingsDataImpl({}))
+        try:
+            data: ChannelMappingsDataImpl = await self._load_json_file(self.channel_mappings_path)
+            if type(data) is not dict:
+                raise ValueError(f"Invalid channel mappings configuration format in {self.channel_mappings_path}")
+            for key1, val1 in data.items():
+                if type(key1) is not str or not key1.isdigit():
+                    raise ValueError(f'"{key1}": expected int str, got {type(key1)}')
+                if type(val1) is not dict:
+                    raise ValueError(f'"{key1}" val: expected dict, got {type(val1)}')
+                for key2, val2 in val1.items():
+                    if type(key2) is not str:
+                        raise ValueError(f'"{key1}" - "{key2}": expected str, got {type(key2)}')
+                    if type(val2) is not dict:
+                        raise ValueError(f'"{key1}" - "{key2}": expected dict, got {type(val2)}')
+                    for key3, val3 in val2.items():
+                        if key3 not in ("priority",):
+                            raise ValueError(f'"{key1}" - "{key2}" - unexpected key "{key3}"')
+                        if type(val3) is not int or val3 < 0 or val3 > 10:
+                            raise ValueError(f'"{key1}" - "{key2}" - "{key3}": expected int between 0 and 10, got {val3}')
+            return data
+        except BaseException as e:
+            if label == Label.STARTUP and isinstance(e, FileNotFoundError):
+                self.info(label, f"No channel mappings configuration found at {self.channel_mappings_path}, using default...")
+                return ChannelMappingsDataImpl({})
+            self.critical(label or Label.CONFIG, f"Failed to load channel mappings configuration from {self.channel_mappings_path}: {e}")
+            if isinstance(e, Exception):
+                return
+            raise
 
     async def save_channel_mappings_config(self, data: ChannelMappingsData) -> bool:
         """Saves the channel mappings to channel_mappings.json asynchronously."""
         return await self._save_json_file(self.channel_mappings_path, data)
     
-    async def get_channel_list_config(self) -> ChannelListDataImpl:
+    async def get_channel_list_config(self, *, use_default: bool = False, label: Label | None = None) -> ChannelListDataImpl | None:
         """Loads the predefined channel list from channel_list.json asynchronously."""
-        return await self._load_json_file(self.channel_list_path, lambda: ChannelListDataImpl({}))
+        try:
+            if use_default:
+                data: ChannelListDataImpl = await self._load_json_file(self.channel_list_default_path)
+            else:
+                data: ChannelListDataImpl = await self._load_json_file(self.channel_list_path)
+            if type(data) is not dict:
+                raise ValueError(f"Invalid channel list configuration format in {self.channel_list_path}")
+            for key1, val1 in data.items():
+                if type(key1) is not str:
+                    raise ValueError(f'"{key1}": expected str, got {type(key1)}')
+                if type(val1) is not list:
+                    raise ValueError(f'"{key1}" val: expected list, got {type(val1)}')
+                for index, item in enumerate(val1):
+                    if type(item) is not dict:
+                        raise ValueError(f'"{key1}" - item {index}: expected dict, got {type(item)}')
+                    for key2 in ("num", "title", "aliases"):
+                        if key2 not in item:
+                            raise ValueError(f'"{key1}" - item {index} - missing required key "{key2}"')
+                        val2 = item[key2]
+                        if key2 == "num":
+                            if type(val2) is not str:
+                                raise ValueError(f'"{key1}" - item {index} - "num": expected str, got {val2}')
+                        elif key2 == "title":
+                            if type(val2) is not str:
+                                raise ValueError(f'"{key1}" - item {index} - "title": expected str, got {type(val2)}')
+                        elif key2 == "aliases":
+                            if type(val2) is not list:
+                                raise ValueError(f'"{key1}" - item {index} - "aliases": expected list, got {type(val2)}')
+                            for alias in val2:
+                                if type(alias) is not str:
+                                    raise ValueError(f'"{key1}" - item {index} - "aliases" item: expected str, got {type(alias)}')
+                        else:
+                            raise ValueError(f'"{key1}" - item {index} - unexpected key "{key2}"')
+            return data
+        except BaseException as e:
+            if not use_default and isinstance(e, FileNotFoundError):
+                self.info(label or Label.CONFIG, f"No channel list configuration found at {self.channel_list_path}, using default...")
+                return await self.get_channel_list_config(use_default=True, label=label)
+            self.critical(label or Label.CONFIG, f"Failed to load channel list configuration from {self.channel_list_path}: {e}")
+            if isinstance(e, Exception):
+                return
+            raise
 
-    async def get_quality_cache(self) -> QualityCacheDataImpl:
+    async def get_quality_cache(self, *, label: Label | None = None) -> QualityCacheDataImpl | None:
         """Loads the quality cache from quality_cache.json asynchronously."""
-        return await self._load_json_file(self.quality_cache_path, lambda: QualityCacheDataImpl({}))
+        try:
+            data: QualityCacheDataImpl = await self._load_json_file(self.quality_cache_path)
+            if type(data) is not dict:
+                raise ValueError(f"Invalid quality cache format in {self.quality_cache_path}")
+            for key1, val1 in data.items():
+                if type(key1) is not str:
+                    raise ValueError(f'"{key1}": expected str, got {type(key1)}')
+                if type(val1) is not dict:
+                    raise ValueError(f'"{key1}" val: expected dict, got {type(val1)}')
+                for key2 in ("statuses", "widths", "heights", "bitrates", "framerates", "updated_at"):
+                    if key2 not in val1:
+                        raise ValueError(f'"{key1}" - missing required key "{key2}"')
+                    val2 = val1[key2]
+                    if key2 == "statuses":
+                        if type(val2) is not list:
+                            raise ValueError(f'"{key1}" - "statuses": expected list, got {type(val2)}')
+                        for index, item in enumerate(val2):
+                            if type(item) is not str or item not in ("online", "offline"):
+                                raise ValueError(f'"{key1}" - "statuses" item {index}: expected "online" or "offline", got {item}')
+                    elif key2 == "widths":
+                        if type(val2) is not list:
+                            raise ValueError(f'"{key1}" - "widths": expected list, got {type(val2)}')
+                        for index, item in enumerate(val2):
+                            if type(item) is not int or item < 0:
+                                raise ValueError(f'"{key1}" - "widths" item {index}: expected non-negative int, got {item}')
+                    elif key2 == "heights":
+                        if type(val2) is not list:
+                            raise ValueError(f'"{key1}" - "heights": expected list, got {type(val2)}')
+                        for index, item in enumerate(val2):
+                            if type(item) is not int or item < 0:
+                                raise ValueError(f'"{key1}" - "heights" item {index}: expected non-negative int, got {item}')
+                    elif key2 == "bitrates":
+                        if type(val2) is not list:
+                            raise ValueError(f'"{key1}" - "bitrates": expected list, got {type(val2)}')
+                        for index, item in enumerate(val2):
+                            if type(item) is not float or item < 0:
+                                raise ValueError(f'"{key1}" - "bitrates" item {index}: expected non-negative float, got {item}')
+                    elif key2 == "framerates":
+                        if type(val2) is not list:
+                            raise ValueError(f'"{key1}" - "framerates": expected list, got {type(val2)}')
+                        for index, item in enumerate(val2):
+                            if type(item) is not float or item < 0:
+                                raise ValueError(f'"{key1}" - "framerates" item {index}: expected non-negative float, got {item}')
+                    elif key2 == "updated_at":
+                        try:
+                            if type(val2) is not str:
+                                raise ValueError()
+                            datetime.fromisoformat(val2)
+                        except Exception:
+                            raise ValueError(f'"{key1}" - "updated_at": expected ISO 8601 date string, got {val2}')
+                    else:
+                        raise ValueError(f'"{key1}" - unexpected key "{key2}"')
+            return data
+        except BaseException as e:
+            if label == Label.STARTUP and isinstance(e, FileNotFoundError):
+                self.info(label, f"No quality cache found at {self.quality_cache_path}, using default...")
+                return QualityCacheDataImpl({})
+            self.critical(label or Label.CONFIG, f"Failed to load quality cache from {self.quality_cache_path}: {e}")
+            if isinstance(e, Exception):
+                return
+            raise
 
     async def save_quality_cache(self, data: QualityCacheData) -> bool:
         """Saves the quality cache to quality_cache.json asynchronously."""
         return await self._save_json_file(self.quality_cache_path, data)
 
-    async def get_jobs_config(self) -> JobsDataImpl:
+    async def get_jobs_config(self, *, label: Label | None = None) -> JobsDataImpl | None:
         """Loads the jobs configuration from jobs.json asynchronously."""
-        return await self._load_json_file(self.jobs_path, lambda: JobsDataImpl({}))
+        try:
+            data: JobsDataImpl = await self._load_json_file(self.jobs_path)
+            if type(data) is not dict:
+                raise ValueError(f"Invalid jobs configuration format in {self.jobs_path}")
+            for key1 in JobName:
+                if key1 not in data:
+                    raise ValueError(f'Missing required job type "{key1}" in jobs configuration')
+                val1 = data[key1]
+                if type(val1) is not dict:
+                    raise ValueError(f'"{key1}" val: expected dict, got {type(val1)}')
+                for key2, val2 in val1.items():
+                    if key2 != "last_run":
+                        raise ValueError(f'"{key1}" - unexpected key "{key2}"')
+                    if type(val2) is not str:
+                        raise ValueError(f'"{key1}" - "last_run": expected str, got {type(val2)}')
+                    try:
+                        datetime.fromisoformat(val2)
+                    except ValueError:
+                        raise ValueError(f'"{key1}" - "last_run": expected ISO 8601 date string, got {val2}')
+            return data
+        except BaseException as e:
+            if label == Label.STARTUP and isinstance(e, FileNotFoundError):
+                self.info(label, f"No jobs configuration found at {self.jobs_path}, using default...")
+                return JobsDataImpl({})
+            self.critical(label or Label.CONFIG, f"Failed to load jobs configuration from {self.jobs_path}: {e}")
+            if isinstance(e, Exception):
+                return
+            raise
 
     async def save_jobs_config(self, data: JobsData) -> bool:
         """Saves the jobs configuration to jobs.json asynchronously."""

@@ -127,7 +127,7 @@ class M3USource(TypedDict):
     display_title: ReadOnly[TVGDisplayTitle]
     group_title: ReadOnly[TVGGroupTitle]
     tvg_id: ReadOnly[TVGId]
-    tvg_log: ReadOnly[TVGLogo]
+    tvg_logo: ReadOnly[TVGLogo]
     stream_url: ReadOnly[StreamURL]
 
 class DiscoveredSource(M3USource):

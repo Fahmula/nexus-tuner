@@ -92,14 +92,61 @@ class ChannelHandler:
         try:
             self.config.info(self.label, "Reloading ChannelHandler configurations")
 
-            self._discovered_sources_data = await self.config.get_discovered_sources_config()
-            self._logical_channels_data = await self.config.get_logical_channels_config()
-            self._channel_mappings_data = await self.config.get_channel_mappings_config()
-            self._channel_list_data = await self.config.get_channel_list_config()
+            new_discovered_sources_data = await self.config.get_discovered_sources_config(label=self.label)
+            if new_discovered_sources_data is None:
+                if self.label == Label.STARTUP:
+                    self.config.critical(self.label, "Discovered sources configuration was not found, cannot start ChannelHandler.")
+                    raise RuntimeError("Discovered sources configuration invalid or missing.")
+                if await self.config.save_discovered_sources_config(self._discovered_sources_data):
+                    self.config.info(self.label, "Discovered sources configuration was removed/corrupted after startup, reloaded with data in-memory.")
+                else:
+                    self.config.critical(self.label, "Discovered sources configuration was removed/corrupted after startup, cannot reload.")
+            else:
+                self._discovered_sources_data = new_discovered_sources_data
+            new_logical_channels_data = await self.config.get_logical_channels_config(label=self.label)
+            if new_logical_channels_data is None:
+                if self.label == Label.STARTUP:
+                    self.config.critical(self.label, "Logical channels configuration was not found, cannot start ChannelHandler.")
+                    raise RuntimeError("Logical channels configuration invalid or missing.")
+                if await self.config.save_logical_channels_config(self._logical_channels_data):
+                    self.config.info(self.label, "Logical channels configuration was removed/corrupted after startup, reloaded with data in-memory.")
+                else:
+                    self.config.critical(self.label, "Logical channels configuration was removed/corrupted after startup, cannot reload.")
+            else:
+                self._logical_channels_data = new_logical_channels_data
+            new_channel_mappings_data = await self.config.get_channel_mappings_config(label=self.label)
+            if new_channel_mappings_data is None:
+                if self.label == Label.STARTUP:
+                    self.config.critical(self.label, "Channel mappings configuration was not found, cannot start ChannelHandler.")
+                    raise RuntimeError("Channel mappings configuration invalid or missing.")
+                if await self.config.save_channel_mappings_config(self._channel_mappings_data):
+                    self.config.info(self.label, "Channel mappings configuration was removed/corrupted after startup, reloaded with data in-memory.")
+                else:
+                    self.config.critical(self.label, "Channel mappings configuration was removed/corrupted after startup, cannot reload.")
+            else:
+                self._channel_mappings_data = new_channel_mappings_data
+            new_channel_list_data = await self.config.get_channel_list_config(label=self.label)
+            if new_channel_list_data is None:
+                if self.label == Label.STARTUP:
+                    self.config.critical(self.label, "Channel list configuration was not found, cannot start ChannelHandler.")
+                    raise RuntimeError("Channel list configuration invalid or missing.")
+                self.config.critical(self.label, "Channel list configuration was removed/corrupted after startup, cannot reload.")
+            else:
+                self._channel_list_data = new_channel_list_data
 
             if update_providers:
-                self._providers_data = await self.config.get_providers_config()
-                self._update_providers_slots()
+                new_providers_data = await self.config.get_providers_config(label=self.label)
+                if new_providers_data is None:
+                    if self.label == Label.STARTUP:
+                        self.config.critical(self.label, "Providers configuration was not found, cannot start ChannelHandler.")
+                        raise RuntimeError("Providers configuration invalid or missing.")
+                    if await self.config.save_providers_config(self._providers_data):
+                        self.config.info(self.label, "Providers configuration was removed/corrupted after startup, reloaded with data in-memory.")
+                    else:
+                        self.config.critical(self.label, "Providers configuration was removed/corrupted after startup, cannot reload.")
+                else:
+                    self._providers_data = new_providers_data
+                    self._update_providers_slots()
 
             prev_discovered_sources = DiscoveredSourcesDataImpl({**self._discovered_sources_data})
             min_updated_at = min([p_data["updated_at"] or DateTimeISO("0001-01-01") for p_data in self._providers_data.values()], default=DateTimeISO("0001-01-01"))
@@ -169,7 +216,7 @@ class ChannelHandler:
                     "display_title": TVGDisplayTitle(display_name_from_extinf),
                     "group_title": TVGGroupTitle(group_title),
                     "tvg_id": TVGId(tvg_id),
-                    "tvg_log": TVGLogo(tvg_logo),
+                    "tvg_logo": TVGLogo(tvg_logo),
                     "stream_url": StreamURL(line),
                 })
                 current_extinf = None
@@ -538,10 +585,12 @@ class ChannelHandler:
                     return channel_mapping[source_id]["priority"]
             return None
 
-    async def get_all_mapped_source_ids(self) -> set[SourceId]:
-        """Returns a set of all source IDs that are mapped to logical channels."""
+    async def get_sources_mapped_elsewhere(self, logical_channel_id: LogicalChannelId | None) -> set[SourceId]:
+        """Returns a set of source IDs that are mapped to logical channels, excluding the specified logical channel if provided."""
         async with self._mutex:
-            return {source_id for mappings in self._channel_mappings_data.values() for source_id in mappings}        
+            if not logical_channel_id:
+                return {source_id for m in self._channel_mappings_data.values() for source_id in m}
+            return {source_id for lc_id, m in self._channel_mappings_data.items() if lc_id != logical_channel_id for source_id in m}
 
     async def copy_channel_mappings_data(self) -> ChannelMappingsDataImpl:
         """Returns a copy of the channel mappings data."""
