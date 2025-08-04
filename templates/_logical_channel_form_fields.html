@@ -1,6 +1,6 @@
 <div id="form-content-wrapper">
     <div class="mb-3" style="position: relative;">
-        <label for="logical_channel_title" class="form-label">Display Name</label>
+        <label for="logical_channel_title" class="form-label">Channel Title</label>
         <input type="text" class="form-control" id="logical_channel_title" name="logical_channel_title"
             value="{{ channel.logical_channel_title if channel else '' }}" required {# SIMPLIFIED: Only targets its own
             suggestion box now. #} hx-get="{{ url_for('ui_channel_suggest', logical_channel_id=channel.logical_channel_id if channel else None) }}"
