@@ -68,6 +68,24 @@ class QualityMonitor:
                 self._quality_scores = new_quality_scores
             return True
 
+    async def update_source_id(self, old_source_id: SourceId, new_source_id: SourceId) -> bool:
+        """Replaces an old source ID with a new one in the quality scores and cache."""
+        async with self._mutex:
+            quality_cache = await self.config.get_quality_cache()
+            if quality_cache is None:
+                self.config.critical(Label.QUALITY, f"Quality cache was removed/corrupted after startup, cannot replace {old_source_id} with {new_source_id}.")
+                return False
+            if old_source_id in quality_cache:
+                quality_cache[new_source_id] = quality_cache.pop(old_source_id)
+                if not await self.config.save_quality_cache(quality_cache):
+                    self.config.critical(Label.QUALITY, f"Failed to save quality cache after replacing {old_source_id} with {new_source_id}.")
+                    return False
+            if old_source_id in self._quality_scores:
+                new_quality_scores = QualityScoresImpl({**self._quality_scores})
+                new_quality_scores[new_source_id] = new_quality_scores.pop(old_source_id)
+                self._quality_scores = new_quality_scores
+            return True
+
     async def _get_stream_info(self, logical_channel_title: LogicalChannelTitle, channel_num: ChannelNum, source_id: SourceId, stream_url: StreamURL) -> ProbeSuccess | None:
         """
         Extracts stream information using ffprobe, ensuring the subprocess is
@@ -205,11 +223,11 @@ class QualityMonitor:
             logical_channel_title = logical_channel["logical_channel_title"]
             channel_num = logical_channel["channel_num"]
             self.config.info(Label.QUALITY, f"Starting stream quality analysis for '{logical_channel_title}' ({channel_num}).")
-            sources = await self.handler.get_mappings_for_logical_channel(input_lc_id)
-            if not sources:
+            mappings = await self.handler.get_mappings_for_logical_channel(input_lc_id)
+            if not mappings:
                 self.config.error(Label.QUALITY, f"No mapped sources found for '{logical_channel_title}' ({channel_num}).")
                 return
-            valid_mappings.append((input_lc_id, logical_channel_title, channel_num, [source_id for source_id in sources], DateTimeISO("0001-01-01")))
+            valid_mappings.append((input_lc_id, logical_channel_title, channel_num, [source_id for source_id in mappings], DateTimeISO("0001-01-01")))
         else:
             self.config.info(Label.QUALITY, "Starting stream quality analysis cycle.")
             all_mappings = await self.handler.copy_channel_mappings_data()
@@ -222,22 +240,22 @@ class QualityMonitor:
                 self.config.critical(Label.QUALITY, "Quality cache was removed/corrupted after startup, cannot analyze sources.")
                 return
             now = datetime.now()
-            for logical_channel_id, sources in all_mappings.items():
+            for logical_channel_id, mappings in all_mappings.items():
                 logical_channel = await self.handler.get_logical_channel_by_id(logical_channel_id)
                 if not logical_channel:
                     self.config.error(Label.QUALITY, f"Logical Channel ID {logical_channel_id} not found in mappings.")
                     continue
                 logical_channel_title = logical_channel["logical_channel_title"]
                 channel_num = logical_channel["channel_num"]
-                if not sources:
+                if not mappings:
                     self.config.debug(Label.QUALITY, f"No valid sources found for '{logical_channel_title}' ({channel_num}).")
                     continue
-                min_updated_at = min([quality_cache.get(source_id, {}).get("updated_at", "0001-01-01") for source_id in sources])
-                at_max_history = all(len(quality_cache.get(source_id, {}).get("statuses", [])) >= MAX_HISTORY_PER_SOURCE for source_id in sources)
+                min_updated_at = min([quality_cache.get(source_id, {}).get("updated_at", "0001-01-01") for source_id in mappings])
+                at_max_history = all(len(quality_cache.get(source_id, {}).get("statuses", [])) >= MAX_HISTORY_PER_SOURCE for source_id in mappings)
                 delta = timedelta(days=MIN_DAYS_AT_MAX_HISTORY) if at_max_history else timedelta(days=MIN_DAYS_AT_NON_MAX_HISTORY)
                 if datetime.fromisoformat(min_updated_at) > now - delta:
                     continue
-                valid_mappings.append((logical_channel_id, logical_channel_title, channel_num, [source_id for source_id in sources], min_updated_at))
+                valid_mappings.append((logical_channel_id, logical_channel_title, channel_num, [source_id for source_id in mappings], min_updated_at))
             if not valid_mappings:
                 self.config.info(Label.QUALITY, "No sources are due for quality probing.")
                 return

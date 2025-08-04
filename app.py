@@ -74,6 +74,7 @@ async def startup() -> None:
         stream_manager = await StreamManager.create(config, handler)
         ghost_monitor = await GhostSessionMonitor.create(config, handler, stream_manager)
         quality_monitor = await QualityMonitor.create(config, handler)
+        handler.quality_monitor = quality_monitor
         scheduler = await Scheduler.create(config, handler, quality_monitor)
     except BaseException as e:
         print(f"FATAL: Could not initialize application: {e}", file=sys.stderr)
