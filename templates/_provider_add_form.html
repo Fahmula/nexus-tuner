@@ -1,6 +1,6 @@
 <div class="card card-body mb-3" id="add-provider-form-wrapper">
     <form hx-post="{{ url_for('ui_provider_add') }}"
-          hx-target="#providers-table-body"
+          hx-target=".card-body"
           hx-swap="outerHTML">
         <div class="row g-2 align-items-end">
             <div class="col-md-4">

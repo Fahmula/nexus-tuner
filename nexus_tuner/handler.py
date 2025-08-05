@@ -153,7 +153,7 @@ class ChannelHandler:
                     self._update_providers_slots()
 
             prev_discovered_sources = DiscoveredSourcesDataImpl({**self._discovered_sources_data})
-            min_updated_at = min([p_data["updated_at"] or DateTimeISO("0001-01-01") for p_data in self._providers_data.values()], default=DateTimeISO("0001-01-01"))
+            min_updated_at = min([p_data["updated_at"] for p_data in self._providers_data.values()], default=DateTimeISO("0001-01-01"))
             now = datetime.now()
             if force_discover_sources or datetime.fromisoformat(min_updated_at) < now - timedelta(seconds=DISCOVER_SOURCES_INTERVAL):
                 self.config.info(self.label, "Discovering sources from configured providers...")
@@ -263,7 +263,7 @@ class ChannelHandler:
                 for alias, details in self._providers_data.items()
             ]
             if not tasks:
-                self.config.debug(self.label, "No providers configured to parse.")
+                self.config.warn(self.label, "No providers configured to parse.")
                 return
 
             results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -487,7 +487,7 @@ class ChannelHandler:
             new_providers_data = ProvidersDataImpl({**self._providers_data, alias: ProviderInfo({
                 "m3u_url": m3u_url,
                 "max_streams": max_streams,
-                "updated_at": None
+                "updated_at": DateTimeISO(datetime.now().isoformat())
             })})
             if not await self.config.save_providers_config(new_providers_data):
                 self.config.critical(self.label, f"Failed to save new provider configuration for '{alias}'.")
@@ -520,7 +520,15 @@ class ChannelHandler:
     async def delete_provider(self, alias: ProviderAlias) -> bool:
         """Deletes a provider from the configuration asynchronously."""
         async with self._mutex:
-            if alias not in self._providers_data: raise ValueError(f"Provider with alias '{alias}' not found.")
+            if alias not in self._providers_data:
+                raise ValueError(f"Provider with alias '{alias}' not found.")
+
+            new_discovered_sources = DiscoveredSourcesDataImpl({k: v for k, v in self._discovered_sources_data.items()
+                                                                if v["provider_alias"] != alias})
+            if not await self.config.save_discovered_sources_config(new_discovered_sources):
+                self.config.critical(self.label, f"Failed to save discovered sources configuration when deleting provider '{alias}'.")
+                return False
+            self._discovered_sources_data = new_discovered_sources
 
             new_providers_data = ProvidersDataImpl({**self._providers_data})
             del new_providers_data[alias]

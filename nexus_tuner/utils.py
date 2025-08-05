@@ -18,6 +18,19 @@ import re
 from typing import Any, Coroutine, Final, Literal, Mapping, NewType, ReadOnly, TypedDict
 
 import aiofiles
+from dotenv import load_dotenv
+
+# --- Environment ---
+
+load_dotenv()
+config_dir_str: str | None = os.getenv("NEXUS_CONFIG_DIR")
+if not config_dir_str:
+    raise ValueError("NEXUS_CONFIG_DIR environment variable is not set on docker container or system.")
+CONFIG_DIR: Final[Path] = Path(config_dir_str)
+env_file: Path = CONFIG_DIR / ".env"
+if env_file.exists():
+    load_dotenv(env_file)
+del config_dir_str, env_file
 
 # --- Constants ---
 
@@ -117,7 +130,7 @@ ProviderStatuses = NewType("ProviderStatuses", Mapping[ProviderAlias, ProviderSt
 class ProviderInfo(TypedDict):
     m3u_url: ReadOnly[M3UURL]
     max_streams: ReadOnly[MaxStreams]
-    updated_at: ReadOnly[DateTimeISO | None]
+    updated_at: ReadOnly[DateTimeISO]
 ProvidersDataImpl = NewType("ProvidersDataImpl", dict[ProviderAlias, ProviderInfo])
 _ProvidersDataReadOnly = NewType("_ProvidersDataReadOnly", Mapping[ProviderAlias, ProviderInfo])
 type ProvidersData = ProvidersDataImpl | _ProvidersDataReadOnly

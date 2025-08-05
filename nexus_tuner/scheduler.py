@@ -125,7 +125,7 @@ class Scheduler:
         if not jobs_data:
             new_jobs_data = JobsDataImpl({})
             for job_name in JobName:
-                new_jobs_data[job_name] = {"last_run": DateTimeISO(datetime.fromtimestamp(0).isoformat())}
+                new_jobs_data[job_name] = {"last_run": DateTimeISO(datetime.now().isoformat())}
             if not await self.config.save_jobs_config(new_jobs_data):
                 self.config.critical(Label.SCHEDULER, f"Failed to initialize {self.config.jobs_name} config, cannot run jobs.")
                 raise RuntimeError(f"Failed to initialize {self.config.jobs_name} config, cannot run jobs.")

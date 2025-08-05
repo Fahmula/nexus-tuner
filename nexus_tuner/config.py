@@ -6,14 +6,14 @@ import logging
 import time
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
-from dotenv import load_dotenv
 from typing import Any, Final, Mapping, Self
+from urllib.parse import urlparse
 
 import asyncio
 import aiofiles.os
 import aioshutil
 
-from nexus_tuner.utils import (NEXUS_TUNER_PORT, NEXUS_TUNER_VERSION, ChannelListDataImpl, ChannelMappingsData, ChannelMappingsDataImpl, DiscoveredSourcesData, DiscoveredSourcesDataImpl, JobName, JobsData, JobsDataImpl,
+from nexus_tuner.utils import (CONFIG_DIR, NEXUS_TUNER_PORT, NEXUS_TUNER_VERSION, ChannelListDataImpl, ChannelMappingsData, ChannelMappingsDataImpl, DiscoveredSourcesData, DiscoveredSourcesDataImpl, JobName, JobsData, JobsDataImpl,
                                 Label, LogicalChannelsData, LogicalChannelsDataImpl, ProvidersData, ProvidersDataImpl, QualityCacheData, QualityCacheDataImpl, VideoKey, VideoType, is_valid_url)
 
 
@@ -28,8 +28,7 @@ class Config:
     accessing and persisting data to JSON files in a non-blocking, safe manner.
     """
     __slots__ = (
-        'config_dir', 'nexus_url', 'nexus_port',
-        'logs_dir', '_logger', 'log_level', 'log_backup_count', 'ffmpeg_logs_retention_seconds',
+        'nexus_url', 'logs_dir', '_logger', 'log_level', 'log_backup_count', 'ffmpeg_logs_retention_seconds',
         'providers_name', 'providers_path',
         'discovered_sources_name', 'discovered_sources_path',
         'logical_channels_name', 'logical_channels_path',
@@ -51,24 +50,18 @@ class Config:
         NOTE: This constructor is now lightweight and performs no I/O.
         All file system operations are deferred to the async `_initialize` method,
         which is called by the `create` factory method.
-        """
-        load_dotenv()
-        config_dir_str: str | None = os.getenv("NEXUS_CONFIG_DIR")
-        if not config_dir_str:
-            raise ValueError("NEXUS_CONFIG_DIR environment variable is not set on docker container or system.")
-        self.config_dir: Final[Path] = Path(config_dir_str)
-        env_file: Path = self.config_dir / ".env"
-        if env_file.exists():
-            load_dotenv(env_file)
-        
+        """        
         nexus_url: str | None = os.getenv("NEXUS_URL")
         if not nexus_url:
             raise ValueError("NEXUS_URL environment variable is not set.")
-        self.nexus_url: Final[str] = nexus_url
-        self.nexus_port: Final[int] = NEXUS_TUNER_PORT
+        nexus_url = nexus_url.strip().rstrip('/')
+        url_port = urlparse(nexus_url).port
+        if url_port is not None:
+            raise ValueError("NEXUS_URL should not contain a port, set the NEXUS_PORT environment variable instead.")
+        self.nexus_url: Final[str] = f"{nexus_url}:{NEXUS_TUNER_PORT}"
         
         # --- Logging ---
-        self.logs_dir: Final[Path] = self.config_dir / "logs"
+        self.logs_dir: Final[Path] = CONFIG_DIR / "logs"
         self._logger: logging.Logger
         self.log_level: Final[str] = os.getenv("NEXUS_LOG_LEVEL", "INFO").upper()
         self.log_backup_count: Final[int] = int(os.getenv("NEXUS_LOG_BACKUP_COUNT", 7))
@@ -76,35 +69,35 @@ class Config:
 
         # --- JSON Data Paths ---
         self.providers_name: Final[str] = "providers.json"
-        self.providers_path: Final[Path] = self.config_dir / self.providers_name
+        self.providers_path: Final[Path] = CONFIG_DIR / self.providers_name
         
         self.discovered_sources_name: Final[str] = "discovered_sources.json"
-        self.discovered_sources_path: Final[Path] = self.config_dir / self.discovered_sources_name
+        self.discovered_sources_path: Final[Path] = CONFIG_DIR / self.discovered_sources_name
         
         self.logical_channels_name: Final[str] = "logical_channels.json"
-        self.logical_channels_path: Final[Path] = self.config_dir / self.logical_channels_name
+        self.logical_channels_path: Final[Path] = CONFIG_DIR / self.logical_channels_name
         
         self.channel_mappings_name: Final[str] = "channel_mappings.json"
-        self.channel_mappings_path: Final[Path] = self.config_dir / self.channel_mappings_name
+        self.channel_mappings_path: Final[Path] = CONFIG_DIR / self.channel_mappings_name
         
         self.channel_list_name: Final[str] = "channel_list.json"
-        self.channel_list_path: Final[Path] = self.config_dir / self.channel_list_name
+        self.channel_list_path: Final[Path] = CONFIG_DIR / self.channel_list_name
         self.channel_list_default_path: Final[Path] = Path(__file__).parent / "channel_list.json.default"
         
         self.quality_cache_name: Final[str] = "quality_cache.json"
-        self.quality_cache_path: Final[Path] = self.config_dir / self.quality_cache_name
+        self.quality_cache_path: Final[Path] = CONFIG_DIR / self.quality_cache_name
 
         self.jobs_name: Final[str] = "jobs.json"
-        self.jobs_path: Final[Path] = self.config_dir / self.jobs_name
+        self.jobs_path: Final[Path] = CONFIG_DIR / self.jobs_name
 
         # --- Backup Config ---
-        self.backups_base_path: Final[Path] = self.config_dir / "backups"
+        self.backups_base_path: Final[Path] = CONFIG_DIR / "backups"
         self.backups_scheduled_path: Final[Path] = self.backups_base_path / "scheduled"
         self.backups_manual_path: Final[Path] = self.backups_base_path / "manual"
         self.backup_count: Final[int] = int(os.getenv("NEXUS_BACKUP_COUNT", 30))
 
         # --- HLS Segment Directory ---
-        self.hls_base_segment_dir: Final[Path] = self.config_dir / "hls_segments"
+        self.hls_base_segment_dir: Final[Path] = CONFIG_DIR / "hls_segments"
         
         # --- FFmpeg & HLS Configs ---
         self.hls_segment_duration: Final[int] = 1
@@ -141,21 +134,38 @@ class Config:
         """
         Performs all asynchronous I/O operations required for initialization.
         """
-        self._initialize_logger()
-        self.info(Label.STARTUP, f"NexusTuner v{NEXUS_TUNER_VERSION}")
+        await aiofiles.os.makedirs(CONFIG_DIR, exist_ok=True)
         await aiofiles.os.makedirs(self.logs_dir, exist_ok=True)
-        await aiofiles.os.makedirs(self.config_dir, exist_ok=True)
         await aiofiles.os.makedirs(self.backups_scheduled_path, exist_ok=True)
         await aiofiles.os.makedirs(self.backups_manual_path, exist_ok=True)
 
-        if not await aiofiles.os.path.exists(self.channel_list_path):
+        self._initialize_logger()
+        self.info(Label.STARTUP, f"NexusTuner v{NEXUS_TUNER_VERSION}")
+
+        # If all the JSON config files do not exist, create them for first time setup
+        if all([not await aiofiles.os.path.exists(path) for path in (
+            self.providers_path,
+            self.discovered_sources_path,
+            self.logical_channels_path,
+            self.channel_mappings_path,
+            self.channel_list_path,
+            self.quality_cache_path,
+            self.jobs_path
+        )]):  # Create all except jobs, it's handled by scheduler
+            self.info(Label.STARTUP, "No configuration files found, creating defaults...")
+            await self.save_providers_config(ProvidersDataImpl({}))
+            await self.save_discovered_sources_config(DiscoveredSourcesDataImpl({}))
+            await self.save_logical_channels_config(LogicalChannelsDataImpl({}))
+            await self.save_channel_mappings_config(ChannelMappingsDataImpl({}))
+            await self.save_quality_cache(QualityCacheDataImpl({}))
+            await aioshutil.copy(self.channel_list_default_path, self.channel_list_path)
+        elif not await aiofiles.os.path.exists(self.channel_list_path):
             self.debug(Label.STARTUP, f"Creating default channel list at {self.channel_list_path}")
             await aioshutil.copy(self.channel_list_default_path, self.channel_list_path)
 
         self.debug(Label.STARTUP, f"Cleaning HLS directory: {self.hls_base_segment_dir}")
         await aioshutil.rmtree(self.hls_base_segment_dir, ignore_errors=True)
         await aiofiles.os.makedirs(self.hls_base_segment_dir, exist_ok=True)
-        
         await aiofiles.os.makedirs(self.ffmpeg_logs_dir, exist_ok=True)
 
     def _initialize_logger(self) -> None:

@@ -60,8 +60,8 @@ This project is designed to be run as a Docker container, which is the recommend
 
     | Variable                              | Description                                                                                             | Example                               |
     | :------------------------------------ | :------------------------------------------------------------------------------------------------------ | :------------------------------------ |
-    | **`NEXUS_URL`** (Required)            | The full URL of your NexusTuner instance, including the port. Used to build playlist URLs.        | `http://192.168.1.100:4040`             |
-    | `NEXUS_PORT`                          | The internal port the application listens on. Default is `4040`.                                        | `4040`                                |
+    | **`NEXUS_URL`** (Required)            | The full URL of your NexusTuner instance, without the port. Used for UI and building playlist URLs.        | `http://192.168.1.100`             |
+    | `NEXUS_PORT`                          | The internal port the application listens on. Default is `4040`. If you wish to change the port for a docker container you must set this in the compose file, not the .env file.                                       | `4040`                                |
     | `NEXUS_FFMPEG_INACTIVITY_TIMEOUT` | Seconds of inactivity before a stream is automatically stopped. Default is `900`.                    | `900`                                 |
     | `NEXUS_LOG_LEVEL`                     | Sets the logging verbosity. Options: `DEBUG`, `INFO`, `WARNING`, `ERROR`. Default is `INFO`.              | `DEBUG`                               |
     | `NEXUS_GHOST_SESSION_CHECK_INTERVAL`  | Interval in seconds to check Jellyfin/Emby servers for ghost sessions. Default is `60`.                         | `120`                                 |
@@ -80,7 +80,7 @@ This project is designed to be run as a Docker container, which is the recommend
 
 6.  **Initial UI Setup**
 
-    *   Open a web browser and navigate to the `NEXUS_URL` you configured (e.g., `http://192.168.1.100:4040`).
+    *   Open a web browser and navigate to the `NEXUS_URL` and `NEXUS_PORT` you configured (e.g., `http://192.168.1.100:4040`).
     *   Navigate to the **Providers** page and add your M3U source providers.
     *   Navigate to the **Logical Channels** page to create your desired channel lineup.
     *   For each logical channel, click **Edit** to map the discovered source streams to it, setting priorities for failover.

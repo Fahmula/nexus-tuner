@@ -76,6 +76,7 @@ async def startup() -> None:
         quality_monitor = await QualityMonitor.create(config, handler)
         handler.quality_monitor = quality_monitor
         scheduler = await Scheduler.create(config, handler, quality_monitor)
+        config.info(Label.SERVER, f"Listening on {config.nexus_url}")
     except BaseException as e:
         print(f"FATAL: Could not initialize application: {e}", file=sys.stderr)
         sys.exit(1)
@@ -355,6 +356,7 @@ async def reload_configuration() -> Response:
     
     response = Response("")
     response.headers["HX-Trigger"] = "flashMessagesUpdated"
+    response.headers["HX-Refresh"] = "true"
     return response
 
 
@@ -426,6 +428,7 @@ async def ui_provider_add() -> Response | str:
             await flash(f"Failed to add provider '{alias}`: {e}", "error")
             response = Response(await render_template("_provider_add_form.html", alias=alias, m3u_url=m3u_url, max_streams=max_streams_str))
         response.headers["HX-Trigger"] = "flashMessagesUpdated"
+        response.headers["HX-Refresh"] = "true"
         return response
     return await render_template("_provider_add_form.html")
 
@@ -477,6 +480,7 @@ async def ui_provider_delete(alias: ProviderAlias) -> Response:
         await flash(f"Failed to delete provider '{alias}': {e}", "error")
         response = Response("", 400)
     response.headers["HX-Trigger"] = "flashMessagesUpdated"
+    response.headers["HX-Refresh"] = "true"
     return response
 
 
@@ -696,13 +700,19 @@ async def ui_analyze_mappings(logical_channel_id: LogicalChannelId) -> Response:
     if not channel:
         config.warn(Label.SERVER, f"Logical Channel with ID '{logical_channel_id}' not found for analysis.")
         await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
-        return Response("", 404)
+        response = Response("", 404)
+        response.headers["HX-Refresh"] = "true"
+        response.headers["HX-Trigger"] = "flashMessagesUpdated"
+        return response
     channel_log = f"'{channel['logical_channel_title']}' ({channel['channel_num']})"
     sources = await handler.get_channel_mappings_for_ui(logical_channel_id)
     if not sources:
         config.info(Label.SERVER, f"No mappings found for {channel_log}.")
         await flash(f"No mappings found for {channel_log}.", "info")
-        return Response("", 204)
+        response = Response("", 204)
+        response.headers["HX-Refresh"] = "true"
+        response.headers["HX-Trigger"] = "flashMessagesUpdated"
+        return response
 
     await quality_monitor.analyze_mapped_sources(logical_channel_id)
     await flash(f"Quality analysis completed for {len(sources)} mapping(s) in {channel_log}", "success")
@@ -720,7 +730,10 @@ async def ui_remove_dead_mappings(logical_channel_id: LogicalChannelId) -> Respo
     if not channel:
         config.warn(Label.SERVER, f"Logical Channel with ID '{logical_channel_id}' not found for dead mapping removal.")
         await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
-        return Response("", 404)
+        response = Response("", 404)
+        response.headers["HX-Refresh"] = "true"
+        response.headers["HX-Trigger"] = "flashMessagesUpdated"
+        return response
     channel_log = f"'{channel['logical_channel_title']}' ({channel['channel_num']})"
     discovered_mappings: list[SourceMappingInfoWithId] = []
     removed_count = 0
@@ -731,12 +744,18 @@ async def ui_remove_dead_mappings(logical_channel_id: LogicalChannelId) -> Respo
             if not await quality_monitor.remove_source(source['source_id']):
                 config.warn(Label.SERVER, f"Failed to remove dead source {source['source_id']} from quality monitor for {channel_log}.")
                 await flash(f"Failed to remove dead source {source['source_id']} from quality monitor for {channel_log}.", "error")
-                return Response("", 500)
+                response = Response("", 500)
+                response.headers["HX-Refresh"] = "true"
+                response.headers["HX-Trigger"] = "flashMessagesUpdated"
+                return response
             removed_count += 1
     if not await handler.update_mappings_for_logical_channel(logical_channel_id, discovered_mappings):
         config.error(Label.SERVER, f"Failed to update mappings for {channel_log} after removing dead sources.")
         await flash(f"Failed to update mappings for {channel_log} after removing dead sources.", "error")
-        return Response("", 500)
+        response = Response("", 500)
+        response.headers["HX-Refresh"] = "true"
+        response.headers["HX-Trigger"] = "flashMessagesUpdated"
+        return response
 
     if removed_count > 0:
         config.info(Label.SERVER, f"Removed {removed_count} dead mappings from {channel_log}.")
