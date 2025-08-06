@@ -5,6 +5,8 @@
 
 `NexusTuner` is a smart, self-hosted IPTV proxy that empowers you to aggregate multiple M3U sources into a single, stable, and feature-rich playlist for your clients (like Plex, Jellyfin, or Emby). It solves common IPTV pain points by introducing powerful features like seamless configuration with previews, multiple channel sources, parallel stream initiation, automatic source priority by stream quality, provider-level concurrent stream limiting, and intelligent session management, all controlled through an intuitive web interface.
 
+<img width="1920" height="911" alt="NexusTuner Dashboard" src="https://github.com/user-attachments/assets/3819b4fc-104b-4a1a-a4aa-cf9b3fdb410c"/>
+
 ## Key Features
 
 * **`Automatic Quality Monitoring:`** `NexusTuner` continuously monitors the health of each source along with its resolution, bitrate, and framerate. No more endless tinkering to find the best source, just select them all and `NexusTuner` automatically chooses the highest quality and most reliable stream from your configured sources when a channel is requested.
@@ -17,9 +19,14 @@
 * **`HDHomeRun Server:`** `NexusTuner` can act as an HDHomeRun server, allowing you to use your IPTV channels with compatible clients that support HDHomeRun such as Plex.
 * **`Ghost Session Cleanup:`** Integrates with Emby and Jellyfin to detect and terminate "ghost" streams, FFmpeg processes that are still running after a client has disconnected improperly, freeing up valuable provider slots.
 
+<img width="1920" height="911" alt="NexusTuner Logical Channels" src="https://github.com/user-attachments/assets/0ead01e4-9db6-4cd7-8c6d-a5640ae0dadb"/>
+
+<img width="1920" height="911" alt="NexusTuner Edit Logical Channel" src="https://github.com/user-attachments/assets/ebafbb37-cf5e-4ecc-872e-08e976622ae9"/>
+
 ## Getting Started
 
-This application can be run using docker or directly using a python virtual environment.
+> [!NOTE]
+> This application can be run using docker or directly using a python virtual environment.
 
 ### Install `NexusTuner`
 
@@ -42,13 +49,15 @@ venv\Scripts\activate  # Windows
 pip install -r requirements.txt
 ```
 
-You'll need to install FFmpeg separately on your system, you'll be able to configure the path to
+> [!IMPORTANT]
+> You'll need to install FFmpeg separately on your system, you'll be able to configure the path to
 FFmpeg in the `.env` file later.
 
 ### Configuring `NexusTuner`
 
 You can set the environment variables on your system, in the docker compose file, or in the `.env` file.
-Values from your system or the docker compose file will override the `.env` file.
+> [!WARNING]
+> Values from your system or the docker compose file will override the `.env` file.
 
 #### Create the Environment File
 
@@ -106,14 +115,15 @@ Ensure you are in the directory you cloned earlier that contains `app.py`. Then 
 replacing `NEXUS_PORT` and `NEXUS_CONFIG_DIR` with the values you set in your `.env` file:
 
 ```bash
-venv/bin/uvicorn app:app --workers 1 --log-level warning --host 0.0.0.0 --port NEXUS_PORT --env-file NEXUS_CONFIG_DIR/.env
+venv/bin/uvicorn app:app --workers 1 --log-level warning --host 0.0.0.0 --port NEXUS_PORT --env-file "NEXUS_CONFIG_DIR/.env"
 ```
 
 ### Configuring Channels
 
-On your IPTV service, select all the channels that correspond to the regions and languages you want to include in your unified playlist.
-You will map specific sources to your configured logical channels in `NexusTuner`. Perform only the bare minimum filtering on your IPTV
-service (e.g. only US channels) for the best experience.
+> [!TIP]
+> On your IPTV service, select all the channels that correspond to the regions and languages you want to include in your unified playlist.
+> You will map specific sources to your configured logical channels in `NexusTuner`. Perform only the bare minimum filtering on your IPTV
+> service (e.g. only US channels) for the best experience.
 
 * Open a web browser and navigate to the `NEXUS_URL` and `NEXUS_PORT` you configured (e.g. `http://192.168.1.100:4040`).
 * Navigate to the **Providers** page and add your M3U source providers.
@@ -126,7 +136,8 @@ service (e.g. only US channels) for the best experience.
 
 ### Configuring Your Clients
 
-`NexusTuner` supports unlimited simultaneous streams for the same channel, even if your client does not support it natively. Also, if a source dies during viewing, it will automatically failover to the next best source.
+> [!NOTE]
+> `NexusTuner` supports unlimited simultaneous streams for the same channel, even if your client does not support it natively. Also, if a source dies during viewing, it will automatically failover to the next best source.
 
 The best way to use `NexusTuner` is through the `HDHomeRun` interface, which is supported by many clients including Plex, Emby, and Jellyfin.
 `NexusTuner` should automatically be detected by your client applications if they are on the same network. Otherwise, follow the instructions
