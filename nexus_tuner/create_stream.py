@@ -29,7 +29,7 @@ async def create_hls_ffmpeg_command(stream_manager: StreamManager, config: Confi
     latest_segment = await stream_manager.get_hls_latest_segment(logical_channel_id)
 
     command = [
-        config.ffmpeg_path,
+        str(config.ffmpeg_path),
         "-hide_banner", "-loglevel", "info",
         "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "4",
         "-reconnect_on_network_error", "1", "-reconnect_on_http_error", "5xx",
@@ -51,7 +51,7 @@ async def create_hls_ffmpeg_command(stream_manager: StreamManager, config: Confi
 def create_mpegts_ffmpeg_command(config: Config, input_url: str) -> list[str]:
     """Constructs the FFmpeg command list to output a continuous MPEG-TS stream."""
     command = [
-        config.ffmpeg_path,
+        str(config.ffmpeg_path),
         "-hide_banner", "-loglevel", "info",
         "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "4",
         "-reconnect_on_network_error", "1", "-reconnect_on_http_error", "5xx",

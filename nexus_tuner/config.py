@@ -38,7 +38,7 @@ class Config:
         'jobs_name', 'jobs_path',
         'backups_base_path', 'backups_scheduled_path', 'backups_manual_path', 'backup_count',
         'hls_base_segment_dir', 'hls_segment_duration', 'segment_prune_timeout', 'latest_segment_timeout', 'hls_playlist_length',
-        'ffmpeg_start_timeout', 'ffmpeg_inactivity_timeout', 'ffmpeg_path', 'ffmpeg_logs_dir',
+        'ffmpeg_start_timeout', 'ffmpeg_inactivity_timeout', 'ffmpeg_path', 'ffprobe_path', 'ffmpeg_logs_dir',
         'emby_url', 'emby_api_key', 'jellyfin_url', 'jellyfin_api_key', 'ghost_check_interval',
         'file_lock', '_cleaning_up_ffmpeg_logs',
     )
@@ -59,10 +59,20 @@ class Config:
         if url_port is not None:
             raise ValueError("NEXUS_URL should not contain a port, set the NEXUS_PORT environment variable instead.")
         self.nexus_url: Final[str] = f"{nexus_url}:{NEXUS_TUNER_PORT}"
+
         ffmpeg_path: str | None = os.getenv("NEXUS_FFMPEG_PATH")
         if not ffmpeg_path:
             raise ValueError("NEXUS_FFMPEG_PATH environment variable is not set.")
-        self.ffmpeg_path: Final[str] = ffmpeg_path.strip()
+        self.ffmpeg_path: Final[Path] = Path(ffmpeg_path.strip())
+        if not os.path.isfile(self.ffmpeg_path):
+            raise ValueError(f"NEXUS_FFMPEG_PATH '{self.ffmpeg_path}' does not point to a valid file.")
+        if not os.access(self.ffmpeg_path, os.X_OK):
+            raise ValueError(f"NEXUS_FFMPEG_PATH '{self.ffmpeg_path}' is not executable. Please check permissions.")
+        self.ffprobe_path: Final[Path] = self.ffmpeg_path.with_name(self.ffmpeg_path.name.replace("ffmpeg", "ffprobe"))
+        if not os.path.isfile(self.ffprobe_path):
+            raise ValueError(f"NEXUS_FFMPEG_PATH '{self.ffprobe_path}' does not point to a valid ffprobe file.")
+        if not os.access(self.ffprobe_path, os.X_OK):
+            raise ValueError(f"NEXUS_FFMPEG_PATH '{self.ffprobe_path}' is not executable. Please check permissions.")
 
         # --- Logging ---
         self.logs_dir: Final[Path] = CONFIG_DIR / "logs"

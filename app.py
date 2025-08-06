@@ -76,7 +76,7 @@ async def startup() -> None:
         quality_monitor = await QualityMonitor.create(config, handler)
         handler.quality_monitor = quality_monitor
         scheduler = await Scheduler.create(config, handler, quality_monitor)
-        config.info(Label.SERVER, f"Listening on {config.nexus_url}")
+        config.info(Label.SERVER, f"Started on {config.nexus_url}")
     except BaseException as e:
         print(f"FATAL: Could not initialize application: {e}", file=sys.stderr)
         sys.exit(1)

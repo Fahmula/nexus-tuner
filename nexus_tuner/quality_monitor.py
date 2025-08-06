@@ -92,7 +92,7 @@ class QualityMonitor:
         terminated on timeout or cancellation.
         """
         cmd: list[str] = [
-            "ffprobe",
+            str(self.config.ffprobe_path),
             "-v", "error",
             "-user_agent", NEXUS_TUNER_USER_AGENT,
             "-select_streams", "v:0",

@@ -105,12 +105,11 @@ Here are all the available environment variables:
 Run the application using docker compose. This will build the image and start the container in the background.
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 #### Without Docker
 
-Run the application using `uvicorn` in the python virtual environment you created earlier.
 Ensure you are in the directory you cloned earlier that contains `app.py`. Then run the following command,
 replacing `NEXUS_PORT` and `NEXUS_CONFIG_DIR` with the values you set in your `.env` file:
 
@@ -122,7 +121,7 @@ venv/bin/uvicorn app:app --workers 1 --log-level warning --host 0.0.0.0 --port N
 
 > [!TIP]
 > On your IPTV service, select all the channels that correspond to the regions and languages you want to include in your unified playlist.
-> You will map specific sources to your configured logical channels in `NexusTuner`. Perform only the bare minimum filtering on your IPTV
+> You will map specific sources to your configured logical channels in `NexusTuner`, perform only the bare minimum filtering on your IPTV
 > service (e.g. only US channels) for the best experience.
 
 * Open a web browser and navigate to the `NEXUS_URL` and `NEXUS_PORT` you configured (e.g. `http://192.168.1.100:4040`).

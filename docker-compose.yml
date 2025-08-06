@@ -10,7 +10,8 @@ services:
       - NEXUS_PORT=4040
   
     # The application inside the container runs on port NEXUS_PORT (default 4040).
-    # You can change 4040 to any other available port on your host (e.g., "1234:4040").
+    # You can change 4040 to any other available port on your host (e.g., "1234:1234").
+    # NOTE: The internal and external ports must match since clients will be served urls with NEXUS_PORT
     ports:
       - 4040:4040
 
