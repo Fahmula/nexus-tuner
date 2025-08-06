@@ -347,7 +347,7 @@ async def reload_configuration() -> Response:
     try:
         await handler.reload_handler_config(update_providers=update_providers, force_discover_sources=force_discover_sources)
         if force_discover_sources:
-            await flash("Successfully reloaded configuration and refreshed discovered source!", "success")
+            await flash("Successfully reloaded configuration and refreshed discovered sources!", "success")
         else:
             await flash("Successfully reloaded configuration!", "success")
     except Exception as e:

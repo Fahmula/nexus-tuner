@@ -59,7 +59,11 @@ class Config:
         if url_port is not None:
             raise ValueError("NEXUS_URL should not contain a port, set the NEXUS_PORT environment variable instead.")
         self.nexus_url: Final[str] = f"{nexus_url}:{NEXUS_TUNER_PORT}"
-        
+        ffmpeg_path: str | None = os.getenv("NEXUS_FFMPEG_PATH")
+        if not ffmpeg_path:
+            raise ValueError("NEXUS_FFMPEG_PATH environment variable is not set.")
+        self.ffmpeg_path: Final[str] = ffmpeg_path.strip()
+
         # --- Logging ---
         self.logs_dir: Final[Path] = CONFIG_DIR / "logs"
         self._logger: logging.Logger
@@ -106,7 +110,6 @@ class Config:
         self.hls_playlist_length: Final[int] = 30
         self.ffmpeg_start_timeout: Final[float] = 5
         self.ffmpeg_inactivity_timeout: Final[int] = int(os.getenv("NEXUS_FFMPEG_INACTIVITY_TIMEOUT", 900))
-        self.ffmpeg_path: Final[str] = os.getenv("FFMPEG_PATH", "/usr/bin/ffmpeg")
         self.ffmpeg_logs_dir: Final[Path] = self.logs_dir / "ffmpeg_logs"
 
         # --- Media Server Monitoring Configs ---

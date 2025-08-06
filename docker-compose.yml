@@ -1,30 +1,20 @@
-# docker-compose.yml
 services:
   nexus-tuner:
-    # Use the image you built and pushed to the GitHub Container Registry.
-    # Docker will automatically pull the 'latest' tag if it's not available locally.
-    image: ghcr.io/fahmula/nexus-tuner:latest
     container_name: nexus-tuner
-    
-    # Ensures the container restarts automatically if it crashes or the server reboots,
-    # unless you explicitly stop it yourself.
+    image: ghcr.io/fahmula/nexus-tuner:latest
     restart: unless-stopped
 
-    # Sets environment variables inside the container.
     # These variables override the defaults and ones in the .env file.
+    # NEXUS_PORT changes the internal port the application listens on.
     environment:
       - NEXUS_PORT=4040
   
-    # Maps a port on your host machine to the container's internal port.
-    # The format is "HOST_PORT:CONTAINER_PORT".
     # The application inside the container runs on port NEXUS_PORT (default 4040).
-    # This example maps port 4040 on your host to port 4040 in the container.
     # You can change 4040 to any other available port on your host (e.g., "1234:4040").
     ports:
       - 4040:4040
 
     volumes:
-      # This is crucial for data persistence. It maps the local './config' directory
-      # on your host to the '/config' directory inside the container.
-      # This ensures your JSON configuration files are not lost if the container is removed.
-      - /path/to/config/folder:/config
+      # By default the image uses /config as the NEXUS_CONFIG_DIR.
+      # Point this to a folder on your host to persist configuration.
+      - /path/to/config/folder/nexus-tuner:/config
