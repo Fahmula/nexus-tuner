@@ -3,7 +3,7 @@
 [![Latest Release](https://img.shields.io/github/v/release/Fahmula/nexus-tuner?style=for-the-badge&logo=github)](https://github.com/Fahmula/nexus-tuner/releases/latest)
 [![License](https://img.shields.io/github/license/Fahmula/nexus-tuner?style=for-the-badge)](https://github.com/Fahmula/nexus-tuner/blob/main/LICENSE)
 
-`NexusTuner` is a smart, self-hosted IPTV proxy that aggregates multiple M3U sources into a single, stable, and feature-rich playlist for your clients.
+`NexusTuner` is a smart, self-hosted IPTV proxy that aggregates multiple M3U sources into a single, stable, and feature-rich playlist for your media clients.
 
 > [!TIP]
 > **Key Features:**
@@ -12,15 +12,19 @@
 > * **`In-Browser Previews:`** Easily preview streams directly in your browser while configuring channels or from the `Sources` page. No more guesswork and fiddling with external players to check stream region and language.
 > * **`Automatic Quality Monitoring:`** `NexusTuner` continuously monitors the health of each source along with its resolution, bitrate, and framerate. No more endless tinkering to find the best source, just select them all and `NexusTuner` automatically chooses the highest quality and most reliable stream from your configured sources when a channel is requested.
 > * **`Fast & Reliable Streams:`** When a channel is requested, `NexusTuner` starts multiple mapped sources in parallel (respecting each provider's limit). It then quickly selects the best healthy stream based on priority and quality, leading to faster, more reliable, and more consistent channel startup times. Additionally, it will automatically switch to another source if the current one fails, ensuring uninterrupted viewing.
-> * **`Dead Source Detection:`** Automatically detects dead mapped sources (e.g. stream url changed) and intelligently tries to remap them based on their tvg data. If it's not possible, channels with dead sources will be marked in the UI and logs with a convenient button to remove them.
-> * **`On-the-Fly Remux:`** All streams are processed via FFmpeg to produce an HLS or MPEGTS format, maximizing compatibility across a wide range of client devices and applications. Each stream type also supports sharing the same FFmpeg process for multiple simultaneous connections automatically, reducing resource usage and provider slot usage.
-> * **HDHomeRun Server:** `NexusTuner` can act as an HDHomeRun server, allowing you to use your IPTV channels with compatible clients that support HDHomeRun such as Plex, Emby, Jellyfin, and more.
-> * **Ghost Session Cleanup:** Integrates with Emby and Jellyfin to detect and terminate "ghost" streams, FFmpeg processes that are still running after a client has disconnected improperly, freeing up valuable provider slots.
+> * **`Dead Source Detection:`** Once configured, your channel lineup remains stable and consistent to your media clients, even if you completely change Providers or remove all source mappings. Additionally, `NexusTuner` automatically detects dead mapped sources (e.g. stream url changed) and intelligently tries to remap them based on their tvg data. If it's not possible, channels with dead sources will be logged and marked in the UI with a convenient button to remove them. In any case, you will never need to remap a channel in your media clients unless you've deleted the logical channel itself.
+> * **`On-the-Fly Remux:`** All streams are processed via FFmpeg to produce an HLS or MPEGTS format, maximizing compatibility across a wide range of media client devices and applications. Each stream type also supports sharing the same FFmpeg process for multiple simultaneous connections automatically, reducing resource usage and provider slot usage.
+> * **HDHomeRun Server:** `NexusTuner` can act as an HDHomeRun server, allowing you to use your IPTV channels with compatible media clients that support HDHomeRun such as Plex, Emby, Jellyfin, and more.
+> * **Ghost Session Cleanup:** Integrates with Emby and Jellyfin to detect and terminate "ghost" streams, FFmpeg processes that are still running after a media client has disconnected improperly, freeing up valuable provider slots.
 
+
+## Dashboard
 <img width="1920" height="911" alt="NexusTuner Dashboard" src="public/screenshots/dashboard.png"/>
 
+## Logical Channels
 <img width="1920" height="911" alt="NexusTuner Logical Channels" src="public/screenshots/logical_channels.png"/>
 
+## Edit Logical Channel
 <img width="1920" height="911" alt="NexusTuner Edit Logical Channel Preview" src="public/screenshots/logical_channels_edit_preview.png"/>
 
 ## Getting Started
@@ -138,16 +142,16 @@ Schedule `NexusTuner` to run on startup using your system's service manager (e.g
   * If a source is mapped to another logical channel, it will be marked as `In Use` or `Duplicated` if it's also mapped to the current channel.
   * You can optionally trigger an early run of `Quality Monitor` for this channel only if you'd like to start using it immediately.
 
-### Configuring Your Clients
+### Configuring Your Meida Clients
 
 > [!NOTE]
-> `NexusTuner` supports unlimited simultaneous streams for the same channel, even if your client does not support it natively. Also, if a source dies during viewing, it will automatically failover to the next best source.
+> `NexusTuner` supports unlimited simultaneous streams for the same channel, even if your media client does not support it natively. Also, if a source dies during viewing, it will automatically failover to the next best source.
 
-The best way to use `NexusTuner` is through the `HDHomeRun` interface, which is supported by many clients including Plex, Emby, and Jellyfin.
-`NexusTuner` should automatically be detected by your client applications if they are on the same network. Otherwise, follow the instructions
-for your specific client application to add an `HDHomeRun` tuner by specifying the `NEXUS_URL` and `NEXUS_PORT`.
+The best way to use `NexusTuner` is through the `HDHomeRun` interface, which is supported by many media clients including Plex, Emby, and Jellyfin.
+`NexusTuner` should automatically be detected by your media client applications if they are on the same network. Otherwise, follow the instructions
+for your specific media client application to add an `HDHomeRun` tuner by specifying the `NEXUS_URL` and `NEXUS_PORT`.
 
-`NexusTuner` also provides a standard M3U playlist that can be used in any client application that supports it. For an application
+`NexusTuner` also provides a standard M3U playlist that can be used in any media client application that supports it. For an application
 like VLC, you can use the M3U playlist URL: **`<NEXUS_URL>:<NEXUS_PORT>/playlist.m3u`**
 
 ## Development
