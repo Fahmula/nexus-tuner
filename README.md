@@ -3,30 +3,30 @@
 [![Latest Release](https://img.shields.io/github/v/release/Fahmula/nexus-tuner?style=for-the-badge&logo=github)](https://github.com/Fahmula/nexus-tuner/releases/latest)
 [![License](https://img.shields.io/github/license/Fahmula/nexus-tuner?style=for-the-badge)](https://github.com/Fahmula/nexus-tuner/blob/main/LICENSE)
 
-`NexusTuner` is a smart, self-hosted IPTV proxy that empowers you to aggregate multiple M3U sources into a single, stable, and feature-rich playlist for your clients (like Plex, Jellyfin, or Emby). It solves common IPTV pain points by introducing powerful features like seamless configuration with previews, multiple channel sources, parallel stream initiation, automatic source priority by stream quality, provider-level concurrent stream limiting, and intelligent session management, all controlled through an intuitive web interface.
+`NexusTuner` is a smart, self-hosted IPTV proxy that aggregates multiple M3U sources into a single, stable, and feature-rich playlist for your clients.
 
-<img width="1920" height="911" alt="NexusTuner Dashboard" src="https://github.com/user-attachments/assets/3819b4fc-104b-4a1a-a4aa-cf9b3fdb410c"/>
+> [!TIP]
+> **Key Features:**
+> * **Web-Based UI:** A modern, user-friendly UI to manage providers, create logical channels, map sources, and view application logs. Mapping channels has never been easier with automatic suggestions and prefilled data to make the setup process frictionless. Additionally, sources mapped to other logical channels will be marked as `In Use` or `Duplicated` if it's also mapped to the current channel.
+> * **M3U Aggregation:** Combine multiple IPTV provider playlists into one unified and consistent channel lineup. Each provider can be configured with their maximum concurrent streams, which `NexusTuner` will manage intelligently.
+> * **`In-Browser Previews:`** Easily preview streams directly in your browser while configuring channels or from the `Sources` page. No more guesswork and fiddling with external players to check stream region and language.
+> * **`Automatic Quality Monitoring:`** `NexusTuner` continuously monitors the health of each source along with its resolution, bitrate, and framerate. No more endless tinkering to find the best source, just select them all and `NexusTuner` automatically chooses the highest quality and most reliable stream from your configured sources when a channel is requested.
+> * **`Fast & Reliable Streams:`** When a channel is requested, `NexusTuner` starts multiple mapped sources in parallel (respecting each provider's limit). It then quickly selects the best healthy stream based on priority and quality, leading to faster, more reliable, and more consistent channel startup times. Additionally, it will automatically switch to another source if the current one fails, ensuring uninterrupted viewing.
+> * **`Dead Source Detection:`** Automatically detects dead mapped sources (e.g. stream url changed) and intelligently tries to remap them based on their tvg data. If it's not possible, channels with dead sources will be marked in the UI and logs with a convenient button to remove them.
+> * **`On-the-Fly Remux:`** All streams are processed via FFmpeg to produce an HLS or MPEGTS format, maximizing compatibility across a wide range of client devices and applications. Each stream type also supports sharing the same FFmpeg process for multiple simultaneous connections automatically, reducing resource usage and provider slot usage.
+> * **HDHomeRun Server:** `NexusTuner` can act as an HDHomeRun server, allowing you to use your IPTV channels with compatible clients that support HDHomeRun such as Plex, Emby, Jellyfin, and more.
+> * **Ghost Session Cleanup:** Integrates with Emby and Jellyfin to detect and terminate "ghost" streams, FFmpeg processes that are still running after a client has disconnected improperly, freeing up valuable provider slots.
 
-## Key Features
+<img width="1920" height="911" alt="NexusTuner Dashboard" src="public/screenshots/dashboard.png"/>
 
-* **`Automatic Quality Monitoring:`** `NexusTuner` continuously monitors the health of each source along with its resolution, bitrate, and framerate. No more endless tinkering to find the best source, just select them all and `NexusTuner` automatically chooses the highest quality and most reliable stream from your configured sources when a channel is requested.
-* **`Fast & Reliable Streams:`** When a channel is requested, `NexusTuner` starts multiple mapped sources in parallel (respecting each provider's limit). It then quickly selects the best healthy stream based on priority and quality, leading to faster, more reliable, and more consistent channel startup times. Additionally, it will automatically switch to another source if the current one fails, ensuring uninterrupted viewing.
-* **`In-Browser Previews:`** Easily preview streams directly in your browser while configuring channels. No more guesswork and fiddling with external players to check stream region and language.
-* **`Web-Based UI:`** A modern, user-friendly UI to manage providers, create logical channels, map sources, and view application logs. Mapping channels has never been easier with automatic suggestions and prefilled data to make the setup process frictionless.
-* **`M3U Aggregation:`** Combine multiple IPTV provider playlists into one unified and consistent channel lineup. Each provider can be configured with their maximum concurrent streams, which `NexusTuner` will manage intelligently.
-* **`Dead Source Detection:`** Automatically detects dead mapped sources (e.g. stream url changed) and intelligently tries to remap them based on their tvg data. If it's not possible, channels with dead sources will be marked in the UI and logs with a convenient button to remove them.
-* **`On-the-Fly Remux:`** All streams are processed via FFmpeg to produce an HLS or MPEGTS format, maximizing compatibility across a wide range of client devices and applications. Each stream type also supports sharing the same FFmpeg process for multiple simultaneous connections automatically, reducing resource usage and provider slot usage.
-* **`HDHomeRun Server:`** `NexusTuner` can act as an HDHomeRun server, allowing you to use your IPTV channels with compatible clients that support HDHomeRun such as Plex.
-* **`Ghost Session Cleanup:`** Integrates with Emby and Jellyfin to detect and terminate "ghost" streams, FFmpeg processes that are still running after a client has disconnected improperly, freeing up valuable provider slots.
+<img width="1920" height="911" alt="NexusTuner Logical Channels" src="public/screenshots/logical_channels.png"/>
 
-<img width="1920" height="911" alt="NexusTuner Logical Channels" src="https://github.com/user-attachments/assets/0ead01e4-9db6-4cd7-8c6d-a5640ae0dadb"/>
-
-<img width="1920" height="911" alt="NexusTuner Edit Logical Channel" src="https://github.com/user-attachments/assets/ebafbb37-cf5e-4ecc-872e-08e976622ae9"/>
+<img width="1920" height="911" alt="NexusTuner Edit Logical Channel Preview" src="public/screenshots/logical_channels_edit_preview.png"/>
 
 ## Getting Started
 
 > [!NOTE]
-> This application can be run using docker or directly using a python virtual environment.
+> This application can be run using docker or directly using python.
 
 ### Install `NexusTuner`
 
@@ -51,7 +51,7 @@ pip install -r requirements.txt
 
 > [!IMPORTANT]
 > You'll need to install FFmpeg separately on your system, you'll be able to configure the path to
-FFmpeg in the `.env` file later.
+> FFmpeg in the `.env` file later. FFprobe will be inferred from the FFmpeg path.
 
 ### Configuring `NexusTuner`
 
@@ -102,7 +102,7 @@ Here are all the available environment variables:
 
 #### With Docker
 
-Run the application using docker compose. This will build the image and start the container in the background.
+Run the application using the docker-compose.yml, this will build the image and start the container in the background:
 
 ```bash
 docker compose up -d
@@ -110,12 +110,17 @@ docker compose up -d
 
 #### Without Docker
 
-Ensure you are in the directory you cloned earlier that contains `app.py`. Then run the following command,
-replacing `NEXUS_PORT` and `NEXUS_CONFIG_DIR` with the values you set in your `.env` file:
+> [!IMPORTANT]
+> Ensure you are in the directory you cloned earlier that contains `app.py`.
+> You do not need to activate the virtual environment for running the application.
+
+Run the following command, replacing `NEXUS_PORT` and `NEXUS_CONFIG_DIR` with the values you set in your `.env` file:
 
 ```bash
 venv/bin/uvicorn app:app --workers 1 --log-level warning --host 0.0.0.0 --port NEXUS_PORT --env-file "NEXUS_CONFIG_DIR/.env"
 ```
+
+Schedule `NexusTuner` to run on startup using your system's service manager (e.g. systemd, launchd, Task Scheduler).
 
 ### Configuring Channels
 
@@ -130,7 +135,7 @@ venv/bin/uvicorn app:app --workers 1 --log-level warning --host 0.0.0.0 --port N
 * Navigate to the **Logical Channels** page to create your desired channel lineup.
   * As you type in the channel name, `NexusTuner` will display suggestions to prefill the channel data.
   * You can map as many sources as you like. You can also preview each source to ensure they are correct.
-  * If a source is mapped to another logical channel, it will be marked as `In Use` or `Duplicate` if it's also mapped to the current channel.
+  * If a source is mapped to another logical channel, it will be marked as `In Use` or `Duplicated` if it's also mapped to the current channel.
   * You can optionally trigger an early run of `Quality Monitor` for this channel only if you'd like to start using it immediately.
 
 ### Configuring Your Clients
