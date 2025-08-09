@@ -36,7 +36,7 @@ from nexus_tuner.quality_monitor import QualityMonitor
 from nexus_tuner.session_monitor import GhostSessionMonitor
 from nexus_tuner.stream import StreamManager
 from nexus_tuner.scheduler import Scheduler
-from nexus_tuner.utils import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL,
+from nexus_tuner.utils import (background_tasks, CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL,
                                 DEFAULT_PRIORITY, M3UURL, NEXUS_TUNER_PORT, NEXUS_TUNER_VERSION, ChannelNum, DiscoveredSource,
                                 Label, LogicalChannelId, LogicalChannelInfo, LogicalChannelInfoWithId, LogicalChannelMetrics, LogicalChannelTitle, MaxStreams, 
                                 PercentDisplay, Priority, ProviderAlias, ProviderStatus, QualityScores, SourceInfo, SourceMappingInfoWithId, SourceMetrics,
@@ -91,6 +91,7 @@ async def shutdown() -> None:
         await stream_manager.stop_ffmpeg_processes()
     if "config" in globals():
         await config.clean_up_hls_segments()
+    await asyncio.gather(*background_tasks, return_exceptions=True)
 
 
 async def calculate_channel_metrics(mapped_sources: list[SourceMappingInfoWithId], all_quality_scores: QualityScores) -> LogicalChannelMetrics:

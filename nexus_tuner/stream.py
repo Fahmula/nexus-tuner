@@ -187,7 +187,12 @@ class StreamManager:
 
     async def stop_ffmpeg_process(self, video_key: VideoKey, name: LogicalChannelTitle | VideoName) -> None:
         """Stops an FFmpeg process and cleans up resources asynchronously."""
-        run_bg(self._stop_ffmpeg_process(video_key, name, data_to_cleanup=None))  # Prevents process from being cancelled
+        task = run_bg(self._stop_ffmpeg_process(video_key, name, data_to_cleanup=None))
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            await asyncio.shield(task)
+            raise
 
     async def stop_ffmpeg_processes_with_logical_channel_id(self, logical_channel_id: LogicalChannelId, video_type: VideoType) -> None:
         """Stops FFmpeg processes by logical channel ID and video type, and cleans up resources asynchronously."""

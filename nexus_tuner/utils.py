@@ -296,11 +296,12 @@ type ProbeInfo = ProbeSuccess | ProbeFailure
 
 # --- Functions ---
 background_tasks: set[asyncio.Task[Any]] = set()
-def run_bg(coro: Coroutine[Any, Any, Any]) -> None:
+def run_bg(coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
     """Adds a background task to the global set and discard on completion as asyncio.create_task() requires a reference to it."""
     task = asyncio.create_task(coro)
     background_tasks.add(task)
     task.add_done_callback(background_tasks.discard)
+    return task
 
 def create_stream_key(video_type: VideoType, logical_channel_id: LogicalChannelId) -> StreamKey:
     """Generates a unique key for the stream."""
