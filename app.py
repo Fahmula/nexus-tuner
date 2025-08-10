@@ -36,7 +36,7 @@ from nexus_tuner.quality_monitor import QualityMonitor
 from nexus_tuner.session_monitor import GhostSessionMonitor
 from nexus_tuner.stream import StreamManager
 from nexus_tuner.scheduler import Scheduler
-from nexus_tuner.utils import (background_tasks, CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL,
+from nexus_tuner.utils import (VideoKey, background_tasks, CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL,
                                 DEFAULT_PRIORITY, M3UURL, NEXUS_TUNER_PORT, NEXUS_TUNER_VERSION, ChannelNum, DiscoveredSource,
                                 Label, LogicalChannelId, LogicalChannelInfo, LogicalChannelInfoWithId, LogicalChannelMetrics, LogicalChannelTitle, MaxStreams, 
                                 PercentDisplay, Priority, ProviderAlias, ProviderStatus, QualityScores, SourceInfo, SourceMappingInfoWithId, SourceMetrics,
@@ -136,9 +136,10 @@ def inject_global_vars() -> Dict[str, datetime | str]:
 
 
 @app.route(f'/{VideoType.MPEGTS}/<string:logical_channel_id>')
-async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_response: bool = True) -> Response:
+async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_response: bool = True) -> Response | VideoKey:
     """Serves a channel stream using MPEG-TS format asynchronously.
-    If stream_response is True, it returns a generator that the client connects to, otherwise it simply creates the stream.
+    If stream_response is True, it returns a generator that the client connects to, otherwise it simply creates the stream
+    and returns the video key for later use.
     """
     added_pending_stream = False
     loop = asyncio.get_running_loop()
@@ -177,11 +178,11 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
 
         if not stream_response:
             config.info(VideoType.MPEGTS, f"Recreated MPEGTS stream for channel '{logical_channel_title}' with key '{video_key}'.")
-            return Response(status=204)
+            return video_key
 
         async def stream_generator() -> AsyncGenerator[bytes, None]:
-            async def recreate_stream() -> None:
-                await serve_mpegts_stream(logical_channel_id, stream_response=False)
+            async def recreate_stream() -> Response | VideoKey:
+                return await serve_mpegts_stream(logical_channel_id, stream_response=False)
             try:
                 mpegts_stream, reader_id = await MPEGTSStream.register(config, stream_manager, video_key, recreate_stream=recreate_stream)
             except Exception as e:
@@ -193,10 +194,10 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
                 while True:
                     yield await mpegts_stream.read(reader_id)
             except asyncio.CancelledError as e:
-                config.info(VideoType.MPEGTS, f"Client disconnected from MPEGTS stream for '{logical_channel_title}' with key '{video_key}'.")
+                config.info(VideoType.MPEGTS, f"Client disconnected from MPEGTS stream for '{logical_channel_title}'.")
                 raise
             except BaseException as e:
-                config.error(VideoType.MPEGTS, f"Unexpected error in MPEGTS stream for '{logical_channel_title}' with key '{video_key}': {e}")
+                config.error(VideoType.MPEGTS, f"Unexpected error in MPEGTS stream for '{logical_channel_title}': {e}")
                 raise
             finally:
                 mpegts_stream.unregister(reader_id)

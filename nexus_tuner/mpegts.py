@@ -2,6 +2,8 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import Awaitable, Callable, Final, NoReturn, Self, cast
 
+from quart import Response
+
 from nexus_tuner.config import Config
 from nexus_tuner.stream import StreamManager
 from nexus_tuner.utils import MPEGTS_PACKET_SIZE, FFmpegProcessInfoMutable, MPEGTSProcessInfo, ReaderId, VideoKey, VideoType, run_bg
@@ -21,11 +23,11 @@ class MPEGTSStream:
 
     streams: dict[VideoKey, Self] = {}
     
-    def __init__(self, config: Config, stream_manager: StreamManager, video_key: VideoKey, recreate_stream: Callable[[], Awaitable[None]]) -> None:
+    def __init__(self, config: Config, stream_manager: StreamManager, video_key: VideoKey, recreate_stream: Callable[[], Awaitable[Response | VideoKey]]) -> None:
         self.config: Config = config
         self.stream_manager: StreamManager = stream_manager
         self.video_key: VideoKey = video_key
-        self.recreate_stream: Callable[[], Awaitable[None]] = recreate_stream
+        self.recreate_stream: Callable[[], Awaitable[Response | VideoKey]] = recreate_stream
         self._buffer: list[bytes] = []
         self._event: asyncio.Event = asyncio.Event()
         self._reader_positions: dict[ReaderId, int] = {}
@@ -42,7 +44,7 @@ class MPEGTSStream:
         self._cleaner = asyncio.create_task(self._cleanup())
 
     @classmethod
-    async def register(cls, config: Config, stream_manager: StreamManager, video_key: VideoKey, recreate_stream: Callable[[], Awaitable[None]]) -> tuple[Self, ReaderId]:
+    async def register(cls, config: Config, stream_manager: StreamManager, video_key: VideoKey, recreate_stream: Callable[[], Awaitable[Response | VideoKey]]) -> tuple[Self, ReaderId]:
         """Register a new MPEGTS stream or return an existing one."""
         if video_key not in cls.streams:  # If stream is cancelled, still choose it to prevent dual ownership
             instance = cls(config, stream_manager, video_key, recreate_stream)
@@ -101,7 +103,13 @@ class MPEGTSStream:
                 except Exception as e:
                     self.config.error(VideoType.MPEGTS, f"Error reading from MPEGTS stream for '{process_info['logical_channel_title']}' with key '{self.video_key}': {e}")
                     await self.stream_manager.stop_ffmpeg_process(self.video_key, process_info["logical_channel_title"])
-                    await self.recreate_stream()
+                    res = await self.recreate_stream()
+                    if isinstance(res, Response):
+                        self.config.error(VideoType.MPEGTS, f"Failed to recreate MPEGTS stream for '{process_info['logical_channel_title']}' with key '{self.video_key}': {res.status}")
+                        raise
+                    del self.streams[self.video_key]
+                    self.video_key = res
+                    self.streams[self.video_key] = self
                     process_info_res = cast(MPEGTSProcessInfo | None, await self.stream_manager.get_ffmpeg_process_info(self.video_key))
                     if not process_info_res:
                         self.config.error(VideoType.MPEGTS, f"Internal error: MPEGTS FFmpeg process not found for logical channel '{process_info['logical_channel_title']}' with key '{self.video_key}' after recreating stream.")
