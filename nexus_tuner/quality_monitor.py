@@ -114,12 +114,12 @@ class QualityMonitor:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=QUALITY_MONITOR_TIMEOUT + 3)
 
             if proc.returncode != 0:
-                self.config.warn(Label.QUALITY, f"ffprobe for {source_log} in {channel_log} failed with code {proc.returncode}: {stderr.decode()}".replace(stream_url, "{{stream_url}}").strip())
+                self.config.debug(Label.QUALITY, f"ffprobe for {source_log} in {channel_log} failed with code {proc.returncode}: {stderr.decode()}".replace(stream_url, "{{stream_url}}").strip())
                 return
             info = json.loads(stdout)
 
         except asyncio.TimeoutError:
-            self.config.warn(Label.QUALITY, f"ffprobe for {source_log} in {channel_log} timed out.")
+            self.config.debug(Label.QUALITY, f"ffprobe for {source_log} in {channel_log} timed out.")
             return
         except Exception as e:
             self.config.error(Label.QUALITY, f"Failed to parse ffprobe output for {source_log} in {channel_log}: {e}")
@@ -321,7 +321,7 @@ class QualityMonitor:
                         source_entry["bitrates"].append(probe_info["bitrate"])
                         source_entry["framerates"].append(probe_info["framerate"])
                     else:
-                        self.config.warn(Label.QUALITY, f"{source_log} in {channel_log} is offline: {probe_info["reason"]}")
+                        self.config.debug(Label.QUALITY, f"{source_log} in {channel_log} is offline: {probe_info["reason"]}")
                         source_entry["statuses"].append("offline")
 
                     if len(source_entry["statuses"]) > MAX_HISTORY_PER_SOURCE:

@@ -322,7 +322,11 @@ async def serve_hls_segment(logical_channel_id: LogicalChannelId, segment_filena
         config.error(VideoType.HLS, f"HLS segment not found for channel '{logical_channel_id}' with filename '{segment_filename}'.")
         abort(404, f"HLS segment not found for channel '{logical_channel_id}'")
 
-    return await send_from_directory(str(segment_path.parent), segment_path.name, mimetype="video/mp2t")
+    response = await send_from_directory(str(segment_path.parent), segment_path.name, mimetype="video/mp2t")
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @app.route("/<string:video_type>/<string:logical_channel_id>/stop", methods=["POST"])
