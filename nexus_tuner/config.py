@@ -18,6 +18,7 @@ from nexus_tuner.utils import (CONFIG_DIR, NEXUS_TUNER_PORT, NEXUS_TUNER_VERSION
 
 
 NOT_ALPHANUM_REGEX: Final[re.Pattern[str]] = re.compile(r'[^a-zA-Z0-9_-]')
+LOG_FILE_NAME = "app.log"
 
 
 class Config:
@@ -79,7 +80,11 @@ class Config:
         self._logger: logging.Logger
         self.log_level: Final[str] = os.getenv("NEXUS_LOG_LEVEL", "INFO").upper()
         self.log_backup_count: Final[int] = int(os.getenv("NEXUS_LOG_BACKUP_COUNT", 7))
+        if self.log_backup_count < 0:
+            raise ValueError("NEXUS_LOG_BACKUP_COUNT must be a non-negative integer.")
         self.ffmpeg_logs_retention_seconds: Final[int] = int(os.getenv("NEXUS_FFMPEG_LOGS_RETENTION_SECONDS", 86400))
+        if self.ffmpeg_logs_retention_seconds < 0:
+            raise ValueError("NEXUS_FFMPEG_LOGS_RETENTION_SECONDS must be a non-negative integer.")
 
         # --- JSON Data Paths ---
         self.providers_name: Final[str] = "providers.json"
@@ -109,6 +114,8 @@ class Config:
         self.backups_scheduled_path: Final[Path] = self.backups_base_path / "scheduled"
         self.backups_manual_path: Final[Path] = self.backups_base_path / "manual"
         self.backup_count: Final[int] = int(os.getenv("NEXUS_BACKUP_COUNT", 30))
+        if self.backup_count < 0:
+            raise ValueError("NEXUS_BACKUP_COUNT must be a non-negative integer.")
 
         # --- HLS Segment Directory ---
         self.hls_base_segment_dir: Final[Path] = CONFIG_DIR / "hls_segments"
@@ -120,6 +127,8 @@ class Config:
         self.hls_playlist_length: Final[int] = 30
         self.ffmpeg_start_timeout: Final[float] = 5
         self.ffmpeg_inactivity_timeout: Final[int] = int(os.getenv("NEXUS_FFMPEG_INACTIVITY_TIMEOUT", 900))
+        if self.ffmpeg_inactivity_timeout < 0:
+            raise ValueError("NEXUS_FFMPEG_INACTIVITY_TIMEOUT must be a non-negative integer.")
         self.ffmpeg_logs_dir: Final[Path] = self.logs_dir / "ffmpeg_logs"
 
         # --- Media Server Monitoring Configs ---
@@ -128,6 +137,8 @@ class Config:
         self.jellyfin_url: Final[str | None] = os.getenv("NEXUS_JELLYFIN_URL")
         self.jellyfin_api_key: Final[str | None] = os.getenv("NEXUS_JELLYFIN_API_KEY")
         self.ghost_check_interval: Final[int] = int(os.getenv("NEXUS_GHOST_SESSION_CHECK_INTERVAL", 60))
+        if self.ghost_check_interval < 1:
+            raise ValueError("NEXUS_GHOST_SESSION_CHECK_INTERVAL must be a positive integer.")
 
         self.file_lock: Final[asyncio.Lock] = asyncio.Lock()
         self._cleaning_up_ffmpeg_logs: bool = False
@@ -183,7 +194,7 @@ class Config:
 
     def _initialize_logger(self) -> None:
         """Initializes the logger"""
-        log_filename = "app.log"
+        log_filename = LOG_FILE_NAME
         logger = logging.getLogger(log_filename)
         logger.setLevel(self.log_level)
         log_file_path = self.logs_dir / log_filename
@@ -629,6 +640,9 @@ class Config:
 
     async def backup_config(self, *, scheduled: bool) -> Path | None:
         """Creates a zip backup of the current configuration files."""
+        if scheduled and not self.backup_count:
+            self.debug(Label.CONFIG, "Scheduled backups are disabled (NEXUS_BACKUP_COUNT is 0). Skipping backup.")
+            return
         try:
             base_path = self.backups_scheduled_path if scheduled else self.backups_manual_path
             backup_folder = base_path / f"nexus_tuner_backup_{datetime.now().isoformat(timespec='seconds').replace(':', '-')}"

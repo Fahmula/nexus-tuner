@@ -260,6 +260,10 @@
             color: inherit;
         }
 
+        .modal-dialog {
+            margin-top: max(1.75rem, env(safe-area-inset-top));
+        }
+
         /* Prevent modal from removing scrollbar */
         body.modal-open {
             padding-right: 0 !important;
@@ -328,7 +332,7 @@
                             href="{{ url_for('ui_logical_channels_list') }}">Logical Channels</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#" hx-get="/ui/logs/modal" hx-target="#modal-log-content"
+                        <a class="nav-link" href="#" hx-get="/ui/logs/modal/100" hx-target="#modal-log-content"
                             data-bs-toggle="modal" data-bs-target="#modal-logs">
                             Logs
                         </a>

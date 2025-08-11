@@ -20,7 +20,7 @@ import json
 import math
 import os
 from collections import deque
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import AsyncGenerator, Dict, Final, cast
 
 from quart import Quart, Response, abort, flash, redirect, render_template, request, url_for
@@ -28,7 +28,7 @@ from quart import send_from_directory  # type: ignore
 from werkzeug.wrappers import Response as WerkzeugResponse
 from werkzeug.datastructures import ImmutableMultiDict
 
-from nexus_tuner.config import Config
+from nexus_tuner.config import LOG_FILE_NAME, Config
 from nexus_tuner.create_stream import CreateStream
 from nexus_tuner.handler import ChannelHandler
 from nexus_tuner.mpegts import MPEGTSStream
@@ -865,18 +865,35 @@ async def ui_channel_suggest() -> str:
     return await render_template("_channel_suggestions.html", logical_channel_id=logical_channel_id, suggestions=suggestions)
 
 
-@app.route("/ui/logs/modal")
-async def ui_logs_modal() -> str:
+@app.route("/ui/logs/modal/<int:num_lines>")
+async def ui_logs_modal(num_lines: int) -> str:
+    if num_lines < 1:
+        num_lines = 1
     log_lines = []
-    log_file_path = config.logs_dir / 'app.log'
+    log_path = config.logs_dir / LOG_FILE_NAME
     try:
-        async with aiofiles.open(log_file_path, 'r') as f:
-            log_lines = list(deque(await f.readlines(), 1000))
+        async with aiofiles.open(log_path, 'r') as f:
+            log_lines = list(deque(await f.readlines(), num_lines))
+        prev_date = datetime.now() - timedelta(days=1)
+        num_logs = 0
+        while len(log_lines) < num_lines:
+            prev_log_path = log_path.with_name(f"{LOG_FILE_NAME}.{prev_date.strftime('%Y-%m-%d')}")
+            if not prev_log_path.exists():
+                break
+            async with aiofiles.open(prev_log_path, 'r') as f:
+                prev_lines = await f.readlines()
+            num_logs += 1
+            log_lines = list(deque(prev_lines + log_lines, num_lines))
+            if len(log_lines) >= num_lines:
+                break
+            if num_logs >= config.log_backup_count:
+                break
+            prev_date -= timedelta(days=1)
     except FileNotFoundError:
-        log_lines = [f"Error: Log file not found at '{log_file_path}'."]
+        log_lines = [f"Error: Log file not found at '{log_path}'."]
     except Exception as e:
         log_lines = [f"An error occurred while reading the log file: {e}"]
-    return await render_template("_logs_modal_content.html", log_lines=log_lines)
+    return await render_template("_logs_modal_content.html", log_lines=log_lines, num_lines=num_lines)
 
 
 @app.route("/ui/source-preview/<path:source_id>")
@@ -969,6 +986,7 @@ async def serve_service_worker() -> Response:
 async def serve_icon(size: int) -> Response:
     """Serves the app icon in various sizes."""
     return await send_from_directory("public", f"icon-{size}.png", mimetype="image/png")
+
 
 @app.route('/favicon.ico')
 async def serve_favicon() -> Response:

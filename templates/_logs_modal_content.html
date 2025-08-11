@@ -1,7 +1,7 @@
 <!-- templates/_logs_modal_content.html -->
 <div class="modal-content">
   <div class="modal-header">
-    <h5 class="modal-title" id="modal-logs-label">Application Logs (Last 1000 Lines)</h5>
+    <h5 class="modal-title" id="modal-logs-label">Application Logs (Last {{ num_lines }} Lines)</h5>
     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
   </div>
   <div class="modal-body">
@@ -14,7 +14,30 @@
     {%- endfor -%}
     </code></pre>
   </div>
-  <div class="modal-footer">
+  <div class="modal-footer d-flex justify-content-between">
+    <!-- Input field for number of lines on the left -->
+    <div class="d-flex align-items-center">
+      <label for="log-lines-input" class="form-label mb-0 me-2">Number of lines:</label>
+      <input type="number" class="form-control form-control-sm me-2" id="log-lines-input" value="{{ num_lines }}" min="1" style="width: 100px;">
+      <button class="btn btn-primary btn-sm" onclick="reloadLogs()" id="reload-logs-btn">
+        <i class="fas fa-sync-alt"></i> Reload
+      </button>
+    </div>
+  
+    <!-- Close button on the right -->
     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
   </div>
 </div>
+
+<script>
+  function reloadLogs() {
+    const lines = Math.max(1, parseInt(document.getElementById('log-lines-input').value));
+    htmx.ajax('GET', `/ui/logs/modal/${lines}`, { target: '#modal-log-content' });
+  }
+
+  document.getElementById('log-lines-input').addEventListener('keypress', function (e) {
+    if (e.key === 'Enter') {
+      reloadLogs();
+    }
+  });
+</script>

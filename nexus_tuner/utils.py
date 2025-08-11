@@ -37,6 +37,8 @@ del config_dir_str, env_file
 NEXUS_TUNER_VERSION: Final[str] = (Path(__file__).parent.parent / "VERSION").read_text().strip()
 NEXUS_TUNER_USER_AGENT: Final[str] = f"NexusTuner/{NEXUS_TUNER_VERSION}"
 NEXUS_TUNER_PORT: Final[int] = int(os.getenv("NEXUS_PORT", 4040))
+if NEXUS_TUNER_PORT < 1 or NEXUS_TUNER_PORT > 65535:
+    raise ValueError("NEXUS_PORT must be a valid port number between 1 and 65535.")
 CREATE_STREAM_DEADLINE: Final[int] = 25           # The maximum time that clients will wait for a stream to be created
 NEW_DEADLINE_NON_BEST: Final[int] = 1             # The number of seconds after a stream is healthy before giving up waiting on others, the best remaining source deadline is immediate
 CREATE_STREAM_POLL_INTERVAL: Final[float] = 0.01  # Polling interval for stream creation
