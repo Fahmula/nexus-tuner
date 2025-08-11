@@ -135,7 +135,7 @@ Schedule `NexusTuner` to run on startup using your system's service manager (e.g
 
 * Open a web browser and navigate to the `NEXUS_URL` and `NEXUS_PORT` you configured (e.g. `http://192.168.1.100:4040`).
 * Navigate to the **Providers** page and add your M3U source providers.
-  * Return to the Dashboard and click `Full Reload` to discover the sources from your configured providers.
+  * Return to the Dashboard and click `Reload Providers & Sources` to discover the sources from your configured providers.
 * Navigate to the **Logical Channels** page to create your desired channel lineup.
   * As you type in the channel name, `NexusTuner` will display suggestions to prefill the channel data.
   * You can map as many sources as you like. You can also preview each source to ensure they are correct.

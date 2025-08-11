@@ -422,7 +422,7 @@ async def ui_provider_add() -> Response | str:
                 raise ValueError(f"Invalid URL format: {m3u_url}")
             if await handler.add_provider(alias, m3u_url, max_streams):
                 config.info(Label.SERVER, f"Provider '{alias}' added with max streams {max_streams}.")
-                await flash(f"Provider '{alias}' added successfully, perform a 'Full Reload' on the dashboard to discover sources.", "success")
+                await flash(f"Provider '{alias}' added successfully, use 'Reload Providers & Sources' on the dashboard to discover sources.", "success")
                 all_providers = sorted((await handler.get_provider_stream_status()).values(), key=lambda p: p['alias'])
                 table_body_html = await render_template("_providers_table_body.html", providers=all_providers)
                 form_removal_html = '<div id="add-provider-form-wrapper" hx-swap-oob="true"></div>'
@@ -459,7 +459,7 @@ async def ui_provider_edit(alias: ProviderAlias) -> Response | str:
             raise ValueError(f"Invalid URL format: {m3u_url}")
         if await handler.update_provider(alias, m3u_url, max_streams):
             config.info(Label.SERVER, f"Provider '{alias}' updated with max streams {max_streams}.")
-            await flash(f"Provider '{alias}' updated successfully, perform a 'Full Reload' on the dashboard to re-discover sources.", "success")
+            await flash(f"Provider '{alias}' updated successfully, use 'Reload Providers & Sources' on the dashboard to re-discover sources.", "success")
             updated_provider_data = ProviderStatus({**provider, "m3u_url": m3u_url, "max_streams": max_streams})
             response = Response(await render_template("_provider_row.html", provider=updated_provider_data))
         else:
@@ -477,7 +477,7 @@ async def ui_provider_delete(alias: ProviderAlias) -> Response:
     try:
         if await handler.delete_provider(alias):
             config.info(Label.SERVER, f"Provider '{alias}' deleted successfully.")
-            await flash(f"Provider '{alias}' deleted successfully, perform a 'Full Reload' on the dashboard to re-discover sources.", "success")
+            await flash(f"Provider '{alias}' deleted successfully, use 'Reload Providers & Sources' on the dashboard to re-discover sources.", "success")
             response = Response("", 200)
         else:
             raise ValueError(f"Failed to delete provider '{alias}'.")
