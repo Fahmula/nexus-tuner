@@ -950,7 +950,45 @@ async def hdhomerun_lineup() -> Response:
     return Response(json.dumps(lineup), mimetype="application/json")
 
 
+# --- PWA Endpoints ---
+
+
+@app.route('/manifest.json')
+async def serve_manifest() -> Response:
+    """Serves the web app manifest file."""
+    return await send_from_directory("public", "manifest.json", mimetype="application/json")
+
+
+@app.route('/sw.js')
+async def serve_service_worker() -> Response:
+    """Serves the service worker JavaScript file."""
+    return await send_from_directory("public", "sw.js", mimetype="application/javascript")
+
+
+@app.route('/icon-<int:size>.png')
+async def serve_icon(size: int) -> Response:
+    """Serves the app icon in various sizes."""
+    return await send_from_directory("public", f"icon-{size}.png", mimetype="image/png")
+
+@app.route('/favicon.ico')
+async def serve_favicon() -> Response:
+    """Serves the favicon.ico file."""
+    return await send_from_directory("public", "favicon.ico", mimetype="image/x-icon")
+
+
+@app.route('/screenshots/<path:filename>')
+async def serve_screenshot(filename: str) -> Response:
+    """Serves screenshots from the public directory."""
+    return await send_from_directory("public/screenshots", filename, mimetype="image/png")
+
+
 # --- Miscellaneous Endpoints ---
+
+
+@app.route('/robots.txt')
+async def serve_robots_txt() -> Response:
+    """Serves the robots.txt file."""
+    return await send_from_directory("public", "robots.txt", mimetype="text/plain")
 
 
 @app.route('/ping')

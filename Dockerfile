@@ -26,6 +26,7 @@ WORKDIR /app
 COPY app.py /app
 COPY nexus_tuner /app/nexus_tuner
 COPY templates /app/templates
+COPY public /app/public
 COPY entrypoint.sh /app
 COPY VERSION /app
 

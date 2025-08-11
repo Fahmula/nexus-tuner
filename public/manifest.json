@@ -1,0 +1,70 @@
+{
+    "name": "NexusTuner",
+    "short_name": "NexusTuner",
+    "description": "A smart, self-hosted IPTV proxy with a web UI. Aggregates M3U sources, using parallel initiation and quality-based routing for fast, reliable streams.",
+    "categories": ["Entertainment", "IPTV"],
+    "theme_color": "#212529",
+    "background_color": "#2d3748",
+    "display": "standalone",
+    "start_url": "/",
+    "shortcuts": [
+        {
+            "name": "Dashboard",
+            "url": "/"
+        },
+        {
+            "name": "Providers",
+            "url": "/ui/providers"
+        },
+        {
+            "name": "Sources",
+            "url": "/ui/sources"
+        },
+        {
+            "name": "Logical Channels",
+            "url": "/ui/logical-channels"
+        }
+    ],
+    "icons": [
+        {
+            "src": "icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
+    ],
+    "screenshots": [
+        {
+            "src": "screenshots/dashboard.png",
+            "sizes": "1920x1080",
+            "type": "image/png",
+            "form_factor": "wide",
+            "label": "Dashboard"
+        },
+        {
+            "src": "screenshots/logical-channels.png",
+            "sizes": "1920x1080",
+            "type": "image/png",
+            "form_factor": "wide",
+            "label": "Logical Channels"
+        },
+        {
+            "src": "screenshots/logical-channels-edit-preview.png",
+            "sizes": "1920x1080",
+            "type": "image/png",
+            "form_factor": "wide",
+            "label": "Edit Logical Channel With Preview"
+        },
+        {
+            "src": "screenshots/dashboard-mobile.png",
+            "sizes": "1290x2587",
+            "type": "image/png",
+            "form_factor": "narrow",
+            "label": "Dashboard Mobile"
+        }
+    ]
+}

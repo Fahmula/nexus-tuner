@@ -7,7 +7,7 @@
 
 > [!TIP]
 > **Key Features:**
-> * **Web-Based UI:** A modern, user-friendly UI to manage providers, create logical channels, map sources, and view application logs. Mapping channels has never been easier with automatic suggestions and prefilled data to make the setup process frictionless. Additionally, sources mapped to other logical channels will be marked as `In Use` or `Duplicated` if it's also mapped to the current channel.
+> * **Web-Based UI:** A modern, user-friendly UI with PWA support to manage providers, create logical channels, map sources, and view application logs. Mapping channels has never been easier with automatic suggestions and prefilled data to make the setup process frictionless. Additionally, sources mapped to other logical channels will be marked as `In Use` or `Duplicated` if it's also mapped to the current channel.
 > * **M3U Aggregation:** Combine multiple IPTV provider playlists into one unified and consistent channel lineup. Each provider can be configured with their maximum concurrent streams, which `NexusTuner` will manage intelligently.
 > * **`In-Browser Previews:`** Easily preview streams directly in your browser while configuring channels or from the `Sources` page. No more guesswork and fiddling with external players to check stream region and language.
 > * **`Automatic Quality Monitoring:`** `NexusTuner` continuously monitors the health of each source along with its resolution, bitrate, and framerate. No more endless tinkering to find the best source, just select them all and `NexusTuner` automatically chooses the highest quality and most reliable stream from your configured sources when a channel is requested.
@@ -19,13 +19,16 @@
 
 
 ## Dashboard
-<img width="1920" height="911" alt="NexusTuner Dashboard" src="public/screenshots/dashboard.png"/>
+<img width="1920" height="1080" alt="NexusTuner Dashboard" src="public/screenshots/dashboard.png"/>
 
 ## Logical Channels
-<img width="1920" height="911" alt="NexusTuner Logical Channels" src="public/screenshots/logical_channels.png"/>
+<img width="1920" height="1080" alt="NexusTuner Logical Channels" src="public/screenshots/logical-channels.png"/>
 
-## Edit Logical Channel
-<img width="1920" height="911" alt="NexusTuner Edit Logical Channel Preview" src="public/screenshots/logical_channels_edit_preview.png"/>
+## Edit Logical Channel With Preview
+<img width="1920" height="1080" alt="NexusTuner Edit Logical Channel Preview" src="public/screenshots/logical-channels-edit-preview.png"/>
+
+## Dashboard Mobile
+<img width="1290" height="2587" alt="NexusTuner Dashboard Mobile" src="public/screenshots/dashboard-mobile.png"/>
 
 ## Getting Started
 
