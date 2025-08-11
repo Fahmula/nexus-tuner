@@ -49,11 +49,15 @@ class MPEGTSStream:
         if video_key not in cls.streams:  # If stream is cancelled, still choose it to prevent dual ownership
             instance = cls(config, stream_manager, video_key, recreate_stream)
             cls.streams[video_key] = instance
-            await instance._initialize()
+            try:
+                await instance._initialize()
+            except:
+                del cls.streams[video_key]
+                raise
         else:
             instance = cls.streams[video_key]
         return instance, instance._register()
-        
+
     def _register(self) -> ReaderId:
         """Register a new reader for the MPEGTS stream and return its ID."""
         reader_id = ReaderId(max(self._reader_positions.keys(), default=-1) + 1)
@@ -65,7 +69,7 @@ class MPEGTSStream:
         del self._reader_positions[reader_id]
         if not len(self._reader_positions):
             self.config.info(VideoType.MPEGTS, f"Inactive MPEGTS stream for '{self.video_key}' as no readers are registered.")
-            await self._shutdown()
+            self.shutdown()
 
     def unregister(self, reader_id: ReaderId) -> None:
         """Unregister a reader from the MPEGTS stream, will stop the stream if no readers are left."""
@@ -101,6 +105,8 @@ class MPEGTSStream:
                         self._event.set()
                         self._event = asyncio.Event()
                 except Exception as e:
+                    if self._cancelled:
+                        raise asyncio.CancelledError()
                     self.config.error(VideoType.MPEGTS, f"Error reading from MPEGTS stream for '{process_info['logical_channel_title']}' with key '{self.video_key}': {e}")
                     await self.stream_manager.stop_ffmpeg_process(self.video_key, process_info["logical_channel_title"])
                     res = await self.recreate_stream()
@@ -122,7 +128,7 @@ class MPEGTSStream:
             raise
         finally:  # Don't stop early incase the user reconnects, let the timeout handle it
             async def bg_cleanup() -> None:
-                await self._shutdown()
+                self.shutdown()
                 async with self.stream_manager.stream_process_lock:
                     cast(FFmpegProcessInfoMutable, process_info)["last_access"] = datetime.now() - timedelta(seconds=self.config.segment_prune_timeout)  # Elligible for pruning immediately
                     cast(FFmpegProcessInfoMutable, process_info)["is_mpegts_active"] = False
@@ -144,7 +150,7 @@ class MPEGTSStream:
                 for reader_id in self._reader_positions:
                     self._reader_positions[reader_id] = max(0, self._reader_positions[reader_id] - dropped)
 
-    async def _shutdown(self) -> None:
+    def shutdown(self) -> None:
         """Cancel the MPEGTS stream, cleaning up resources and stopping the writer task."""
         self._cancelled = True  # Let the stdout reader finish gracefully incase we will reconnect
         self._cleaner.cancel()

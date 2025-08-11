@@ -10,7 +10,9 @@ StreamManager, GhostSessionMonitor) and defines all the web routes for:
 - A manual reload endpoint.
 """
 
+import signal
 import sys
+from types import FrameType
 if sys.version_info < (3, 13):
     raise RuntimeError("NexusTuner requires Python 3.13 or higher.")
 
@@ -80,6 +82,34 @@ async def startup() -> None:
     except BaseException as e:
         print(f"FATAL: Could not initialize application: {e}", file=sys.stderr)
         sys.exit(1)
+
+    global prev_sigterm_handler, prev_sigint_handler, prev_sighup_handler, prev_sigquit_handler
+    prev_sigterm_handler = signal.signal(signal.SIGTERM, handle_signal)
+    prev_sigint_handler = signal.signal(signal.SIGINT, handle_signal)
+    prev_sighup_handler = signal.signal(signal.SIGHUP, handle_signal)
+    prev_sigquit_handler = signal.signal(signal.SIGQUIT, handle_signal)
+
+
+prev_sigterm_handler = signal.getsignal(signal.SIGTERM)
+prev_sigint_handler = signal.getsignal(signal.SIGINT)
+prev_sighup_handler = signal.getsignal(signal.SIGHUP)
+prev_sigquit_handler = signal.getsignal(signal.SIGQUIT)
+
+
+def handle_signal(signum: int, frame: FrameType | None) -> None:
+    """Handles termination signals to gracefully shut down the application."""
+    sig = signal.Signals(signum)
+    config.info(Label.SERVER, f"Received {sig.name}, shutting down NexusTuner v{NEXUS_TUNER_VERSION}...")
+    for mpegts_stream in MPEGTSStream.streams.values():
+        mpegts_stream.shutdown()
+    if sig == signal.SIGTERM and callable(prev_sigterm_handler):
+        prev_sigterm_handler(sig, frame)
+    elif sig == signal.SIGINT and callable(prev_sigint_handler):
+        prev_sigint_handler(sig, frame)
+    elif sig == signal.SIGHUP and callable(prev_sighup_handler):
+        prev_sighup_handler(sig, frame)
+    elif sig == signal.SIGQUIT and callable(prev_sigquit_handler):
+        prev_sigquit_handler(sig, frame)
 
 
 @app.after_serving
@@ -184,7 +214,7 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
             async def recreate_stream() -> Response | VideoKey:
                 return await serve_mpegts_stream(logical_channel_id, stream_response=False)
             try:
-                mpegts_stream, reader_id = await MPEGTSStream.register(config, stream_manager, video_key, recreate_stream=recreate_stream)
+                mpegts_stream, reader_id = await MPEGTSStream.register(config, stream_manager, video_key, recreate_stream)
             except Exception as e:
                 msg = f"Failed to register MPEGTS stream for '{logical_channel_title}' with key '{video_key}': {e}"
                 config.error(VideoType.MPEGTS, msg)
@@ -195,7 +225,6 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
                     yield await mpegts_stream.read(reader_id)
             except asyncio.CancelledError as e:
                 config.info(VideoType.MPEGTS, f"Client disconnected from MPEGTS stream for '{logical_channel_title}'.")
-                raise
             except BaseException as e:
                 config.error(VideoType.MPEGTS, f"Unexpected error in MPEGTS stream for '{logical_channel_title}': {e}")
                 raise
