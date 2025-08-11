@@ -145,7 +145,7 @@ Schedule `NexusTuner` to run on startup using your system's service manager (e.g
   * If a source is mapped to another logical channel, it will be marked as `In Use` or `Duplicated` if it's also mapped to the current channel.
   * You can optionally trigger an early run of `Quality Monitor` for this channel only if you'd like to start using it immediately.
 
-### Configuring Your Meida Clients
+### Configuring Your Media Clients
 
 > [!NOTE]
 > `NexusTuner` supports unlimited simultaneous streams for the same channel, even if your media client does not support it natively. Also, if a source dies during viewing, it will automatically failover to the next best source.
