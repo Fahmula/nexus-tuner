@@ -211,6 +211,43 @@
             background-color: rgba(0, 0, 0, 0.15);
             color: inherit;
         }
+
+        /* Prevent modal from removing scrollbar */
+        body.modal-open {
+            padding-right: 0 !important;
+            overflow: auto !important;
+        }
+
+        /* Ensure backdrop still works properly */
+        .modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 1050;
+            width: 100vw;
+            height: 100vh;
+            background-color: #000;
+        }
+
+        /* Prevent Bootstrap from adding padding to fixed elements */
+        .modal-open .navbar,
+        .modal-open #provider-status-bar {
+            padding-right: calc(var(--bs-gutter-x, 0.75rem) + var(--scrollbar-width)) !important;
+        }
+
+        /* Override Bootstrap's modal padding calculations */
+        .modal-open .fixed-top,
+        .modal-open .fixed-bottom,
+        .modal-open .is-fixed,
+        .modal-open .sticky-top {
+            padding-right: 0 !important;
+        }
+
+        /* Ensure the navbar and status bar themselves don't get extra padding */
+        .modal-open .navbar,
+        .modal-open #provider-status-bar {
+            padding-right: 0 !important;
+        }
     </style>
 </head>
 
@@ -266,8 +303,8 @@
     </nav>
 
     <div class="container-fluid" id="provider-status-bar" hx-get="{{ url_for('ui_provider_status') }}"
-        hx-trigger="load, every 1s" hx-swap="innerHTML">
-        <span class="text-muted small">Loading provider status...</span>
+        hx-trigger="load, every 1s" hx-swap="innerHTML settle:0ms" hx-sync="this:replace">
+        <span class="text-muted small text-center d-block">Loading provider status...</span>
     </div>
 
     <main class="container mt-4 mb-5 flex-shrink-0">
