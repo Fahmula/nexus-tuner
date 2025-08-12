@@ -698,10 +698,9 @@ class ChannelHandler:
         """Returns a tuple of tuples containing channel list groups."""
         return tuple(tuple(c for c in v) for v in self._channel_list_data.values())  # No mutex since we never modify this data
 
-    async def find_matching_predefined_channel(self, channel_name: LogicalChannelTitle, channel_num: ChannelNum) -> ChannelListInfo | None:
+    def find_matching_predefined_channel(self, channel_name: LogicalChannelTitle, channel_num: ChannelNum) -> ChannelListInfo | None:
         """Finds a matching predefined channel based on name or number."""
-        async with self._mutex:
-            predefined_channel_lists = self.get_channel_lists()
+        predefined_channel_lists = self.get_channel_lists()
         for channel_list in predefined_channel_lists:
             for pre_channel in channel_list:
                 if channel_name == pre_channel["title"]: return pre_channel
@@ -721,7 +720,34 @@ class ChannelHandler:
                 if channel_num == pre_channel["num"]: return pre_channel
         return None
 
-    async def search_predefined_channels(self, raw_query: str) -> list[ChannelListGroup]:
+    async def search_predefined_channel_nums(self, raw_query: str) -> list[ChannelListGroup]:
+        """Searches the predefined channel lists for channels matching the number."""
+        if not raw_query:
+            return []
+        query_num = raw_query.strip()
+        matches: list[ChannelListGroup] = []
+        for group, channels in (await self.copy_channel_list_data()).items():
+            for channel in channels:
+                if query_num in channel["num"]:
+                    matches.append({**channel, 'group': group})
+
+        def sort_key(x: ChannelListGroup) -> tuple[int, float, str, str]:
+            channel_num = x["num"]
+            channel_title = x["title"]
+            if channel_num == query_num:
+                return (0, 0, channel_num, channel_title)  # Exact match gets highest priority
+            elif channel_num.startswith(query_num):
+                return (1, len(channel_num), channel_num, channel_title)  # Prefix match, shorter numbers first
+            else:
+                try:
+                    return (2, float(channel_num), channel_num, channel_title)  # Convert to float for proper numeric sorting
+                except ValueError:
+                    return (2, float('inf'), channel_num, channel_title)  # Non-numeric
+        
+        matches.sort(key=sort_key)
+        return matches[:10]
+
+    async def search_predefined_channel_names(self, raw_query: str) -> list[ChannelListGroup]:
         """Searches the predefined channel lists for channels matching the query."""
         if not raw_query:
             return []

@@ -653,7 +653,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     
     search_query = request.args.get('search_query')
     if channel and search_query is None and not is_htmx_source_list_request:
-        predefined_channel = await handler.find_matching_predefined_channel(channel['logical_channel_title'], channel['channel_num'])
+        predefined_channel = handler.find_matching_predefined_channel(channel['logical_channel_title'], channel['channel_num'])
         if predefined_channel:
             search_query = MULTI_SEARCH_QUERY_DELIMITER.join(predefined_channel['aliases']) if predefined_channel["aliases"] else predefined_channel["title"]
 
@@ -880,18 +880,21 @@ async def ui_channel_populate_from_suggestion() -> str:
     oob_search_card = f'<div id="source-mapping-section" hx-swap-oob="innerHTML">{search_card_html}</div>'
 
     # 5. OOB swap to clear the suggestion dropdown
-    clear_suggestions_html = '<div id="suggestion-box" hx-swap-oob="true"></div>'
+    clear_title_suggestions_html = '<div id="channel-title-suggestion-box" hx-swap-oob="true"></div>'
+    clear_num_suggestions_html = '<div id="channel-num-suggestion-box" hx-swap-oob="true"></div>'
 
-    return form_html + oob_search_card + clear_suggestions_html
+    return form_html + oob_search_card + clear_title_suggestions_html + clear_num_suggestions_html
 
 
 @app.route("/ui/channels/suggest", methods=["GET"])
 async def ui_channel_suggest() -> str:
-    logical_channel_id = request.args.get('logical_channel_id')
-    query = request.args.get('logical_channel_title', '')
-    if len(query) < 2: return ""
-    suggestions = await handler.search_predefined_channels(query)
-    return await render_template("_channel_suggestions.html", logical_channel_id=logical_channel_id, suggestions=suggestions)
+    if len(query := request.args.get('logical_channel_title', '')) > 2:
+        suggestions = await handler.search_predefined_channel_names(query)
+    elif len(query := request.args.get('channel_num', '')) > 0:
+        suggestions = await handler.search_predefined_channel_nums(query)
+    else:
+        return ""
+    return await render_template("_channel_suggestions.html", logical_channel_id=request.args.get('logical_channel_id'), suggestions=suggestions)
 
 
 @app.route("/ui/logs/modal/<int:num_lines>")

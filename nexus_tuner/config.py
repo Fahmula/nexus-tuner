@@ -511,6 +511,8 @@ class Config:
                         if key2 not in item:
                             raise ValueError(f'"{key1}" - item {index} - missing required key "{key2}"')
                         val2 = item[key2]
+                        if not val2:
+                            raise ValueError(f'"{key1}" - item {index} - "{key2}": cannot be empty')
                         if key2 == "num":
                             if type(val2) is not str:
                                 raise ValueError(f'"{key1}" - item {index} - "num": expected str, got {val2}')

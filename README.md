@@ -140,7 +140,7 @@ Schedule `NexusTuner` to run on startup using your system's service manager (e.g
 * Navigate to the **Providers** page and add your M3U source providers.
   * Return to the Dashboard and click `Reload Providers & Sources` to discover the sources from your configured providers.
 * Navigate to the **Logical Channels** page to create your desired channel lineup.
-  * As you type in the channel name, `NexusTuner` will display suggestions to prefill the channel data.
+  * As you type in the channel name or number, `NexusTuner` will display suggestions to prefill the channel data.
   * You can map as many sources as you like. You can also preview each source to ensure they are correct.
   * If a source is mapped to another logical channel, it will be marked as `In Use` or `Duplicated` if it's also mapped to the current channel.
   * You can optionally trigger an early run of `Quality Monitor` for this channel only if you'd like to start using it immediately.

@@ -2,19 +2,26 @@
     <div class="mb-3" style="position: relative;">
         <label for="logical_channel_title" class="form-label">Channel Title</label>
         <input type="text" class="form-control" id="logical_channel_title" name="logical_channel_title"
-            value="{{ channel.logical_channel_title if channel else '' }}" required {# SIMPLIFIED: Only targets its own
-            suggestion box now. #} hx-get="{{ url_for('ui_channel_suggest', logical_channel_id=channel.logical_channel_id if channel else None) }}"
-            hx-trigger="input changed delay:500ms, search" hx-target="#suggestion-box" hx-indicator="#search-indicator"
-            autocomplete="off">
+            value="{{ channel.logical_channel_title if channel else '' }}" required
+            hx-get="{{ url_for('ui_channel_suggest', logical_channel_id=channel.logical_channel_id if channel else None) }}"
+            hx-trigger="input changed delay:500ms, search" hx-target="#channel-title-suggestion-box"
+            hx-indicator="#search-indicator" autocomplete="off">
         <div class="form-text">Start typing to search for a pre-defined channel. <span id="search-indicator"
-                class="htmx-indicator spinner-border spinner-border-sm"></span></div>
-        <div id="suggestion-box" class="list-group mt-1 position-absolute" style="z-index: 1000; width: 100%;"></div>
+            class="htmx-indicator spinner-border spinner-border-sm"></span></div>
+        <div id="channel-title-suggestion-box" class="list-group mt-1 position-absolute" style="z-index: 1000; width: 100%;"></div>
     </div>
 
-    <div class="mb-3">
+    <div class="mb-3" style="position: relative;">
         <label for="channel_num" class="form-label">Channel Number</label>
         <input type="text" class="form-control" id="channel_num" name="channel_num"
-            value="{{ channel.channel_num if channel else '' }}" required>
+            value="{{ channel.channel_num if channel else '' }}" required
+            hx-get="{{ url_for('ui_channel_suggest', logical_channel_id=channel.logical_channel_id if channel else None) }}"
+            hx-trigger="input changed delay:500ms, search" hx-target="#channel-num-suggestion-box"
+            hx-indicator="#channel-num-search-indicator" autocomplete="off">
+        <div class="form-text">Start typing to search for a pre-defined channel. <span id="channel-num-search-indicator"
+            class="htmx-indicator spinner-border spinner-border-sm"></span></div>
+        <div id="channel-num-suggestion-box" class="list-group mt-1 position-absolute" style="z-index: 1000; width: 100%;">
+        </div>
     </div>
 
     <div class="mb-3">
