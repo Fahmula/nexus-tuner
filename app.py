@@ -38,7 +38,7 @@ from nexus_tuner.quality_monitor import QualityMonitor
 from nexus_tuner.session_monitor import GhostSessionMonitor
 from nexus_tuner.stream import StreamManager
 from nexus_tuner.scheduler import Scheduler
-from nexus_tuner.utils import (VideoKey, background_tasks, CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL,
+from nexus_tuner.utils import (LogicalChannelFormDetails, VideoKey, background_tasks, CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL,
                                 DEFAULT_PRIORITY, M3UURL, NEXUS_TUNER_PORT, NEXUS_TUNER_VERSION, ChannelNum, DiscoveredSource,
                                 Label, LogicalChannelId, LogicalChannelInfo, LogicalChannelInfoWithId, LogicalChannelMetrics, LogicalChannelTitle, MaxStreams, 
                                 PercentDisplay, Priority, ProviderAlias, ProviderStatus, QualityScores, SourceInfo, SourceMappingInfoWithId, SourceMetrics,
@@ -46,9 +46,9 @@ from nexus_tuner.utils import (VideoKey, background_tasks, CREATE_STREAM_DEADLIN
 
 # --- Constants ---
 PLAYLIST_POLL_INTERVAL: Final[float] = 0.2         # Seconds to wait between checking for a new playlist
-UI_SEARCH_MIN_CHARS: Final[int] = 3                # Minimum characters for a UI search
-UI_SEARCH_MAX_RESULTS: Final[int] = 50             # Max results to return in a UI search
 HIGHEST_PRIORITY_SOURCES_NUM: Final[int] = 8       # Maximum number of sources to consider for quality metrics
+NUM_SOURCES_PER_PAGE: Final[int] = 100             # Number of sources to display per page in the UI
+MIN_CHARS_FOR_SEARCH: Final[int] = 3               # Minimum characters for search queries
 MULTI_SEARCH_QUERY_DELIMITER: Final[str] = " OR "  # Delimiter for multi-word search queries
 
 # --- App Initialization ---
@@ -151,6 +151,62 @@ def filter_sources(raw_query: str, discovered_source: DiscoveredSource) -> bool:
         if all(word in tvg_name or word in display_title for word in words):
             return True
     return False
+
+
+async def calculate_logical_channel_form_details(*, logical_channel_id: LogicalChannelId | None, search_query: str | None, filter_query: str | None, current_page: int) -> LogicalChannelFormDetails:
+    all_quality_scores = await quality_monitor.get_quality_scores()
+    current_mappings = await handler.get_channel_mappings_for_ui(logical_channel_id) if logical_channel_id else []
+    sort_sources(current_mappings, all_quality_scores, reverse=False)
+    channel_metrics = await calculate_channel_metrics(current_mappings, all_quality_scores)
+
+    all_discovered_sources = await handler.get_discovered_sources_for_ui()
+    all_sources_map = {s['source_id']: s for s in all_discovered_sources}
+
+    mapped_sources: list[DiscoveredSource] = []
+    all_mapped_source_ids: set[SourceId] = set()
+    all_source_metrics: dict[SourceId, SourceMetrics] = {}
+    for mapping in current_mappings:
+        source_id = mapping['source_id']
+        all_mapped_source_ids.add(source_id)
+        if source_id in all_sources_map:
+            source_details = all_sources_map[source_id].copy()
+            mapped_sources.append(source_details)
+            raw_score = all_quality_scores.get(source_id, {}).get('uptime', None)
+            all_source_metrics[source_id] = SourceMetrics({
+                "priority": mapping["priority"],
+                "uptime": PercentDisplay(int(raw_score * 100)) if raw_score is not None else None
+            })
+    
+    unmapped_sources: list[DiscoveredSource] = []
+    if filter_query and search_query:
+        for discovered_source in all_discovered_sources:
+            if discovered_source['source_id'] not in all_mapped_source_ids and filter_sources(search_query, discovered_source):
+                unmapped_sources.append(discovered_source)
+                source_id = discovered_source['source_id']
+                raw_score = all_quality_scores.get(source_id, {}).get('uptime', None)
+                all_source_metrics[source_id] = SourceMetrics({
+                    "priority": Priority(DEFAULT_PRIORITY),
+                    "uptime": PercentDisplay(int(raw_score * 100)) if raw_score is not None else None
+                })
+    
+    total_unmapped_sources = len(unmapped_sources)
+    total_pages = math.ceil(total_unmapped_sources / NUM_SOURCES_PER_PAGE) if NUM_SOURCES_PER_PAGE > 0 else 1
+    if current_page < 1:
+        current_page = 1
+    elif current_page > total_pages and total_pages > 0:
+        current_page = total_pages
+    start_index = (current_page - 1) * NUM_SOURCES_PER_PAGE
+    unmapped_sources_for_page = unmapped_sources[start_index:start_index + NUM_SOURCES_PER_PAGE]
+
+    return LogicalChannelFormDetails(
+        channel_metrics=channel_metrics,
+        all_source_metrics=all_source_metrics,
+        mapped_sources=mapped_sources,
+        unmapped_sources_for_page=unmapped_sources_for_page,
+        total_unmapped_sources=total_unmapped_sources,
+        total_pages=total_pages,
+        current_page=current_page
+    )
 
 
 @app.context_processor
@@ -529,7 +585,7 @@ async def ui_provider_status() -> str:
 
 @app.route("/ui/sources")
 async def ui_sources_list() -> str:
-    per_page = request.args.get('per_page', 100, type=int)
+    per_page = request.args.get('per_page', NUM_SOURCES_PER_PAGE, type=int)
     page = request.args.get('page', 1, type=int)
     sources_unfiltered = await handler.get_discovered_sources_for_ui()
     providers = sorted(list(set(s['provider_alias'] for s in sources_unfiltered)))
@@ -555,6 +611,24 @@ async def ui_logical_channels_list() -> str:
         all_channel_metrics[channel["logical_channel_id"]] = await calculate_channel_metrics(mapped_sources, all_quality_scores)
 
     return await render_template("ui_logical_channels.html", channels=channels, all_channel_metrics=all_channel_metrics)
+
+
+@app.route("/ui/logical-channels/delete/<string:logical_channel_id>", methods=["POST"])
+async def ui_logical_channel_delete(logical_channel_id: LogicalChannelId) -> Response | WerkzeugResponse:
+    channel = await handler.get_logical_channel_by_id(logical_channel_id)
+    if channel:
+        channel_log = f"'{channel['logical_channel_title']}' ({channel['channel_num']})"
+        if await handler.delete_logical_channel(logical_channel_id):
+            config.info(Label.SERVER, f"Channel {channel_log} deleted successfully.")
+            await flash(f"Channel {channel_log} deleted.", "success")
+            await handler.reload_handler_config()
+        else:
+            config.error(Label.SERVER, f"Failed to delete logical channel {channel_log}.")
+            await flash(f"Error deleting channel {channel_log}.", "error")
+    else:
+        config.warn(Label.SERVER, f"Logical Channel with ID '{logical_channel_id}' not found for deletion.")
+        await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "warning")
+    return redirect(url_for('ui_logical_channels_list'))
 
 
 @app.route("/ui/logical-channels/form/", methods=["GET", "POST"])
@@ -656,76 +730,98 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
         predefined_channel = handler.find_matching_predefined_channel(channel['logical_channel_title'], channel['channel_num'])
         if predefined_channel:
             search_query = MULTI_SEARCH_QUERY_DELIMITER.join(predefined_channel['aliases']) if predefined_channel["aliases"] else predefined_channel["title"]
-
     filter_query = search_query.strip().lower() if search_query else None
-    all_discovered_sources = await handler.get_discovered_sources_for_ui()
-    all_quality_scores = await quality_monitor.get_quality_scores()
-
-    all_sources_map = {s['source_id']: s for s in all_discovered_sources}
-    mapped_sources: list[DiscoveredSource] = []
-    all_mapped_source_ids: set[SourceId] = set()
-    all_source_metrics: dict[SourceId, SourceMetrics] = {}
-    current_mappings = await handler.get_channel_mappings_for_ui(logical_channel_id) if logical_channel_id else []
-    sort_sources(current_mappings, all_quality_scores, reverse=False)
-    for mapping in current_mappings:
-        source_id = mapping['source_id']
-        all_mapped_source_ids.add(source_id)
-        if source_id in all_sources_map:
-            source_details = all_sources_map[source_id].copy()
-            raw_score = all_quality_scores.get(source_id, {}).get('uptime', None)
-            all_source_metrics[source_id] = SourceMetrics({
-                "priority": mapping["priority"],
-                "uptime": PercentDisplay(int(raw_score * 100)) if raw_score is not None else None
-            })
-            mapped_sources.append(source_details)
-    channel_metrics = await calculate_channel_metrics(current_mappings, all_quality_scores)
-    
-    unmapped_suggestions: list[DiscoveredSource] = []
-    if filter_query and search_query:
-        for discovered_source in all_discovered_sources:
-            if discovered_source['source_id'] not in all_mapped_source_ids and filter_sources(search_query, discovered_source):
-                source_id = discovered_source['source_id']
-                raw_score = all_quality_scores.get(source_id, {}).get('uptime', None)
-                all_source_metrics[source_id] = SourceMetrics({
-                    "priority": Priority(DEFAULT_PRIORITY),
-                    "uptime": PercentDisplay(int(raw_score * 100)) if raw_score is not None else None
-                })
-                unmapped_suggestions.append(discovered_source)
-
-    page = request.args.get('page', 1, type=int)
-    per_page = 100
-    total_unmapped_items = len(unmapped_suggestions)
-    total_pages = math.ceil(total_unmapped_items / per_page) if per_page > 0 else 1
-    start_index = (page - 1) * per_page
-    unmapped_suggestions_for_page = unmapped_suggestions[start_index:start_index + per_page]
+    logical_channel_form_details = await calculate_logical_channel_form_details(
+        logical_channel_id=logical_channel_id,
+        search_query=search_query,
+        filter_query=filter_query,
+        current_page=request.args.get('page', 1, type=int),
+    )
 
     template_to_render = "_source_list_content.html" if is_htmx_source_list_request else "ui_logical_channel_form.html"
-
     return await render_template(
-        template_to_render, channel=channel, channel_metrics=channel_metrics, all_source_metrics=all_source_metrics,
-        unmapped_suggestions_for_page=unmapped_suggestions_for_page,
-        mapped_sources=mapped_sources, sources_mapped_elsewhere=await handler.get_sources_mapped_elsewhere(logical_channel_id),
-        current_page=page, total_pages=total_pages, total_unmapped_items=total_unmapped_items,
-        search_query=search_query, filter_query=filter_query,
+        template_to_render,
+        channel=channel,
+        channel_metrics=logical_channel_form_details["channel_metrics"],
+        all_source_metrics=logical_channel_form_details["all_source_metrics"],
+        unmapped_sources_for_page=logical_channel_form_details["unmapped_sources_for_page"],
+        mapped_sources=logical_channel_form_details["mapped_sources"],
+        sources_mapped_elsewhere=await handler.get_sources_mapped_elsewhere(logical_channel_id),
+        current_page=logical_channel_form_details["current_page"],
+        total_pages=logical_channel_form_details["total_pages"],
+        total_unmapped_sources=logical_channel_form_details["total_unmapped_sources"],
+        search_query=search_query,
+        filter_query=filter_query,
     )
 
 
-@app.route("/ui/logical-channels/delete/<string:logical_channel_id>", methods=["POST"])
-async def ui_logical_channel_delete(logical_channel_id: LogicalChannelId) -> Response | WerkzeugResponse:
-    channel = await handler.get_logical_channel_by_id(logical_channel_id)
-    if channel:
-        channel_log = f"'{channel['logical_channel_title']}' ({channel['channel_num']})"
-        if await handler.delete_logical_channel(logical_channel_id):
-            config.info(Label.SERVER, f"Channel {channel_log} deleted successfully.")
-            await flash(f"Channel {channel_log} deleted.", "success")
-            await handler.reload_handler_config()
-        else:
-            config.error(Label.SERVER, f"Failed to delete logical channel {channel_log}.")
-            await flash(f"Error deleting channel {channel_log}.", "error")
+@app.route("/ui/channels/populate-from-suggestion")
+async def ui_channel_populate_from_suggestion() -> str:
+    """
+    Called when a user clicks a channel suggestion.
+    Returns multiple OOB fragments to:
+    1. Populate the channel details form.
+    2. Populate the source mapping card with pre-filtered results.
+    3. Clear the suggestion dropdown.
+    """
+    prefilled_data: dict[str, str] = {
+        'logical_channel_id': request.args.get('logical_channel_id', ''),
+        'logical_channel_title': request.args.get('title', ''),
+        'channel_num': request.args.get('num', ''),
+        'group_title': request.args.get('group', 'Uncategorized'),
+    }
+    form_html = await render_template("_logical_channel_form_fields.html", channel=prefilled_data)
+    logical_channel_id = LogicalChannelId(prefilled_data['logical_channel_id']) or None
+
+    search_query = prefilled_data['logical_channel_title']
+    for group, channel_list in handler.copy_channel_list_data().items():
+        for pre_channel in channel_list:
+            if prefilled_data['logical_channel_title'] != pre_channel["title"]:
+                continue
+            if prefilled_data['channel_num'] != pre_channel["num"]:
+                continue
+            if prefilled_data['group_title'] != group:
+                continue
+            search_query = MULTI_SEARCH_QUERY_DELIMITER.join(pre_channel["aliases"])
+            break
+    filter_query = prefilled_data['logical_channel_title'].strip().lower()
+    logical_channel_form_details = await calculate_logical_channel_form_details(
+        logical_channel_id=logical_channel_id,
+        search_query=search_query,
+        filter_query=filter_query,
+        current_page=1,
+    )
+
+    search_card_html = await render_template(
+        "_source_mapping_card.html",
+        channel=(await handler.get_logical_channel_with_id(logical_channel_id) or {}) if logical_channel_id else {},
+        channel_metrics=logical_channel_form_details["channel_metrics"],
+        all_source_metrics=logical_channel_form_details["all_source_metrics"],
+        unmapped_sources_for_page=logical_channel_form_details["unmapped_sources_for_page"],
+        mapped_sources=logical_channel_form_details["mapped_sources"],
+        sources_mapped_elsewhere=await handler.get_sources_mapped_elsewhere(logical_channel_id),
+        current_page=logical_channel_form_details["current_page"],
+        total_pages=logical_channel_form_details["total_pages"],
+        total_unmapped_sources=logical_channel_form_details["total_unmapped_sources"],
+        search_query=search_query,
+        filter_query=filter_query,
+    )
+    oob_search_card = f'<div id="source-mapping-section" hx-swap-oob="innerHTML">{search_card_html}</div>'
+    clear_title_suggestions_html = '<div id="channel-title-suggestion-box" hx-swap-oob="true"></div>'
+    clear_num_suggestions_html = '<div id="channel-num-suggestion-box" hx-swap-oob="true"></div>'
+
+    return form_html + oob_search_card + clear_title_suggestions_html + clear_num_suggestions_html
+
+
+@app.route("/ui/channels/suggest", methods=["GET"])
+async def ui_channel_suggest() -> str:
+    if len(query := request.args.get('logical_channel_title', '')) >= MIN_CHARS_FOR_SEARCH:
+        suggestions = handler.search_predefined_channel_names(query)
+    elif len(query := request.args.get('channel_num', '')) > 0:
+        suggestions = handler.search_predefined_channel_nums(query)
     else:
-        config.warn(Label.SERVER, f"Logical Channel with ID '{logical_channel_id}' not found for deletion.")
-        await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "warning")
-    return redirect(url_for('ui_logical_channels_list'))
+        return ""
+    return await render_template("_channel_suggestions.html", logical_channel_id=request.args.get('logical_channel_id'), suggestions=suggestions)
 
 
 @app.route("/ui/logical-channels/analyze-mappings/<string:logical_channel_id>", methods=["POST"])
@@ -803,98 +899,6 @@ async def ui_remove_dead_mappings(logical_channel_id: LogicalChannelId) -> Respo
     response.headers["HX-Refresh"] = "true"
     response.headers["HX-Trigger"] = "flashMessagesUpdated"
     return response
-
-
-@app.route("/ui/channels/populate-from-suggestion")
-async def ui_channel_populate_from_suggestion() -> str:
-    """
-    Called when a user clicks a channel suggestion.
-    Returns multiple OOB fragments to:
-    1. Populate the channel details form.
-    2. Populate the source mapping card with pre-filtered results.
-    3. Clear the suggestion dropdown.
-    """
-    # 1. Populate the channel details form with pre-filled data
-    id_str = request.args.get('logical_channel_id')
-    logical_channel_id = LogicalChannelId(id_str) if id_str else None
-    prefilled_data = {
-        'logical_channel_title': request.args.get('title', ''),
-        'channel_num': request.args.get('num', ''),
-        'group_title': request.args.get('group', 'Uncategorized'),
-        'tvg_logo': ''
-    }
-    form_html = await render_template("_logical_channel_form_fields.html", channel=prefilled_data)
-
-    # 2. Pre-filter sources based on the suggested name
-    filter_query = prefilled_data['logical_channel_title'].strip().lower()
-    all_discovered_sources = await handler.get_discovered_sources_for_ui()
-    unmapped_suggestions: list[DiscoveredSource] = []
-    current_mappings = await handler.get_channel_mappings_for_ui(logical_channel_id) if logical_channel_id else []
-    all_quality_scores = await quality_monitor.get_quality_scores()
-    sort_sources(current_mappings, all_quality_scores, reverse=False)
-    channel_metrics = await calculate_channel_metrics(current_mappings, all_quality_scores)
-
-    search_query = prefilled_data['logical_channel_title']
-    for channel_list in handler.get_channel_lists():
-        for pre_channel in channel_list:
-            if search_query == pre_channel["title"]:  # Only need this check since we are populating this
-                search_query = MULTI_SEARCH_QUERY_DELIMITER.join(pre_channel["aliases"])
-                break
-
-    if filter_query:
-        for discovered_source in all_discovered_sources:
-            if filter_sources(search_query, discovered_source):
-                unmapped_suggestions.append(discovered_source)
-
-    all_source_metrics: dict[SourceId, SourceMetrics] = {}
-    for discovered_source in all_discovered_sources:
-        source_id = discovered_source["source_id"]
-        raw_score = all_quality_scores.get(source_id, {}).get('uptime', None)
-        all_source_metrics[source_id] = SourceMetrics({
-            "priority": Priority(DEFAULT_PRIORITY),
-            "uptime": PercentDisplay(int(raw_score * 100)) if raw_score is not None else None
-        })
-
-    # 3. Paginate the pre-filtered results
-    page = 1
-    per_page = 100
-    total_unmapped_items = len(unmapped_suggestions)
-    total_pages = math.ceil(total_unmapped_items / per_page) if per_page > 0 else 1
-    unmapped_suggestions_for_page = unmapped_suggestions[:per_page]
-
-    # 4. OOB swap to update the entire source mapping card, now with data.
-    search_card_html = await render_template(
-        "_source_mapping_card.html",
-        search_query=search_query,
-        channel={},
-        channel_metrics=channel_metrics,
-        all_source_metrics=all_source_metrics,
-        unmapped_suggestions_for_page=unmapped_suggestions_for_page,
-        mapped_sources=[], # New channel has no mapped sources
-        sources_mapped_elsewhere=await handler.get_sources_mapped_elsewhere(logical_channel_id),
-        current_page=page,
-        total_pages=total_pages,
-        total_unmapped_items=total_unmapped_items,
-        filter_query=filter_query
-    )
-    oob_search_card = f'<div id="source-mapping-section" hx-swap-oob="innerHTML">{search_card_html}</div>'
-
-    # 5. OOB swap to clear the suggestion dropdown
-    clear_title_suggestions_html = '<div id="channel-title-suggestion-box" hx-swap-oob="true"></div>'
-    clear_num_suggestions_html = '<div id="channel-num-suggestion-box" hx-swap-oob="true"></div>'
-
-    return form_html + oob_search_card + clear_title_suggestions_html + clear_num_suggestions_html
-
-
-@app.route("/ui/channels/suggest", methods=["GET"])
-async def ui_channel_suggest() -> str:
-    if len(query := request.args.get('logical_channel_title', '')) > 2:
-        suggestions = await handler.search_predefined_channel_names(query)
-    elif len(query := request.args.get('channel_num', '')) > 0:
-        suggestions = await handler.search_predefined_channel_nums(query)
-    else:
-        return ""
-    return await render_template("_channel_suggestions.html", logical_channel_id=request.args.get('logical_channel_id'), suggestions=suggestions)
 
 
 @app.route("/ui/logs/modal/<int:num_lines>")

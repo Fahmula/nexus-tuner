@@ -68,7 +68,7 @@
         </tbody>
 
         <tbody>
-            {% for source in unmapped_suggestions_for_page %}
+            {% for source in unmapped_sources_for_page %}
             {% set source_metrics = all_source_metrics.get(source.source_id, {}) %}
             <tr>
                 <td class="text-center align-middle">
@@ -114,8 +114,7 @@
             </tr>
             {% endfor %}
 
-            {# Helpful messages for different states #}
-            {% if filter_query is not none and not unmapped_suggestions_for_page and not mapped_sources %}
+            {% if filter_query is not none and not unmapped_sources_for_page and not mapped_sources %}
             <tr>
                 <td colspan="5" class="text-center text-muted fst-italic py-3">No sources found matching your criteria.
                 </td>
@@ -132,7 +131,7 @@
     </table>
 
     <p class="text-muted small mt-2">
-        Showing {{ unmapped_suggestions_for_page|length }} of {{ total_unmapped_items }} total unmapped matching
+        Showing {{ unmapped_sources_for_page|length }} of {{ total_unmapped_sources }} total unmapped matching
         sources.
     </p>
     {% if total_pages > 1 %}

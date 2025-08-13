@@ -689,25 +689,20 @@ class ChannelHandler:
             self._channel_mappings_data = new_mappings_data
             return True
 
-    async def copy_channel_list_data(self) -> ChannelListData:
+    def copy_channel_list_data(self) -> ChannelListData:
         """Returns a copy of the channel list data."""
-        async with self._mutex:
-            return ChannelListDataImpl({k: [c for c in v] for k, v in self._channel_list_data.items()})
-
-    def get_channel_lists(self) -> tuple[tuple[ChannelListInfo, ...], ...]:
-        """Returns a tuple of tuples containing channel list groups."""
-        return tuple(tuple(c for c in v) for v in self._channel_list_data.values())  # No mutex since we never modify this data
+        return ChannelListDataImpl({k: [c for c in v] for k, v in self._channel_list_data.items()})  # No mutex since we never modify this data
 
     def find_matching_predefined_channel(self, channel_name: LogicalChannelTitle, channel_num: ChannelNum) -> ChannelListInfo | None:
         """Finds a matching predefined channel based on name or number."""
-        predefined_channel_lists = self.get_channel_lists()
-        for channel_list in predefined_channel_lists:
+        channel_list_data = self.copy_channel_list_data()
+        for _, channel_list in channel_list_data.items():
             for pre_channel in channel_list:
                 if channel_name == pre_channel["title"]: return pre_channel
-        for channel_list in predefined_channel_lists:
+        for _, channel_list in channel_list_data.items():
             for pre_channel in channel_list:
                 if channel_name in pre_channel["aliases"]: return pre_channel
-        for channel_list in predefined_channel_lists:
+        for _, channel_list in channel_list_data.items():
             for pre_channel in channel_list:
                 pre_channel_title = pre_channel["title"]
                 if channel_name in pre_channel_title: return pre_channel
@@ -715,18 +710,18 @@ class ChannelHandler:
                 for pre_channel_name in pre_channel["aliases"]:
                     if channel_name in pre_channel_name: return pre_channel
                     if pre_channel_name in channel_name: return pre_channel
-        for channel_list in predefined_channel_lists:
+        for _, channel_list in channel_list_data.items():
             for pre_channel in channel_list:
                 if channel_num == pre_channel["num"]: return pre_channel
         return None
 
-    async def search_predefined_channel_nums(self, raw_query: str) -> list[ChannelListGroup]:
+    def search_predefined_channel_nums(self, raw_query: str) -> list[ChannelListGroup]:
         """Searches the predefined channel lists for channels matching the number."""
         if not raw_query:
             return []
         query_num = raw_query.strip()
         matches: list[ChannelListGroup] = []
-        for group, channels in (await self.copy_channel_list_data()).items():
+        for group, channels in self.copy_channel_list_data().items():
             for channel in channels:
                 if query_num in channel["num"]:
                     matches.append({**channel, 'group': group})
@@ -747,14 +742,14 @@ class ChannelHandler:
         matches.sort(key=sort_key)
         return matches[:10]
 
-    async def search_predefined_channel_names(self, raw_query: str) -> list[ChannelListGroup]:
+    def search_predefined_channel_names(self, raw_query: str) -> list[ChannelListGroup]:
         """Searches the predefined channel lists for channels matching the query."""
         if not raw_query:
             return []
         query = raw_query.strip().lower()
         matches: list[ChannelListGroup] = []
         found_with: dict[str, str] = {}
-        for group, channels in (await self.copy_channel_list_data()).items():
+        for group, channels in self.copy_channel_list_data().items():
             for channel in channels:
                 title = channel["title"].lower()
                 words = query.split()

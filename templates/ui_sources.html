@@ -14,7 +14,6 @@
     <div class="card-body">
         <form method="GET" action="{{ url_for('ui_sources_list') }}" class="row g-2 align-items-center">
 
-            {# --- INPUTS --- #}
             <div class="col-sm-3">
                 <select class="form-select" id="provider_alias_filter" name="provider_alias">
                     <option value="">All Providers</option>
@@ -37,8 +36,6 @@
                 </select>
             </div>
 
-            {# --- BUTTONS --- #}
-            {# This column now holds both buttons and will align them horizontally #}
             <div class="col-sm-3 d-flex gap-2">
                 <button type="submit" class="btn btn-primary w-100"><i class="fas fa-filter"></i> Filter</button>
                 <a href="{{ url_for('ui_sources_list') }}"
@@ -110,10 +107,8 @@
 </div>
 
 {% if total_pages > 1 %}
-{# Add a top margin (mt-4) for better spacing #}
 <nav aria-label="Source list navigation" class="mt-4">
     <ul class="pagination justify-content-center">
-        {# Previous Button #}
         <li class="page-item {% if current_page <= 1 %}disabled{% endif %}">
             <a class="page-link"
                 href="{{ url_for('ui_sources_list', page=current_page-1, provider_alias=current_provider, name_filter=current_name_filter, per_page=per_page) }}">
@@ -121,12 +116,10 @@
             </a>
         </li>
 
-        {# Display the current page status #}
         <li class="page-item disabled">
             <span class="page-link">Page {{ current_page }} of {{ total_pages }}</span>
         </li>
 
-        {# Next Button #}
         <li class="page-item {% if current_page >= total_pages %}disabled{% endif %}">
             <a class="page-link"
                 href="{{ url_for('ui_sources_list', page=current_page+1, provider_alias=current_provider, name_filter=current_name_filter, per_page=per_page) }}">

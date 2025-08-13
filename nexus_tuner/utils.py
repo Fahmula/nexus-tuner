@@ -296,6 +296,15 @@ class ProbeFailure(TypedDict):
 type ProbeInfo = ProbeSuccess | ProbeFailure
 
 
+class LogicalChannelFormDetails(TypedDict):
+    channel_metrics: ReadOnly[LogicalChannelMetrics]
+    all_source_metrics: ReadOnly[Mapping[SourceId, SourceMetrics]]
+    mapped_sources: ReadOnly[list[DiscoveredSource]]
+    unmapped_sources_for_page: ReadOnly[list[DiscoveredSource]]
+    total_unmapped_sources: ReadOnly[int]
+    total_pages: ReadOnly[int]
+    current_page: ReadOnly[int]
+
 # --- Functions ---
 background_tasks: set[asyncio.Task[Any]] = set()
 def run_bg(coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
