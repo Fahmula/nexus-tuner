@@ -50,10 +50,8 @@ git clone https://github.com/Fahmula/nexus-tuner.git
 cd nexus-tuner
 python3.13 -m venv venv
 
-source venv/bin/activate  # Linux/macOS
-venv\Scripts\activate  # Windows
-
-pip install -r requirements.txt
+venv/bin/pip install -r requirements.txt      # Linux/macOS
+venv\Scripts\pip install -r requirements.txt  # Windows
 ```
 
 > [!IMPORTANT]
@@ -109,7 +107,7 @@ Here are all the available environment variables:
 
 #### With Docker
 
-Run the application using the docker-compose.yml, this will build the image and start the container in the background:
+Run the application using the docker-compose.yml:
 
 ```bash
 docker compose up -d
@@ -156,6 +154,27 @@ for your specific media client application to add an `HDHomeRun` tuner by specif
 
 `NexusTuner` also provides a standard M3U playlist that can be used in any media client application that supports it. For an application
 like VLC, you can use the M3U playlist URL: **`<NEXUS_URL>:<NEXUS_PORT>/playlist.m3u`**
+
+### Updating `NexusTuner`
+
+#### With Docker
+
+Pull the latest image and restart the container from the directory where you have your `docker-compose.yml` file:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+#### Without Docker
+
+Pull the latest changes using git and reinstall the requirements from the nexus-tuner directory cloned earlier:
+
+```bash
+git pull
+venv/bin/pip install -r requirements.txt      # Linux/macOS
+venv\Scripts\pip install -r requirements.txt  # Windows
+```
 
 ## Development
 

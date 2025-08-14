@@ -31,7 +31,9 @@
                     <small class="text-muted">({{ source.provider_alias }})</small>
                     <span class="badge bg-success ms-2">Mapped</span>
                     {% if source.source_id in sources_mapped_elsewhere %}
-                    <span class="badge bg-warning ms-2">Duplicated</span>
+                        <span class="badge bg-warning ms-2" data-bs-toggle="tooltip" title="Duplicated with Ch No. {{ sources_mapped_elsewhere[source.source_id] }}">
+                            Duplicated {{ sources_mapped_elsewhere[source.source_id] }}
+                        </span>
                     {% endif %}
                 </td>
                 <td class="text-center align-middle">
@@ -79,7 +81,9 @@
                     {{ source.tvg_name }}
                     <small class="text-muted">({{ source.provider_alias }})</small>
                     {% if source.source_id in sources_mapped_elsewhere %}
-                    <span class="badge bg-secondary ms-2">In Use</span>
+                        <span class="badge bg-secondary ms-2" data-bs-toggle="tooltip" title="Already mapped to Ch No. {{ sources_mapped_elsewhere[source.source_id] }}">
+                            In Use {{ sources_mapped_elsewhere[source.source_id] }}
+                        </span>
                     {% endif %}
                 </td>
                 <td class="text-center align-middle">

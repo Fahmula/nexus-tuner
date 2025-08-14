@@ -1,5 +1,4 @@
 <div class="mb-2">
-    <p class="mb-1"><strong>Previewing:</strong> {{ source_name }}</p>
     <p class="text-muted small">This will use a provider stream slot. The stream will stop automatically when you close this modal.</p>
 </div>
 
@@ -24,6 +23,11 @@
         const stopStreamBtn = document.getElementById('stop-stream-btn');
         let hls = null;
 
+        const modalTitleElement = document.getElementById('previewModalLabel');
+        if (modalTitleElement) {
+            modalTitleElement.textContent = '{{ source_name }}';
+        }
+
         // Set up modal close event listener
         // This finds the parent modal and sets up the listener
         let modal_hidden = false;
@@ -35,6 +39,9 @@
                     if (modal_hidden) return;
                     modal_hidden = true;
                     console.log("Modal hidden event triggered");
+                    if (modalTitleElement) {
+                        modalTitleElement.textContent = 'Stream Preview';
+                    }
                     destroyPreviewPlayer();
                 });
             } else {

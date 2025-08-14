@@ -601,7 +601,7 @@ async def ui_sources_list() -> str:
 @app.route("/ui/logical-channels")
 async def ui_logical_channels_list() -> str:
     """Renders the list of all configured logical channels."""
-    channels = await handler.get_logical_channels_for_ui(key=lambda x: x["logical_channel_title"])
+    channels = await handler.get_logical_channels_for_ui()
     all_quality_scores = await quality_monitor.get_quality_scores()
 
     all_channel_metrics: dict[LogicalChannelId, LogicalChannelMetrics] = {}

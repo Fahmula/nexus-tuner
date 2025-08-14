@@ -3,7 +3,7 @@ import re
 import html
 import hashlib
 import asyncio
-from typing import TYPE_CHECKING, Callable, Final, Self
+from typing import TYPE_CHECKING, Final, Self
 
 import aiohttp
 from nexus_tuner.config import Config
@@ -546,14 +546,17 @@ class ChannelHandler:
                             for source_id, source in self._discovered_sources_data.items()]
         return sorted(all_sources, key=lambda x: (x["provider_alias"], (x["tvg_name"] or x["display_title"]).lower()))
 
-    async def get_logical_channels_for_ui(self, key: Callable[[LogicalChannelInfo], str | int] | None = None) -> list[LogicalChannelInfoWithId]:
-        """Returns a copy of the logical channels data."""
+    async def get_logical_channels_for_ui(self) -> list[LogicalChannelInfoWithId]:
+        """Returns a copy of the logical channels data sorted by channel number."""
+        def sort_key(x: LogicalChannelInfoWithId) -> tuple[float, str]:
+            channel_num = x["channel_num"]
+            try:
+                return (float(channel_num), channel_num)
+            except ValueError:
+                return (float('inf'), channel_num)
         async with self._mutex:
-            res = [LogicalChannelInfoWithId({**lc, "logical_channel_id": logical_channel_id})
-                   for logical_channel_id, lc in self._logical_channels_data.items()]
-        if key:
-            res.sort(key=key)
-        return res
+            return sorted((LogicalChannelInfoWithId({**lc, "logical_channel_id": logical_channel_id})
+                   for logical_channel_id, lc in self._logical_channels_data.items()), key=sort_key)
 
     async def get_logical_channel_by_id(self, logical_channel_id: LogicalChannelId) -> LogicalChannelInfo | None:
         """Gets a logical channel by its ID."""
@@ -633,12 +636,20 @@ class ChannelHandler:
                     return channel_mapping[source_id]["priority"]
             return None
 
-    async def get_sources_mapped_elsewhere(self, logical_channel_id: LogicalChannelId | None) -> set[SourceId]:
-        """Returns a set of source IDs that are mapped to logical channels, excluding the specified logical channel if provided."""
+    async def get_sources_mapped_elsewhere(self, logical_channel_id: LogicalChannelId | None) -> dict[SourceId, str]:
+        """Returns the sources with their channel numbers that are mapped to channels other than the specified logical channel."""
         async with self._mutex:
-            if not logical_channel_id:
-                return {source_id for m in self._channel_mappings_data.values() for source_id in m}
-            return {source_id for lc_id, m in self._channel_mappings_data.items() if lc_id != logical_channel_id for source_id in m}
+            sources_mapped_elsewhere: dict[SourceId, str] = {}
+            for lc_id, mappings in self._channel_mappings_data.items():
+                if lc_id == logical_channel_id:
+                    continue
+                logical_channel = self._logical_channels_data[lc_id]
+                for source_id in mappings:
+                    if source_id in sources_mapped_elsewhere:
+                        sources_mapped_elsewhere[source_id] += f" #{logical_channel['channel_num']}"
+                    else:
+                        sources_mapped_elsewhere[source_id] = f"#{logical_channel['channel_num']}"
+            return sources_mapped_elsewhere
 
     async def copy_channel_mappings_data(self) -> ChannelMappingsDataImpl:
         """Returns a copy of the channel mappings data."""

@@ -288,12 +288,12 @@
         {
             "num": "212",
             "title": "NFL Network",
-            "aliases": ["NFL"]
+            "aliases": ["NFL Network"]
         },
         {
             "num": "213",
             "title": "MLB Network",
-            "aliases": ["MLB"]
+            "aliases": ["MLB Network"]
         },
         {
             "num": "213-1",
@@ -303,12 +303,12 @@
         {
             "num": "214",
             "title": "MAVTV",
-            "aliases": ["MAVTV"]
+            "aliases": ["MAVTV", "Racer"]
         },
         {
             "num": "215",
             "title": "NHL Network",
-            "aliases": ["NHL"]
+            "aliases": ["NHL Network"]
         },
         {
             "num": "215-1",
@@ -323,12 +323,12 @@
         {
             "num": "217",
             "title": "Tennis Channel",
-            "aliases": ["Tennis"]
+            "aliases": ["Tennis Channel"]
         },
         {
             "num": "218",
             "title": "Golf Channel",
-            "aliases": ["Golf"]
+            "aliases": ["Golf Channel"]
         },
         {
             "num": "219",
@@ -338,7 +338,7 @@
         {
             "num": "221",
             "title": "CBS Sports Network",
-            "aliases": ["CBS Sports"]
+            "aliases": ["CBS Sports Network"]
         },
         {
             "num": "222",
@@ -378,7 +378,7 @@
         {
             "num": "229",
             "title": "HGTV",
-            "aliases": ["HGTV"]
+            "aliases": ["HGTV", "Home Garden"]
         },
         {
             "num": "230",
@@ -388,17 +388,17 @@
         {
             "num": "231",
             "title": "Food Network",
-            "aliases": ["Food"]
+            "aliases": ["Food Network"]
         },
         {
             "num": "232",
             "title": "Cooking Channel",
-            "aliases": ["Cooking"]
+            "aliases": ["Cooking Channel"]
         },
         {
             "num": "233",
             "title": "Game Show Network",
-            "aliases": ["Game Show"]
+            "aliases": ["Game Show Network", "GSN"]
         },
         {
             "num": "234",
@@ -438,7 +438,7 @@
         {
             "num": "241",
             "title": "Paramount Network",
-            "aliases": ["Paramount"]
+            "aliases": ["Paramount Network"]
         },
         {
             "num": "242",
@@ -523,7 +523,7 @@
         {
             "num": "255",
             "title": "Xtra Network",
-            "aliases": ["Xtra"]
+            "aliases": ["Xtra Network"]
         },
         {
             "num": "256",
@@ -633,7 +633,7 @@
         {
             "num": "277",
             "title": "Travel Channel",
-            "aliases": ["Travel"]
+            "aliases": ["Travel Channel"]
         },
         {
             "num": "278",
@@ -808,7 +808,7 @@
         {
             "num": "312",
             "title": "Hallmark Channel",
-            "aliases": ["Hallmark"]
+            "aliases": ["Hallmark Channel"]
         },
         {
             "num": "313",
@@ -1063,7 +1063,7 @@
         {
             "num": "362",
             "title": "The Weather Channel",
-            "aliases": ["Weather"]
+            "aliases": ["Weather Channel"]
         },
         {
             "num": "363",
@@ -1883,7 +1883,7 @@
         {
             "num": "570",
             "title": "Smithsonian Channel",
-            "aliases": ["Smithsonian"]
+            "aliases": ["Smithsonian Channel"]
         },
         {
             "num": "571",
