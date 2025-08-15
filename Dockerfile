@@ -18,6 +18,7 @@ RUN apt update && apt install --no-install-recommends -y software-properties-com
 RUN apt install --no-install-recommends -y python3.13
 RUN apt install --no-install-recommends -y iputils-ping curl ffmpeg && apt clean && rm -rf /var/lib/apt/lists/*
 
+RUN userdel -r ubuntu
 RUN useradd app
 COPY --from=builder-image /app/venv /app/venv
 
