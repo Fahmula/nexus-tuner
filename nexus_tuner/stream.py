@@ -96,10 +96,10 @@ class StreamManager:
             if video_key in self.ffmpeg_processes:
                 data = self.ffmpeg_processes[video_key]
                 if not data['is_long_term']:
-                    Log.error(VideoType.HLS, f"Stream {video_key} is not long-term, cannot return playlist path.")
+                    Log.error(Label.STREAM, f"Stream {video_key} is not long-term, cannot return playlist path.", VideoType.HLS)
                     return
                 if not data['channel_hls_dir']:
-                    Log.error(VideoType.HLS, f"Stream {video_key} has no HLS directory set.")
+                    Log.error(Label.STREAM, f"Stream {video_key} has no HLS directory set.", VideoType.HLS)
                     return
                 return data['channel_hls_dir'] / "playlist.m3u8"
         
@@ -130,7 +130,7 @@ class StreamManager:
             async with self.stream_process_lock:
                 segment_lc_ids_to_cleanup = [(lc_id, data) for lc_id, data in self.hls_latest_segments.items() if data[1] < datetime.now() - timedelta(seconds=self.config.latest_segment_timeout)]
                 for lc_id, data in segment_lc_ids_to_cleanup:
-                    Log.debug(VideoType.HLS, f"Cleanup: Removing latest HLS segment number cache ({data[0]}) for logical channel ID '{lc_id}'.")
+                    Log.debug(Label.STREAM, f"Cleanup: Removing latest HLS segment number cache ({data[0]}) for logical channel ID '{lc_id}'.", VideoType.HLS)
                     self.hls_latest_segments.pop(lc_id, None)    
                 
                 providers_to_kill = self.handler.reset_kill_provider_streams()
@@ -223,46 +223,46 @@ class StreamManager:
                 try:
                     process.terminate()
                     if process.stdout:
-                        Log.debug(video_type, f"{name} [{video_key}]: Closing FFmpeg process stdout stream.")
+                        Log.debug(Label.STREAM, f"{name} [{video_key}]: Closing FFmpeg process stdout stream.", video_type)
                         process.stdout._transport.close()  # type: ignore[reportAttributeAccessIssue]
                     await asyncio.wait_for(process.wait(), timeout=FFMPEG_TERMINATE_TIMEOUT)
-                    Log.debug(video_type, f"{name} [{video_key}]: FFmpeg process terminated successfully.")
+                    Log.debug(Label.STREAM, f"{name} [{video_key}]: FFmpeg process terminated successfully.", video_type)
                 except asyncio.TimeoutError:
-                    Log.warn(video_type, f"{name} [{video_key}]: Killing unresponsive FFmpeg process.")
+                    Log.warn(Label.STREAM, f"{name} [{video_key}]: Killing unresponsive FFmpeg process.", video_type)
                     process.kill()
                 except Exception as e:
-                    Log.error(video_type, f"{name} [{video_key}]: Error terminating FFmpeg process: {e}")
+                    Log.error(Label.STREAM, f"{name} [{video_key}]: Error terminating FFmpeg process: {e}", video_type)
                     process.kill()
             except BaseException as e:
-                Log.critical(video_type, f"{name} [{video_key}]: Error while stopping FFmpeg process: {e}")
+                Log.critical(Label.STREAM, f"{name} [{video_key}]: Error while stopping FFmpeg process: {e}", video_type)
                 raise
         else:
-            Log.debug(video_type, f"{name} [{video_key}]: FFmpeg process already terminated with code {process.returncode}.")
+            Log.debug(Label.STREAM, f"{name} [{video_key}]: FFmpeg process already terminated with code {process.returncode}.", video_type)
         
         try:
             await log_file.close()
         except Exception as e:
-            Log.error(video_type, f"{name} [{video_key}]: Error closing FFmpeg log file: {e}")
+            Log.error(Label.STREAM, f"{name} [{video_key}]: Error closing FFmpeg log file: {e}", video_type)
 
         provider_slots = await self.handler.get_provider_slots(alias)
         if provider_slots:
             if should_release_slot:
-                Log.debug(video_type, f"{name} [{video_key}]: Releasing slot for provider '{alias}'.")
+                Log.debug(Label.STREAM, f"{name} [{video_key}]: Releasing slot for provider '{alias}'.", video_type)
                 new_active_count = await provider_slots.release()
             else:
-                Log.debug(video_type, f"{name} [{video_key}]: Not releasing slot for provider '{alias}' as it should have been already released.")
+                Log.debug(Label.STREAM, f"{name} [{video_key}]: Not releasing slot for provider '{alias}' as it should have been already released.", video_type)
                 new_active_count = f"0/{provider_slots.get_total_slots()}"
         else:
-            Log.error(video_type, f"{name} [{video_key}]: No slots found for provider '{alias}'.")
+            Log.error(Label.STREAM, f"{name} [{video_key}]: No slots found for provider '{alias}'.", video_type)
             new_active_count = "N/A"
 
         try:
             if hls_dir and await aiofiles.os.path.exists(hls_dir):
                 await aioshutil.rmtree(hls_dir)
         except Exception as e:
-            Log.error(video_type, f"{name} [{video_key}]: Failed to clean HLS directory {hls_dir}: {e}")
+            Log.error(Label.STREAM, f"{name} [{video_key}]: Failed to clean HLS directory {hls_dir}: {e}", video_type)
 
-        Log.info(video_type, f"{name} [{video_key}]: Successfully stopped and cleaned up all resources {{{alias}:{new_active_count}}}")
+        Log.info(Label.STREAM, f"{name} [{video_key}]: Successfully stopped and cleaned up all resources {{{alias}:{new_active_count}}}", video_type)
 
     async def stop_ffmpeg_processes(self, video_keys: Iterable[VideoKey] | None = None, video_names: dict[VideoKey, VideoName] | None = None) -> None:
         """Stops all (or a specified list of) active FFmpeg processes and cleans up resources asynchronously."""

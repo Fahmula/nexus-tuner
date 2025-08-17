@@ -379,29 +379,44 @@ class Log:
         cls.initialized = True
 
     @classmethod
-    def debug(cls, label: Label | VideoType, msg: str) -> None:
+    def debug(cls, label: Label, msg: str, video_type: VideoType | None = None) -> None:
         """Logs a debug message with the specified label."""
-        cls._logger_verbose.debug(f"[{label}] {msg}")
+        if video_type:
+            cls._logger_verbose.debug(f"[{label}/{video_type}] {msg}")
+        else:
+            cls._logger_verbose.debug(f"[{label}] {msg}")
 
     @classmethod
-    def info(cls, label: Label | VideoType, msg: str) -> None:
+    def info(cls, label: Label, msg: str, video_type: VideoType | None = None) -> None:
         """Logs an info message with the specified label."""
-        cls._logger.info(f"[{label}] {msg}")
+        if video_type:
+            cls._logger.info(f"[{label}/{video_type}] {msg}")
+        else:
+            cls._logger.info(f"[{label}] {msg}")
 
     @classmethod
-    def warn(cls, label: Label | VideoType, msg: str) -> None:
+    def warn(cls, label: Label, msg: str, video_type: VideoType | None = None) -> None:
         """Logs a warning message with the specified label."""
-        cls._logger.warning(f"[{label}] {msg}")
+        if video_type:
+            cls._logger.warning(f"[{label}/{video_type}] {msg}")
+        else:
+            cls._logger.warning(f"[{label}] {msg}")
 
     @classmethod
-    def error(cls, label: Label | VideoType, msg: str) -> None:
+    def error(cls, label: Label, msg: str, video_type: VideoType | None = None) -> None:
         """Logs an error message with the specified label."""
-        cls._logger.error(f"[{label}] {msg}")
+        if video_type:
+            cls._logger.error(f"[{label}/{video_type}] {msg}")
+        else:
+            cls._logger.error(f"[{label}] {msg}")
 
     @classmethod
-    def critical(cls, label: Label | VideoType, msg: str) -> None:
+    def critical(cls, label: Label, msg: str, video_type: VideoType | None = None) -> None:
         """Logs a critical message with the specified label."""
-        cls._logger.critical(f"[{label}] {msg}")
+        if video_type:
+            cls._logger.critical(f"[{label}/{video_type}] {msg}")
+        else:
+            cls._logger.critical(f"[{label}] {msg}")
 
 
 # --- Functions ---
