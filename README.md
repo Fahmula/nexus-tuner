@@ -94,7 +94,6 @@ Here are all the available environment variables:
 | `NEXUS_PORT`                          | The internal port the application listens on.                                                           | `4040`                                |
 | `NEXUS_FFMPEG_INACTIVITY_TIMEOUT`     | Seconds of inactivity before a stream is stopped. Inactive streams will be pruned earlier when needed.  | `900`                                 |
 | `NEXUS_FFMPEG_LOGS_RETENTION_SECONDS` | How long to keep FFmpeg logs in seconds.                                                                | `86400`                               |
-| `NEXUS_LOG_LEVEL`                     | Sets the logging verbosity. Options: `DEBUG`, `INFO`, `WARNING`, `ERROR`.                               | `INFO`                                |
 | `NEXUS_LOG_BACKUP_COUNT`              | Number of days of log backups to keep.                                                                  | `7`                                   |
 | `NEXUS_BACKUP_COUNT`                  | Number of days of config backups to keep. Each backup is `<1MB` in size.                                | `30`                                  |
 | `NEXUS_GHOST_SESSION_CHECK_INTERVAL`  | Interval in seconds to check Jellyfin/Emby servers for ghost sessions.                                  | `60`                                  |

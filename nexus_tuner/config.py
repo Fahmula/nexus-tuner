@@ -19,6 +19,7 @@ from nexus_tuner.utils import (CONFIG_DIR, NEXUS_TUNER_PORT, NEXUS_TUNER_VERSION
 
 NOT_ALPHANUM_REGEX: Final[re.Pattern[str]] = re.compile(r'[^a-zA-Z0-9_-]')
 LOG_FILE_NAME = "app.log"
+LOG_FILE_NAME_VERBOSE = "verbose.app.log"
 
 
 class Config:
@@ -29,7 +30,7 @@ class Config:
     accessing and persisting data to JSON files in a non-blocking, safe manner.
     """
     __slots__ = (
-        'nexus_url', 'logs_dir', '_logger', 'log_level', 'log_backup_count', 'ffmpeg_logs_retention_seconds',
+        'nexus_url', 'logs_dir', '_logger', '_logger_verbose', 'log_backup_count', 'ffmpeg_logs_retention_seconds',
         'providers_name', 'providers_path',
         'discovered_sources_name', 'discovered_sources_path',
         'logical_channels_name', 'logical_channels_path',
@@ -78,7 +79,7 @@ class Config:
         # --- Logging ---
         self.logs_dir: Final[Path] = CONFIG_DIR / "logs"
         self._logger: logging.Logger
-        self.log_level: Final[str] = os.getenv("NEXUS_LOG_LEVEL", "INFO").upper()
+        self._logger_verbose: logging.Logger
         self.log_backup_count: Final[int] = int(os.getenv("NEXUS_LOG_BACKUP_COUNT", 7))
         if self.log_backup_count < 0:
             raise ValueError("NEXUS_LOG_BACKUP_COUNT must be a non-negative integer.")
@@ -194,16 +195,19 @@ class Config:
 
     def _initialize_logger(self) -> None:
         """Initializes the logger"""
-        log_filename = LOG_FILE_NAME
-        logger = logging.getLogger(log_filename)
-        logger.setLevel(self.log_level)
-        log_file_path = self.logs_dir / log_filename
-        file_handler = TimedRotatingFileHandler(
-            log_file_path, when='midnight', backupCount=self.log_backup_count
-        )
+        logger = logging.getLogger(LOG_FILE_NAME)
+        logger.propagate = False
+        logger.setLevel(logging.DEBUG)  # Controlled via config.level functions
+        self._logger = logger
         format_str = "%(asctime)s.%(msecs)03d %(levelname)s: %(message)s"
         date_fmt = "%Y-%m-%d %H:%M:%S"
 
+        # app.log
+        file_handler = TimedRotatingFileHandler(self.logs_dir / LOG_FILE_NAME, when='midnight', backupCount=self.log_backup_count)
+        file_handler.setFormatter(logging.Formatter(format_str, datefmt=date_fmt))
+        logger.addHandler(file_handler)
+
+        # Console logger
         class ColoredFormatter(logging.Formatter):
             __slots__ = ('formats',)
             
@@ -229,18 +233,22 @@ class Config:
                 log_fmt = self.formats.get(record.levelno, format_str)
                 formatter = logging.Formatter(log_fmt, datefmt=date_fmt)
                 return formatter.format(record)
-
-        file_handler.setFormatter(logging.Formatter(format_str, datefmt=date_fmt))
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(ColoredFormatter())
-        logger.addHandler(file_handler)
         logger.addHandler(console_handler)
-        logger.propagate = False
-        self._logger = logger
+
+        # verbose.app.log
+        logger_verbose = logging.getLogger(LOG_FILE_NAME_VERBOSE)
+        logger_verbose.propagate = False
+        logger_verbose.setLevel(logging.DEBUG)
+        self._logger_verbose = logger_verbose
+        file_handler_verbose = TimedRotatingFileHandler(self.logs_dir / LOG_FILE_NAME_VERBOSE, when='midnight', backupCount=self.log_backup_count)
+        file_handler_verbose.setFormatter(logging.Formatter(format_str, datefmt=date_fmt))
+        logger_verbose.addHandler(file_handler_verbose)
 
     def debug(self, label: Label | VideoType, msg: str) -> None:
         """Logs a debug message with the specified label."""
-        self._logger.debug(f"[{label}] {msg}")
+        self._logger_verbose.debug(f"[{label}] {msg}")
 
     def info(self, label: Label | VideoType, msg: str) -> None:
         """Logs an info message with the specified label."""
