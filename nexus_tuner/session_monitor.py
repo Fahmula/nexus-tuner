@@ -5,7 +5,7 @@ from typing import Coroutine, Final, NoReturn, Self, Set, Any
 from nexus_tuner.config import Config
 from nexus_tuner.handler import ChannelHandler
 from nexus_tuner.stream import StreamManager
-from nexus_tuner.utils import Label, LogicalChannelId, LogicalChannelTitle, VideoKey
+from nexus_tuner.utils import Label, Log, LogicalChannelId, LogicalChannelTitle, VideoKey
 
 # --- Constants ---
 SESSION_MONITOR_STARTUP_DELAY: Final[int] = 15
@@ -42,20 +42,20 @@ class GhostSessionMonitor:
     async def create(cls, config: Config, handler: ChannelHandler, stream_manager: StreamManager) -> Self | None:
         """Asynchronous factory for creating and initializing a GhostSessionMonitor instance."""
         if not config.emby_url and not config.jellyfin_url:
-            config.info(Label.STARTUP, "No Emby/Jellyfin URL configured. Ghost Session Monitor is disabled.")
+            Log.info(Label.STARTUP, "No Emby/Jellyfin URL configured. Ghost Session Monitor is disabled.")
             return
-        config.info(Label.STARTUP, "Emby/Jellyfin URL found. Ghost Session Monitor is enabled.")
+        Log.info(Label.STARTUP, "Emby/Jellyfin URL found. Ghost Session Monitor is enabled.")
         instance = cls(config, handler, stream_manager)
         instance.ghost_monitor_task = asyncio.create_task(instance._run())
         return instance
 
     async def _build_name_to_id_map(self) -> None:
         """Creates a mapping from a channel's display name to its logical_channel_id."""
-        self.config.debug(Label.SESSION, "Building channel name to stream ID map...")
+        Log.debug(Label.SESSION, "Building channel name to stream ID map...")
         name_map = {channel_data["logical_channel_title"]: lc_id
                     for lc_id, channel_data in (await self.handler.copy_client_channels()).items()}
         self.lc_title_to_lc_id_map = name_map
-        self.config.debug(Label.SESSION, f"Built map with {len(self.lc_title_to_lc_id_map)} entries.")
+        Log.debug(Label.SESSION, f"Built map with {len(self.lc_title_to_lc_id_map)} entries.")
 
     async def _fetch_sessions_from_server(self, session: aiohttp.ClientSession, base_url: str | None, api_key: str | None, server_type: str) -> list[Any]:
         """Fetches active session data from a single media server asynchronously."""
@@ -70,7 +70,7 @@ class GhostSessionMonitor:
                 response.raise_for_status()
                 return await response.json()
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-            self.config.error(Label.SESSION, f"Could not connect to {server_type} at {base_url}: {e}")
+            Log.error(Label.SESSION, f"Could not connect to {server_type} at {base_url}: {e}")
             return []
 
     async def _get_legitimate_stream_ids(self) -> Set[str]:
@@ -96,20 +96,20 @@ class GhostSessionMonitor:
                 if (channel_name := now_playing.get("Name")) in self.lc_title_to_lc_id_map:
                     lc_id = self.lc_title_to_lc_id_map[channel_name]
                     active_lc_ids.add(lc_id)
-                    self.config.debug(Label.SESSION, f"Found legitimate session for '{channel_name}' (ID: {lc_id}) on device '{session_data.get('DeviceName', 'Unknown')}'.")
+                    Log.debug(Label.SESSION, f"Found legitimate session for '{channel_name}' (ID: {lc_id}) on device '{session_data.get('DeviceName', 'Unknown')}'.")
         
         return active_lc_ids
 
     async def _check_for_ghost_sessions(self) -> None:
         """The main logic loop to find and terminate ghost streams asynchronously."""
-        self.config.debug(Label.SESSION, "Running check for ghost sessions...")
+        Log.debug(Label.SESSION, "Running check for ghost sessions...")
         await self._build_name_to_id_map()
 
         try:
             legitimately_active_lc_ids = await self._get_legitimate_stream_ids()
-            self.config.debug(Label.SESSION, f"Found {len(legitimately_active_lc_ids)} legitimate sessions: {legitimately_active_lc_ids or 'None'}")
+            Log.debug(Label.SESSION, f"Found {len(legitimately_active_lc_ids)} legitimate sessions: {legitimately_active_lc_ids or 'None'}")
         except Exception as e:
-            self.config.error(Label.SESSION, f"Could not get active sessions from media servers: {e}")
+            Log.error(Label.SESSION, f"Could not get active sessions from media servers: {e}")
             return
 
         ghost_video_keys: Set[tuple[VideoKey, LogicalChannelTitle]] = set()
@@ -121,14 +121,14 @@ class GhostSessionMonitor:
                     ghost_video_keys.add((video_key, data['logical_channel_title']))
 
         if not ghost_video_keys:
-            self.config.debug(Label.SESSION, "No ghost sessions found.")
+            Log.debug(Label.SESSION, "No ghost sessions found.")
             return
 
-        self.config.warn(Label.SESSION, f"Found {len(ghost_video_keys)} ghost session(s) to terminate: {', '.join(g[0] for g in ghost_video_keys)}")
+        Log.warn(Label.SESSION, f"Found {len(ghost_video_keys)} ghost session(s) to terminate: {', '.join(g[0] for g in ghost_video_keys)}")
         
         stop_tasks: list[Coroutine[Any, Any, None]] = []
         for video_key, logical_channel_title in ghost_video_keys:
-            self.config.info(Label.SESSION, f"Terminating ghost stream for '{logical_channel_title}' [{video_key}]...")
+            Log.info(Label.SESSION, f"Terminating ghost stream for '{logical_channel_title}' [{video_key}]...")
             stop_tasks.append(self.stream_manager.stop_ffmpeg_process(video_key, logical_channel_title))
         
         if stop_tasks:
@@ -136,13 +136,13 @@ class GhostSessionMonitor:
 
     async def _run(self) -> NoReturn:
         """The main execution loop for the monitor task."""
-        self.config.info(Label.STARTUP, "Ghost Session Monitor task started.")
+        Log.info(Label.STARTUP, "Ghost Session Monitor task started.")
         await asyncio.sleep(SESSION_MONITOR_STARTUP_DELAY)
         
         while True:
             try:
                 await self._check_for_ghost_sessions()
             except Exception as e:
-                self.config.critical(Label.SESSION, f"Unhandled exception in main check loop: {e}")
+                Log.critical(Label.SESSION, f"Unhandled exception in main check loop: {e}")
             
             await asyncio.sleep(self.config.ghost_check_interval)

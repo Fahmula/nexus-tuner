@@ -12,6 +12,8 @@ This design allows the most dangerous operations to be clearly marked and the re
 import asyncio
 from datetime import datetime
 from enum import StrEnum
+import logging
+from logging.handlers import TimedRotatingFileHandler
 import os
 from pathlib import Path
 import re
@@ -305,7 +307,105 @@ class LogicalChannelFormDetails(TypedDict):
     total_pages: ReadOnly[int]
     current_page: ReadOnly[int]
 
+
+# --- Logging ---
+
+
+class Log:
+    """Logging utilities namespace."""
+
+    LOG_FILE_NAME: Final[str] = "app.log"
+    LOG_FILE_NAME_VERBOSE: Final[str] = "verbose.app.log"
+    _logger: logging.Logger
+    _logger_verbose: logging.Logger
+    initialized: bool = False
+
+    @classmethod
+    def initialize_logger(cls, logs_dir: Path, log_backup_count: int) -> None:
+        """Initializes the logger"""     
+        if cls.initialized:
+            return   
+        logger = logging.getLogger(cls.LOG_FILE_NAME)
+        logger.propagate = False
+        logger.setLevel(logging.DEBUG)  # Controlled via config.level functions
+        cls._logger = logger
+        format_str = "%(asctime)s.%(msecs)03d %(levelname)s: %(message)s"
+        date_fmt = "%Y-%m-%d %H:%M:%S"
+
+        # app.log
+        file_handler = TimedRotatingFileHandler(logs_dir / cls.LOG_FILE_NAME, when='midnight', backupCount=log_backup_count)
+        file_handler.setFormatter(logging.Formatter(format_str, datefmt=date_fmt))
+        logger.addHandler(file_handler)
+
+        # Console logger
+        class ColoredFormatter(logging.Formatter):
+            __slots__ = ('formats',)
+            
+            def __init__(self, fmt: str = format_str, datefmt: str = date_fmt) -> None:
+                super().__init__(fmt, datefmt)
+            
+                GREY_ANSI = "\x1b[38;20m"
+                GREEN_ANSI = "\x1b[32;20m"
+                YELLOW_ANSI = "\x1b[33;20m"
+                RED_ANSI = "\x1b[31;20m"
+                BOLD_RED_ANSI = "\x1b[31;1m"
+                RESET_ANSI = "\x1b[0m"
+
+                self.formats = {
+                    logging.DEBUG: format_str.replace("%(levelname)s", f"{GREY_ANSI}%(levelname)s{RESET_ANSI}"),
+                    logging.INFO: format_str.replace("%(levelname)s", f"{GREEN_ANSI}%(levelname)s{RESET_ANSI}"),
+                    logging.WARNING: format_str.replace("%(levelname)s", f"{YELLOW_ANSI}%(levelname)s{RESET_ANSI}"),
+                    logging.ERROR: format_str.replace("%(levelname)s", f"{RED_ANSI}%(levelname)s{RESET_ANSI}"),
+                    logging.CRITICAL: format_str.replace("%(levelname)s", f"{BOLD_RED_ANSI}%(levelname)s{RESET_ANSI}"),
+                }
+
+            def format(self, record: logging.LogRecord) -> str:
+                log_fmt = self.formats.get(record.levelno, format_str)
+                formatter = logging.Formatter(log_fmt, datefmt=date_fmt)
+                return formatter.format(record)
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(ColoredFormatter())
+        logger.addHandler(console_handler)
+
+        # verbose.app.log
+        logger_verbose = logging.getLogger(cls.LOG_FILE_NAME_VERBOSE)
+        logger_verbose.propagate = False
+        logger_verbose.setLevel(logging.DEBUG)
+        cls._logger_verbose = logger_verbose
+        file_handler_verbose = TimedRotatingFileHandler(logs_dir / cls.LOG_FILE_NAME_VERBOSE, when='midnight', backupCount=log_backup_count)
+        file_handler_verbose.setFormatter(logging.Formatter(format_str, datefmt=date_fmt))
+        logger_verbose.addHandler(file_handler_verbose)
+
+        cls.initialized = True
+
+    @classmethod
+    def debug(cls, label: Label | VideoType, msg: str) -> None:
+        """Logs a debug message with the specified label."""
+        cls._logger_verbose.debug(f"[{label}] {msg}")
+
+    @classmethod
+    def info(cls, label: Label | VideoType, msg: str) -> None:
+        """Logs an info message with the specified label."""
+        cls._logger.info(f"[{label}] {msg}")
+
+    @classmethod
+    def warn(cls, label: Label | VideoType, msg: str) -> None:
+        """Logs a warning message with the specified label."""
+        cls._logger.warning(f"[{label}] {msg}")
+
+    @classmethod
+    def error(cls, label: Label | VideoType, msg: str) -> None:
+        """Logs an error message with the specified label."""
+        cls._logger.error(f"[{label}] {msg}")
+
+    @classmethod
+    def critical(cls, label: Label | VideoType, msg: str) -> None:
+        """Logs a critical message with the specified label."""
+        cls._logger.critical(f"[{label}] {msg}")
+
+
 # --- Functions ---
+
 background_tasks: set[asyncio.Task[Any]] = set()
 def run_bg(coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
     """Adds a background task to the global set and discard on completion as asyncio.create_task() requires a reference to it."""

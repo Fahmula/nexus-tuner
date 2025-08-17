@@ -4,7 +4,7 @@ import os
 import sys
 from typing import Any, Literal
 
-from nexus_tuner.utils import M3UURL, ActiveStreams, AvailableStreams, MaxStreams, ProviderAlias
+from nexus_tuner.utils import M3UURL, ActiveStreams, AvailableStreams, Label, Log, MaxStreams, ProviderAlias
 
 
 class CountingSemaphore(asyncio.Semaphore):
@@ -16,6 +16,7 @@ class CountingSemaphore(asyncio.Semaphore):
         """Acquires the semaphore and returns the new number of active slots."""
         await super().acquire()
         if self._value < 0:
+            Log.critical(Label.HANDLER, f"Semaphore value is negative: {self._value}. Total slots: {self._total_slots}")
             if threading.current_thread() is threading.main_thread():
                 sys.exit(7)
             else:
@@ -26,6 +27,7 @@ class CountingSemaphore(asyncio.Semaphore):
         """Releases the semaphore and returns the new number of active slots."""
         super().release()
         if self._value > self._total_slots:
+            Log.critical(Label.HANDLER, f"Semaphore value exceeds total slots: {self._value}. Total slots: {self._total_slots}")
             if threading.current_thread() is threading.main_thread():
                 sys.exit(13)
             else:

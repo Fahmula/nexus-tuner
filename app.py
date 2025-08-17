@@ -30,7 +30,7 @@ from quart import send_from_directory  # type: ignore
 from werkzeug.wrappers import Response as WerkzeugResponse
 from werkzeug.datastructures import ImmutableMultiDict
 
-from nexus_tuner.config import LOG_FILE_NAME, Config
+from nexus_tuner.config import Config
 from nexus_tuner.create_stream import CreateStream
 from nexus_tuner.handler import ChannelHandler
 from nexus_tuner.mpegts import MPEGTSStream
@@ -38,7 +38,7 @@ from nexus_tuner.quality_monitor import QualityMonitor
 from nexus_tuner.session_monitor import GhostSessionMonitor
 from nexus_tuner.stream import StreamManager
 from nexus_tuner.scheduler import Scheduler
-from nexus_tuner.utils import (LogicalChannelFormDetails, VideoKey, background_tasks, CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL,
+from nexus_tuner.utils import (Log, LogicalChannelFormDetails, VideoKey, background_tasks, CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL,
                                 DEFAULT_PRIORITY, M3UURL, NEXUS_TUNER_PORT, NEXUS_TUNER_VERSION, ChannelNum, DiscoveredSource,
                                 Label, LogicalChannelId, LogicalChannelInfo, LogicalChannelInfoWithId, LogicalChannelMetrics, LogicalChannelTitle, MaxStreams, 
                                 PercentDisplay, Priority, ProviderAlias, ProviderStatus, QualityScores, SourceInfo, SourceMappingInfoWithId, SourceMetrics,
@@ -78,8 +78,10 @@ async def startup() -> None:
         quality_monitor = await QualityMonitor.create(config, handler)
         handler.quality_monitor = quality_monitor
         scheduler = await Scheduler.create(config, handler, quality_monitor)
-        config.info(Label.SERVER, f"Started on {config.nexus_url}")
+        Log.info(Label.SERVER, f"Started on {config.nexus_url}")
     except BaseException as e:
+        if Log.initialized:
+            Log.critical(Label.SERVER, f"Could not initialize application: {e}")
         print(f"FATAL: Could not initialize application: {e}", file=sys.stderr)
         sys.exit(1)
 
@@ -99,7 +101,7 @@ prev_sigquit_handler = signal.getsignal(signal.SIGQUIT)
 def handle_signal(signum: int, frame: FrameType | None) -> None:
     """Handles termination signals to gracefully shut down the application."""
     sig = signal.Signals(signum)
-    config.info(Label.SERVER, f"Received {sig.name}, shutting down NexusTuner v{NEXUS_TUNER_VERSION}...")
+    Log.info(Label.SERVER, f"Received {sig.name}, shutting down NexusTuner v{NEXUS_TUNER_VERSION}...")
     for mpegts_stream in MPEGTSStream.streams.values():
         mpegts_stream.shutdown()
     if sig == signal.SIGTERM and callable(prev_sigterm_handler):
@@ -234,7 +236,7 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
         while not await handler.add_pending_stream(logical_channel_id, VideoType.MPEGTS):
             if loop.time() > end_time:
                 msg = f"Exceeded timeout while waiting for earlier request for MPEGTS {logical_channel_id} to complete."
-                config.error(VideoType.MPEGTS, msg)
+                Log.error(VideoType.MPEGTS, msg)
                 abort(503, msg)
             await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
         added_pending_stream = True
@@ -242,7 +244,7 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
         logical_channel = await handler.get_logical_channel_by_id(logical_channel_id)
         if not logical_channel:
             msg = f"Logical channel {logical_channel_id} not found for MPEGTS."
-            config.error(VideoType.MPEGTS, msg)
+            Log.error(VideoType.MPEGTS, msg)
             abort(404, msg)
         logical_channel_title = logical_channel['logical_channel_title']
 
@@ -250,20 +252,20 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
         if len(lc_id_processes):
             video_key, p_info = lc_id_processes.popitem()
             if p_info['is_mpegts_active']:
-                config.info(VideoType.MPEGTS, f"Client connecting to shared MPEGTS stream for '{logical_channel_title}' with key '{video_key}'.")
+                Log.info(VideoType.MPEGTS, f"Client connecting to shared MPEGTS stream for '{logical_channel_title}' with key '{video_key}'.")
             else:
-                config.info(VideoType.MPEGTS, f"Client reconnected to MPEGTS stream for '{logical_channel_title}' with key '{video_key}'.")
+                Log.info(VideoType.MPEGTS, f"Client reconnected to MPEGTS stream for '{logical_channel_title}' with key '{video_key}'.")
         else:
             create_stream_task = await CreateStream.create(config, handler, stream_manager, quality_monitor, logical_channel_id, logical_channel_title, VideoType.MPEGTS)
             res = await create_stream_task.result()
             if isinstance(res, tuple):
                 code, msg = res
-                config.error(VideoType.MPEGTS, msg)
+                Log.error(VideoType.MPEGTS, msg)
                 abort(code, msg)
             video_key = res
 
         if not stream_response:
-            config.info(VideoType.MPEGTS, f"Recreated MPEGTS stream for channel '{logical_channel_title}' with key '{video_key}'.")
+            Log.info(VideoType.MPEGTS, f"Recreated MPEGTS stream for channel '{logical_channel_title}' with key '{video_key}'.")
             return video_key
 
         async def stream_generator() -> AsyncGenerator[bytes, None]:
@@ -273,16 +275,16 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
                 mpegts_stream, reader_id = await MPEGTSStream.register(config, stream_manager, video_key, recreate_stream)
             except Exception as e:
                 msg = f"Failed to register MPEGTS stream for '{logical_channel_title}' with key '{video_key}': {e}"
-                config.error(VideoType.MPEGTS, msg)
+                Log.error(VideoType.MPEGTS, msg)
                 abort(500, msg)
 
             try:
                 while True:
                     yield await mpegts_stream.read(reader_id)
             except asyncio.CancelledError as e:
-                config.info(VideoType.MPEGTS, f"Client disconnected from MPEGTS stream for '{logical_channel_title}'.")
+                Log.info(VideoType.MPEGTS, f"Client disconnected from MPEGTS stream for '{logical_channel_title}'.")
             except BaseException as e:
-                config.error(VideoType.MPEGTS, f"Unexpected error in MPEGTS stream for '{logical_channel_title}': {e}")
+                Log.error(VideoType.MPEGTS, f"Unexpected error in MPEGTS stream for '{logical_channel_title}': {e}")
                 raise
             finally:
                 mpegts_stream.unregister(reader_id)
@@ -306,7 +308,7 @@ async def serve_hls_preview(logical_channel_id: LogicalChannelId) -> Response:
     
     if not discovered_source:
         msg = f"Preview requested for non-existent source ID {discovered_source}."
-        config.error(VideoType.HLS, msg)
+        Log.error(VideoType.HLS, msg)
         abort(404, msg)
 
     sources: list[SourceInfo] = [{
@@ -330,7 +332,7 @@ async def serve_hls_playlist(logical_channel_id: LogicalChannelId, logical_chann
         while not await handler.add_pending_stream(logical_channel_id, VideoType.HLS):
             if loop.time() > end_time:
                 msg = f"Exceeded timeout while waiting for earlier request for HLS {logical_channel_id} to complete."
-                config.error(VideoType.HLS, msg)
+                Log.error(VideoType.HLS, msg)
                 abort(503, msg)
             await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
         added_pending_stream = True
@@ -339,7 +341,7 @@ async def serve_hls_playlist(logical_channel_id: LogicalChannelId, logical_chann
             logical_channel = await handler.get_logical_channel_by_id(logical_channel_id)
             if not logical_channel:
                 msg = f"Logical channel {logical_channel_id} not found for HLS."
-                config.error(VideoType.HLS, msg)
+                Log.error(VideoType.HLS, msg)
                 abort(404, msg)
             logical_channel_title = logical_channel['logical_channel_title']
 
@@ -351,14 +353,14 @@ async def serve_hls_playlist(logical_channel_id: LogicalChannelId, logical_chann
             res = await create_stream_task.result()
             if isinstance(res, tuple):
                 code, msg = res
-                config.error(VideoType.HLS, msg)
+                Log.error(VideoType.HLS, msg)
                 abort(code, msg)
             video_key = res
 
         playlist_path = await stream_manager.get_hls_playlist_path(video_key)
         if not playlist_path:
             msg = f"Internal error: HLS playlist path not found for channel '{logical_channel_title}' with key '{video_key}'."
-            config.error(VideoType.HLS, msg)
+            Log.error(VideoType.HLS, msg)
             abort(500, msg)
 
         end_time = loop.time() + config.ffmpeg_start_timeout
@@ -369,7 +371,7 @@ async def serve_hls_playlist(logical_channel_id: LogicalChannelId, logical_chann
                     to_cleanup = True
             if to_cleanup:
                 msg = f"HLS FFmpeg process for '{logical_channel_title}' with key '{video_key}' terminated unexpectedly."
-                config.error(VideoType.HLS, msg)
+                Log.error(VideoType.HLS, msg)
                 await stream_manager.stop_ffmpeg_process(video_key, logical_channel_title)
                 abort(503, msg)
 
@@ -382,12 +384,12 @@ async def serve_hls_playlist(logical_channel_id: LogicalChannelId, logical_chann
                     return response
                 except Exception as e:
                     msg = f"Error serving HLS playlist {playlist_path} for '{logical_channel_title}' with key '{video_key}': {e}"
-                    config.error(VideoType.HLS, msg)
+                    Log.error(VideoType.HLS, msg)
                     abort(500, msg)
             await asyncio.sleep(PLAYLIST_POLL_INTERVAL)
 
         msg = f"HLS playlist for '{logical_channel_title}' with key '{video_key}' was not available after {config.ffmpeg_start_timeout} seconds."
-        config.error(VideoType.HLS, msg)
+        Log.error(VideoType.HLS, msg)
         abort(408, msg)
     finally:
         if added_pending_stream:
@@ -399,12 +401,12 @@ async def serve_hls_segment(logical_channel_id: LogicalChannelId, segment_filena
     """Serves an HLS video segment (.ts file) asynchronously."""
     run_bg(stream_manager.record_video_access(logical_channel_id, VideoType.HLS, segment_filename=segment_filename))
     if not segment_filename.endswith(".ts") or ".." in segment_filename:
-        config.error(VideoType.HLS, f"Invalid segment filename: {segment_filename}")
+        Log.error(VideoType.HLS, f"Invalid segment filename: {segment_filename}")
         abort(400, f"Invalid segment filename: {segment_filename}")
     
     segment_path = await stream_manager.get_hls_segment_path(logical_channel_id, VideoType.HLS, segment_filename)
     if not segment_path or not await aiofiles.os.path.isfile(segment_path):
-        config.error(VideoType.HLS, f"HLS segment not found for channel '{logical_channel_id}' with filename '{segment_filename}'.")
+        Log.error(VideoType.HLS, f"HLS segment not found for channel '{logical_channel_id}' with filename '{segment_filename}'.")
         abort(404, f"HLS segment not found for channel '{logical_channel_id}'")
 
     response = await send_from_directory(str(segment_path.parent), segment_path.name, mimetype="video/mp2t")
@@ -434,7 +436,7 @@ async def reload_configuration() -> Response:
     update_providers = form_data.get("update_providers", "false").lower() == "true"
     force_discover_sources = form_data.get("force_discover_sources", "false").lower() == "true"
 
-    config.info(Label.SERVER, f"Received request to reload configuration via UI with params={{update_providers={update_providers}, force_discover_sources={force_discover_sources}}}")
+    Log.info(Label.SERVER, f"Received request to reload configuration via UI with params={{update_providers={update_providers}, force_discover_sources={force_discover_sources}}}")
     try:
         await handler.reload_handler_config(update_providers=update_providers, force_discover_sources=force_discover_sources)
         if force_discover_sources:
@@ -442,7 +444,7 @@ async def reload_configuration() -> Response:
         else:
             await flash("Successfully reloaded configuration!", "success")
     except Exception as e:
-        config.error(Label.SERVER, f"An error occurred during manual reload: {e}")
+        Log.error(Label.SERVER, f"An error occurred during manual reload: {e}")
         await flash(f"An error occurred during reload: {e}", "error")
     
     response = Response("")
@@ -461,7 +463,7 @@ async def backup_configuration() -> Response:
         else:
             await flash("Failed to create backup.", "error")
     except Exception as e:
-        config.error(Label.SERVER, f"An error occurred during backup: {e}")
+        Log.error(Label.SERVER, f"An error occurred during backup: {e}")
         await flash(f"An error occurred during backup: {e}", "error")
 
     response = Response("")
@@ -506,7 +508,7 @@ async def ui_provider_add() -> Response | str:
             if not is_valid_url(m3u_url):
                 raise ValueError(f"Invalid URL format: {m3u_url}")
             if await handler.add_provider(alias, m3u_url, max_streams):
-                config.info(Label.SERVER, f"Provider '{alias}' added with max streams {max_streams}.")
+                Log.info(Label.SERVER, f"Provider '{alias}' added with max streams {max_streams}.")
                 await flash(f"Provider '{alias}' added successfully, use 'Reload Providers & Sources' on the dashboard to discover sources.", "success")
                 all_providers = sorted((await handler.get_provider_stream_status()).values(), key=lambda p: p['alias'])
                 table_body_html = await render_template("_providers_table_body.html", providers=all_providers)
@@ -515,7 +517,7 @@ async def ui_provider_add() -> Response | str:
             else:
                 raise ValueError(f"Failed to add provider '{alias}'.")
         except ValueError as e:
-            config.error(Label.SERVER, f"Failed to add provider '{alias}': {e}")
+            Log.error(Label.SERVER, f"Failed to add provider '{alias}': {e}")
             await flash(f"Failed to add provider '{alias}`: {e}", "error")
             response = Response(await render_template("_provider_add_form.html", alias=alias, m3u_url=m3u_url, max_streams=max_streams_str))
         response.headers["HX-Trigger"] = "flashMessagesUpdated"
@@ -543,14 +545,14 @@ async def ui_provider_edit(alias: ProviderAlias) -> Response | str:
         if not is_valid_url(m3u_url):
             raise ValueError(f"Invalid URL format: {m3u_url}")
         if await handler.update_provider(alias, m3u_url, max_streams):
-            config.info(Label.SERVER, f"Provider '{alias}' updated with max streams {max_streams}.")
+            Log.info(Label.SERVER, f"Provider '{alias}' updated with max streams {max_streams}.")
             await flash(f"Provider '{alias}' updated successfully, use 'Reload Providers & Sources' on the dashboard to re-discover sources.", "success")
             updated_provider_data = ProviderStatus({**provider, "m3u_url": m3u_url, "max_streams": max_streams})
             response = Response(await render_template("_provider_row.html", provider=updated_provider_data))
         else:
             raise ValueError(f"Failed to update provider '{alias}'.")
     except ValueError as e:
-        config.error(Label.SERVER, f"Failed to update provider '{alias}': {e}")
+        Log.error(Label.SERVER, f"Failed to update provider '{alias}': {e}")
         await flash(f"Failed to update provider '{alias}': {e}", "error")
         response = Response(await render_template("_provider_edit_form.html", provider={**provider, "m3u_url": m3u_url, "max_streams": max_streams_str}))
     response.headers["HX-Trigger"] = "flashMessagesUpdated"
@@ -561,13 +563,13 @@ async def ui_provider_edit(alias: ProviderAlias) -> Response | str:
 async def ui_provider_delete(alias: ProviderAlias) -> Response:
     try:
         if await handler.delete_provider(alias):
-            config.info(Label.SERVER, f"Provider '{alias}' deleted successfully.")
+            Log.info(Label.SERVER, f"Provider '{alias}' deleted successfully.")
             await flash(f"Provider '{alias}' deleted successfully, use 'Reload Providers & Sources' on the dashboard to re-discover sources.", "success")
             response = Response("", 200)
         else:
             raise ValueError(f"Failed to delete provider '{alias}'.")
     except ValueError as e:
-        config.error(Label.SERVER, f"Failed to delete provider '{alias}': {e}")
+        Log.error(Label.SERVER, f"Failed to delete provider '{alias}': {e}")
         await flash(f"Failed to delete provider '{alias}': {e}", "error")
         response = Response("", 400)
     response.headers["HX-Trigger"] = "flashMessagesUpdated"
@@ -619,14 +621,14 @@ async def ui_logical_channel_delete(logical_channel_id: LogicalChannelId) -> Res
     if channel:
         channel_log = f"'{channel['logical_channel_title']}' ({channel['channel_num']})"
         if await handler.delete_logical_channel(logical_channel_id):
-            config.info(Label.SERVER, f"Channel {channel_log} deleted successfully.")
+            Log.info(Label.SERVER, f"Channel {channel_log} deleted successfully.")
             await flash(f"Channel {channel_log} deleted.", "success")
             await handler.reload_handler_config()
         else:
-            config.error(Label.SERVER, f"Failed to delete logical channel {channel_log}.")
+            Log.error(Label.SERVER, f"Failed to delete logical channel {channel_log}.")
             await flash(f"Error deleting channel {channel_log}.", "error")
     else:
-        config.warn(Label.SERVER, f"Logical Channel with ID '{logical_channel_id}' not found for deletion.")
+        Log.warn(Label.SERVER, f"Logical Channel with ID '{logical_channel_id}' not found for deletion.")
         await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "warning")
     return redirect(url_for('ui_logical_channels_list'))
 
@@ -645,13 +647,13 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
         tvg_log: TVGLogo = TVGLogo(form_data.get("tvg_logo", "").strip())
 
         if not logical_channel_title or not channel_num:
-            config.warn(Label.SERVER, "Display Name and Channel Number are required.")
+            Log.warn(Label.SERVER, "Display Name and Channel Number are required.")
             await flash("Display Name and Channel Number are required.", "error") 
             return redirect(request.url)
         try:
             int(channel_num)
         except ValueError:
-            config.warn(Label.SERVER, f"Channel Number must be a valid integer, received: {channel_num}")
+            Log.warn(Label.SERVER, f"Channel Number must be a valid integer, received: {channel_num}")
             await flash(f"Channel Number must be a valid integer, received: {channel_num}", "error")
             return redirect(request.url)
 
@@ -663,7 +665,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
                     'priority': Priority(int(form_data.get(f"priority_{source_id_str}", DEFAULT_PRIORITY)))
                 }))
             except (ValueError, TypeError):
-                config.warn(Label.SERVER, f"Skipping mapping with invalid priority for source '{source_id_str}'.")
+                Log.warn(Label.SERVER, f"Skipping mapping with invalid priority for source '{source_id_str}'.")
                 await flash(f"Skipping a mapping with invalid priority for source '{source_id_str}'.", "warning")
 
         channel_log = f"'{logical_channel_title}' ({channel_num})"
@@ -681,10 +683,10 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
                 await flash(f"Failed to update channel {channel_log}.", "error")
                 return redirect(request.url)
             if await handler.update_mappings_for_logical_channel(logical_channel_id, mappings_to_save):
-                config.info(Label.SERVER, f"Channel {channel_log} updated with {len(mappings_to_save)} mappings.")
+                Log.info(Label.SERVER, f"Channel {channel_log} updated with {len(mappings_to_save)} mappings.")
                 await flash(f"Channel {channel_log} updated with {len(mappings_to_save)} mappings.", "success")
             else:
-                config.warn(Label.SERVER, f"Channel {channel_log} updated, but failed to update {len(mappings_to_save)} mappings.")
+                Log.warn(Label.SERVER, f"Channel {channel_log} updated, but failed to update {len(mappings_to_save)} mappings.")
                 await flash(f"Successfully updated channel {channel_log}, but failed to update {len(mappings_to_save)} mappings.", "warning")
             await handler.reload_handler_config()
             return redirect(url_for('ui_logical_channel_form', logical_channel_id=submitted_id))
@@ -698,18 +700,18 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
             }
             new_id = await handler.add_logical_channel(lc_data)
             if not new_id:
-                config.error(Label.SERVER, f"Failed to create channel {channel_log}.")
+                Log.error(Label.SERVER, f"Failed to create channel {channel_log}.")
                 await flash(f"Failed to create channel {channel_log}.", "error")
                 return redirect(request.url)
             if mappings_to_save:
                 if await handler.update_mappings_for_logical_channel(new_id, mappings_to_save):
-                    config.info(Label.SERVER, f"Channel {channel_log} created with {len(mappings_to_save)} mappings.")
+                    Log.info(Label.SERVER, f"Channel {channel_log} created with {len(mappings_to_save)} mappings.")
                     await flash(f"Channel {channel_log} created with {len(mappings_to_save)} mappings.", "success")
                 else:
-                    config.warn(Label.SERVER, f"Channel {channel_log} created, but failed to add {len(mappings_to_save)} mappings.")
+                    Log.warn(Label.SERVER, f"Channel {channel_log} created, but failed to add {len(mappings_to_save)} mappings.")
                     await flash(f"Successfully created channel {channel_log}, but failed to add {len(mappings_to_save)} mappings.", "warning")
             else:
-                config.info(Label.SERVER, f"Channel {channel_log} created with no mappings.")
+                Log.info(Label.SERVER, f"Channel {channel_log} created with no mappings.")
                 await flash(f"Channel {channel_log} created with no mappings.", "success")
             await handler.reload_handler_config()
             return redirect(url_for('ui_logical_channel_form', logical_channel_id=new_id))
@@ -721,7 +723,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     if logical_channel_id:
         channel = await handler.get_logical_channel_with_id(logical_channel_id)
         if not channel:
-            config.warn(Label.SERVER, f"Logical Channel with ID '{logical_channel_id}' not found.")
+            Log.warn(Label.SERVER, f"Logical Channel with ID '{logical_channel_id}' not found.")
             await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
             return redirect(url_for('ui_logical_channels_list'))
     
@@ -829,7 +831,7 @@ async def ui_analyze_mappings(logical_channel_id: LogicalChannelId) -> Response:
     """Analyzes the mappings for a logical channel asynchronously."""
     channel = await handler.get_logical_channel_by_id(logical_channel_id)
     if not channel:
-        config.warn(Label.SERVER, f"Logical Channel with ID '{logical_channel_id}' not found for analysis.")
+        Log.warn(Label.SERVER, f"Logical Channel with ID '{logical_channel_id}' not found for analysis.")
         await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
         response = Response("", 404)
         response.headers["HX-Refresh"] = "true"
@@ -838,7 +840,7 @@ async def ui_analyze_mappings(logical_channel_id: LogicalChannelId) -> Response:
     channel_log = f"'{channel['logical_channel_title']}' ({channel['channel_num']})"
     sources = await handler.get_channel_mappings_for_ui(logical_channel_id)
     if not sources:
-        config.info(Label.SERVER, f"No mappings found for {channel_log}.")
+        Log.info(Label.SERVER, f"No mappings found for {channel_log}.")
         await flash(f"No mappings found for {channel_log}.", "info")
         response = Response("", 204)
         response.headers["HX-Refresh"] = "true"
@@ -859,7 +861,7 @@ async def ui_remove_dead_mappings(logical_channel_id: LogicalChannelId) -> Respo
     """Removes dead mappings from logical channels asynchronously."""
     channel = await handler.get_logical_channel_by_id(logical_channel_id)
     if not channel:
-        config.warn(Label.SERVER, f"Logical Channel with ID '{logical_channel_id}' not found for dead mapping removal.")
+        Log.warn(Label.SERVER, f"Logical Channel with ID '{logical_channel_id}' not found for dead mapping removal.")
         await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
         response = Response("", 404)
         response.headers["HX-Refresh"] = "true"
@@ -873,7 +875,7 @@ async def ui_remove_dead_mappings(logical_channel_id: LogicalChannelId) -> Respo
             discovered_mappings.append(source)
         else:
             if not await quality_monitor.remove_source(source['source_id']):
-                config.warn(Label.SERVER, f"Failed to remove dead source {source['source_id']} from quality monitor for {channel_log}.")
+                Log.warn(Label.SERVER, f"Failed to remove dead source {source['source_id']} from quality monitor for {channel_log}.")
                 await flash(f"Failed to remove dead source {source['source_id']} from quality monitor for {channel_log}.", "error")
                 response = Response("", 500)
                 response.headers["HX-Refresh"] = "true"
@@ -881,7 +883,7 @@ async def ui_remove_dead_mappings(logical_channel_id: LogicalChannelId) -> Respo
                 return response
             removed_count += 1
     if not await handler.update_mappings_for_logical_channel(logical_channel_id, discovered_mappings):
-        config.error(Label.SERVER, f"Failed to update mappings for {channel_log} after removing dead sources.")
+        Log.error(Label.SERVER, f"Failed to update mappings for {channel_log} after removing dead sources.")
         await flash(f"Failed to update mappings for {channel_log} after removing dead sources.", "error")
         response = Response("", 500)
         response.headers["HX-Refresh"] = "true"
@@ -889,10 +891,10 @@ async def ui_remove_dead_mappings(logical_channel_id: LogicalChannelId) -> Respo
         return response
 
     if removed_count > 0:
-        config.info(Label.SERVER, f"Removed {removed_count} dead mappings from {channel_log}.")
+        Log.info(Label.SERVER, f"Removed {removed_count} dead mappings from {channel_log}.")
         await flash(f"Removed {removed_count} dead mapping(s) from {channel_log}.", "success")
     else:
-        config.info(Label.SERVER, f"No dead mappings found to remove from {channel_log}.")
+        Log.info(Label.SERVER, f"No dead mappings found to remove from {channel_log}.")
         await flash(f"No dead mappings found to remove from {channel_log}.", "info")
 
     response = Response("", 200)
@@ -906,14 +908,14 @@ async def ui_logs_modal(num_lines: int) -> str:
     if num_lines < 1:
         num_lines = 1
     log_lines = []
-    log_path = config.logs_dir / LOG_FILE_NAME
+    log_path = config.logs_dir / Log.LOG_FILE_NAME
     try:
         async with aiofiles.open(log_path, 'r') as f:
             log_lines = list(deque(await f.readlines(), num_lines))
         prev_date = datetime.now() - timedelta(days=1)
         num_logs = 0
         while len(log_lines) < num_lines:
-            prev_log_path = log_path.with_name(f"{LOG_FILE_NAME}.{prev_date.strftime('%Y-%m-%d')}")
+            prev_log_path = log_path.with_name(f"{Log.LOG_FILE_NAME}.{prev_date.strftime('%Y-%m-%d')}")
             if not prev_log_path.exists():
                 break
             async with aiofiles.open(prev_log_path, 'r') as f:
@@ -936,7 +938,7 @@ async def ui_logs_modal(num_lines: int) -> str:
 async def ui_player_for_source(source_id: SourceId) -> str:
     discovered_source = await handler.get_discovered_source(source_id)
     if not discovered_source:
-        config.warn(Label.SERVER, f"Source ID '{source_id}' not found for preview.")
+        Log.warn(Label.SERVER, f"Source ID '{source_id}' not found for preview.")
         await flash(f"Error: source ID not found.", "error")
         abort(404, f"Source ID '{source_id}' not found.")
     source_name = discovered_source["display_title"] or discovered_source["tvg_name"] or "Preview"

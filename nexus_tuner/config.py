@@ -2,9 +2,7 @@ from datetime import datetime
 import os
 import json
 import re
-import logging
 import time
-from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from typing import Any, Final, Mapping, Self
 from urllib.parse import urlparse
@@ -14,12 +12,10 @@ import aiofiles.os
 import aioshutil
 
 from nexus_tuner.utils import (CONFIG_DIR, NEXUS_TUNER_PORT, NEXUS_TUNER_VERSION, ChannelListDataImpl, ChannelMappingsData, ChannelMappingsDataImpl, DiscoveredSourcesData, DiscoveredSourcesDataImpl, JobName, JobsData, JobsDataImpl,
-                                Label, LogicalChannelsData, LogicalChannelsDataImpl, ProvidersData, ProvidersDataImpl, QualityCacheData, QualityCacheDataImpl, VideoKey, VideoType, is_valid_url)
+                               Label, Log, LogicalChannelsData, LogicalChannelsDataImpl, ProvidersData, ProvidersDataImpl, QualityCacheData, QualityCacheDataImpl, VideoKey, is_valid_url)
 
 
 NOT_ALPHANUM_REGEX: Final[re.Pattern[str]] = re.compile(r'[^a-zA-Z0-9_-]')
-LOG_FILE_NAME = "app.log"
-LOG_FILE_NAME_VERBOSE = "verbose.app.log"
 
 
 class Config:
@@ -30,7 +26,7 @@ class Config:
     accessing and persisting data to JSON files in a non-blocking, safe manner.
     """
     __slots__ = (
-        'nexus_url', 'logs_dir', '_logger', '_logger_verbose', 'log_backup_count', 'ffmpeg_logs_retention_seconds',
+        'nexus_url', 'logs_dir', 'log_backup_count', 'ffmpeg_logs_retention_seconds',
         'providers_name', 'providers_path',
         'discovered_sources_name', 'discovered_sources_path',
         'logical_channels_name', 'logical_channels_path',
@@ -78,8 +74,6 @@ class Config:
 
         # --- Logging ---
         self.logs_dir: Final[Path] = CONFIG_DIR / "logs"
-        self._logger: logging.Logger
-        self._logger_verbose: logging.Logger
         self.log_backup_count: Final[int] = int(os.getenv("NEXUS_LOG_BACKUP_COUNT", 7))
         if self.log_backup_count < 0:
             raise ValueError("NEXUS_LOG_BACKUP_COUNT must be a non-negative integer.")
@@ -164,8 +158,8 @@ class Config:
         await aiofiles.os.makedirs(self.backups_scheduled_path, exist_ok=True)
         await aiofiles.os.makedirs(self.backups_manual_path, exist_ok=True)
 
-        self._initialize_logger()
-        self.info(Label.STARTUP, f"NexusTuner v{NEXUS_TUNER_VERSION}")
+        Log.initialize_logger(self.logs_dir, self.log_backup_count)
+        Log.info(Label.STARTUP, f"NexusTuner v{NEXUS_TUNER_VERSION}")
 
         # If all the JSON config files do not exist, create them for first time setup
         if all([not await aiofiles.os.path.exists(path) for path in (
@@ -177,7 +171,7 @@ class Config:
             self.quality_cache_path,
             self.jobs_path
         )]):  # Create all except jobs, it's handled by scheduler
-            self.info(Label.STARTUP, "No configuration files found, creating defaults...")
+            Log.info(Label.STARTUP, "No configuration files found, creating defaults...")
             await self.save_providers_config(ProvidersDataImpl({}))
             await self.save_discovered_sources_config(DiscoveredSourcesDataImpl({}))
             await self.save_logical_channels_config(LogicalChannelsDataImpl({}))
@@ -185,90 +179,17 @@ class Config:
             await self.save_quality_cache(QualityCacheDataImpl({}))
             await aioshutil.copy(self.channel_list_default_path, self.channel_list_path)
         elif not await aiofiles.os.path.exists(self.channel_list_path):
-            self.debug(Label.STARTUP, f"Creating default channel list at {self.channel_list_path}")
+            Log.debug(Label.STARTUP, f"Creating default channel list at {self.channel_list_path}")
             await aioshutil.copy(self.channel_list_default_path, self.channel_list_path)
 
-        self.debug(Label.STARTUP, f"Cleaning HLS directory: {self.hls_base_segment_dir}")
+        Log.debug(Label.STARTUP, f"Cleaning HLS directory: {self.hls_base_segment_dir}")
         await aioshutil.rmtree(self.hls_base_segment_dir, ignore_errors=True)
         await aiofiles.os.makedirs(self.hls_base_segment_dir, exist_ok=True)
         await aiofiles.os.makedirs(self.ffmpeg_logs_dir, exist_ok=True)
 
-    def _initialize_logger(self) -> None:
-        """Initializes the logger"""
-        logger = logging.getLogger(LOG_FILE_NAME)
-        logger.propagate = False
-        logger.setLevel(logging.DEBUG)  # Controlled via config.level functions
-        self._logger = logger
-        format_str = "%(asctime)s.%(msecs)03d %(levelname)s: %(message)s"
-        date_fmt = "%Y-%m-%d %H:%M:%S"
-
-        # app.log
-        file_handler = TimedRotatingFileHandler(self.logs_dir / LOG_FILE_NAME, when='midnight', backupCount=self.log_backup_count)
-        file_handler.setFormatter(logging.Formatter(format_str, datefmt=date_fmt))
-        logger.addHandler(file_handler)
-
-        # Console logger
-        class ColoredFormatter(logging.Formatter):
-            __slots__ = ('formats',)
-            
-            def __init__(self, fmt: str = format_str, datefmt: str = date_fmt) -> None:
-                super().__init__(fmt, datefmt)
-            
-                GREY_ANSI = "\x1b[38;20m"
-                GREEN_ANSI = "\x1b[32;20m"
-                YELLOW_ANSI = "\x1b[33;20m"
-                RED_ANSI = "\x1b[31;20m"
-                BOLD_RED_ANSI = "\x1b[31;1m"
-                RESET_ANSI = "\x1b[0m"
-
-                self.formats = {
-                    logging.DEBUG: format_str.replace("%(levelname)s", f"{GREY_ANSI}%(levelname)s{RESET_ANSI}"),
-                    logging.INFO: format_str.replace("%(levelname)s", f"{GREEN_ANSI}%(levelname)s{RESET_ANSI}"),
-                    logging.WARNING: format_str.replace("%(levelname)s", f"{YELLOW_ANSI}%(levelname)s{RESET_ANSI}"),
-                    logging.ERROR: format_str.replace("%(levelname)s", f"{RED_ANSI}%(levelname)s{RESET_ANSI}"),
-                    logging.CRITICAL: format_str.replace("%(levelname)s", f"{BOLD_RED_ANSI}%(levelname)s{RESET_ANSI}"),
-                }
-
-            def format(self, record: logging.LogRecord) -> str:
-                log_fmt = self.formats.get(record.levelno, format_str)
-                formatter = logging.Formatter(log_fmt, datefmt=date_fmt)
-                return formatter.format(record)
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(ColoredFormatter())
-        logger.addHandler(console_handler)
-
-        # verbose.app.log
-        logger_verbose = logging.getLogger(LOG_FILE_NAME_VERBOSE)
-        logger_verbose.propagate = False
-        logger_verbose.setLevel(logging.DEBUG)
-        self._logger_verbose = logger_verbose
-        file_handler_verbose = TimedRotatingFileHandler(self.logs_dir / LOG_FILE_NAME_VERBOSE, when='midnight', backupCount=self.log_backup_count)
-        file_handler_verbose.setFormatter(logging.Formatter(format_str, datefmt=date_fmt))
-        logger_verbose.addHandler(file_handler_verbose)
-
-    def debug(self, label: Label | VideoType, msg: str) -> None:
-        """Logs a debug message with the specified label."""
-        self._logger_verbose.debug(f"[{label}] {msg}")
-
-    def info(self, label: Label | VideoType, msg: str) -> None:
-        """Logs an info message with the specified label."""
-        self._logger.info(f"[{label}] {msg}")
-
-    def warn(self, label: Label | VideoType, msg: str) -> None:
-        """Logs a warning message with the specified label."""
-        self._logger.warning(f"[{label}] {msg}")
-
-    def error(self, label: Label | VideoType, msg: str) -> None:
-        """Logs an error message with the specified label."""
-        self._logger.error(f"[{label}] {msg}")
-
-    def critical(self, label: Label | VideoType, msg: str) -> None:
-        """Logs a critical message with the specified label."""
-        self._logger.critical(f"[{label}] {msg}")
-
     async def clean_up_hls_segments(self) -> None:
         """Cleans up old HLS segment files in the configured directory asynchronously."""
-        self.info(Label.STREAM, f"Cleaning up HLS segments in {self.hls_base_segment_dir}")
+        Log.info(Label.STREAM, f"Cleaning up HLS segments in {self.hls_base_segment_dir}")
         await aioshutil.rmtree(self.hls_base_segment_dir, ignore_errors=True)
 
     def get_fs_safe_alphanum(self, name: str) -> str:
@@ -295,7 +216,7 @@ class Config:
         try:
             self._cleaning_up_ffmpeg_logs = True
             if not await aiofiles.os.path.exists(self.ffmpeg_logs_dir):
-                self.debug(Label.STREAM, f"No FFmpeg logs directory at {self.ffmpeg_logs_dir}. Skipping cleanup.")
+                Log.debug(Label.STREAM, f"No FFmpeg logs directory at {self.ffmpeg_logs_dir}. Skipping cleanup.")
                 return
 
             cutoff_time = time.time() - self.ffmpeg_logs_retention_seconds
@@ -304,7 +225,7 @@ class Config:
             try:
                 log_files = await aiofiles.os.listdir(self.ffmpeg_logs_dir)
             except OSError as e:
-                self.error(Label.STREAM, f"Error listing files in {self.ffmpeg_logs_dir}: {e}")
+                Log.error(Label.STREAM, f"Error listing files in {self.ffmpeg_logs_dir}: {e}")
                 return
 
             for filename in log_files:
@@ -318,10 +239,10 @@ class Config:
                         await aiofiles.os.remove(log_file)
                         files_cleaned_up = True
                 except OSError as e:
-                    self.error(Label.STREAM, f"Error deleting old log file {log_file}: {e}")
+                    Log.error(Label.STREAM, f"Error deleting old log file {log_file}: {e}")
             
             if files_cleaned_up:
-                self.debug(Label.STREAM, f"Cleaned up FFmpeg log files older than {self.ffmpeg_logs_retention_seconds} seconds.")
+                Log.debug(Label.STREAM, f"Cleaned up FFmpeg log files older than {self.ffmpeg_logs_retention_seconds} seconds.")
         finally:
             self._cleaning_up_ffmpeg_logs = False
 
@@ -343,12 +264,12 @@ class Config:
                 await aiofiles.os.replace(temp_file_path, file_path)
                 return True
         except BaseException as e:
-            self.critical(Label.CONFIG, f"Could not write to {file_path}: {e}")
+            Log.critical(Label.CONFIG, f"Could not write to {file_path}: {e}")
             if await aiofiles.os.path.exists(temp_file_path):
                 try:
                     await aiofiles.os.remove(temp_file_path)
                 except Exception as remove_error:
-                    self.critical(Label.CONFIG, f"Error removing temporary file {temp_file_path}: {remove_error}")
+                    Log.critical(Label.CONFIG, f"Error removing temporary file {temp_file_path}: {remove_error}")
             if isinstance(e, Exception):
                 return False
             raise
@@ -386,9 +307,9 @@ class Config:
             return data
         except BaseException as e:
             if label == Label.STARTUP and isinstance(e, FileNotFoundError):
-                self.info(label, f"No providers configuration found at {self.providers_path}, using default...")
+                Log.info(label, f"No providers configuration found at {self.providers_path}, using default...")
                 return ProvidersDataImpl({})
-            self.critical(label or Label.CONFIG, f"Failed to load providers configuration from {self.providers_path}: {e}")
+            Log.critical(label or Label.CONFIG, f"Failed to load providers configuration from {self.providers_path}: {e}")
             if isinstance(e, Exception):
                 return
             raise
@@ -419,9 +340,9 @@ class Config:
             return data
         except BaseException as e:
             if label == Label.STARTUP and isinstance(e, FileNotFoundError):
-                self.info(label, f"No discovered sources configuration found at {self.discovered_sources_path}, using default...")
+                Log.info(label, f"No discovered sources configuration found at {self.discovered_sources_path}, using default...")
                 return DiscoveredSourcesDataImpl({})
-            self.critical(label or Label.CONFIG, f"Failed to load discovered sources configuration from {self.discovered_sources_path}: {e}")
+            Log.critical(label or Label.CONFIG, f"Failed to load discovered sources configuration from {self.discovered_sources_path}: {e}")
             if isinstance(e, Exception):
                 return
             raise
@@ -452,9 +373,9 @@ class Config:
             return data
         except BaseException as e:
             if label == Label.STARTUP and isinstance(e, FileNotFoundError):
-                self.info(label, f"No logical channels configuration found at {self.logical_channels_path}, using default...")
+                Log.info(label, f"No logical channels configuration found at {self.logical_channels_path}, using default...")
                 return LogicalChannelsDataImpl({})
-            self.critical(label or Label.CONFIG, f"Failed to load logical channels configuration from {self.logical_channels_path}: {e}")
+            Log.critical(label or Label.CONFIG, f"Failed to load logical channels configuration from {self.logical_channels_path}: {e}")
             if isinstance(e, Exception):
                 return
             raise
@@ -487,9 +408,9 @@ class Config:
             return data
         except BaseException as e:
             if label == Label.STARTUP and isinstance(e, FileNotFoundError):
-                self.info(label, f"No channel mappings configuration found at {self.channel_mappings_path}, using default...")
+                Log.info(label, f"No channel mappings configuration found at {self.channel_mappings_path}, using default...")
                 return ChannelMappingsDataImpl({})
-            self.critical(label or Label.CONFIG, f"Failed to load channel mappings configuration from {self.channel_mappings_path}: {e}")
+            Log.critical(label or Label.CONFIG, f"Failed to load channel mappings configuration from {self.channel_mappings_path}: {e}")
             if isinstance(e, Exception):
                 return
             raise
@@ -538,9 +459,9 @@ class Config:
             return data
         except BaseException as e:
             if not use_default and isinstance(e, FileNotFoundError):
-                self.info(label or Label.CONFIG, f"No channel list configuration found at {self.channel_list_path}, using default...")
+                Log.info(label or Label.CONFIG, f"No channel list configuration found at {self.channel_list_path}, using default...")
                 return await self.get_channel_list_config(use_default=True, label=label)
-            self.critical(label or Label.CONFIG, f"Failed to load channel list configuration from {self.channel_list_path}: {e}")
+            Log.critical(label or Label.CONFIG, f"Failed to load channel list configuration from {self.channel_list_path}: {e}")
             if isinstance(e, Exception):
                 return
             raise
@@ -602,9 +523,9 @@ class Config:
             return data
         except BaseException as e:
             if label == Label.STARTUP and isinstance(e, FileNotFoundError):
-                self.info(label, f"No quality cache found at {self.quality_cache_path}, using default...")
+                Log.info(label, f"No quality cache found at {self.quality_cache_path}, using default...")
                 return QualityCacheDataImpl({})
-            self.critical(label or Label.CONFIG, f"Failed to load quality cache from {self.quality_cache_path}: {e}")
+            Log.critical(label or Label.CONFIG, f"Failed to load quality cache from {self.quality_cache_path}: {e}")
             if isinstance(e, Exception):
                 return
             raise
@@ -637,9 +558,9 @@ class Config:
             return data
         except BaseException as e:
             if label == Label.STARTUP and isinstance(e, FileNotFoundError):
-                self.info(label, f"No jobs configuration found at {self.jobs_path}, using default...")
+                Log.info(label, f"No jobs configuration found at {self.jobs_path}, using default...")
                 return JobsDataImpl({})
-            self.critical(label or Label.CONFIG, f"Failed to load jobs configuration from {self.jobs_path}: {e}")
+            Log.critical(label or Label.CONFIG, f"Failed to load jobs configuration from {self.jobs_path}: {e}")
             if isinstance(e, Exception):
                 return
             raise
@@ -651,14 +572,14 @@ class Config:
     async def backup_config(self, *, scheduled: bool) -> Path | None:
         """Creates a zip backup of the current configuration files."""
         if scheduled and not self.backup_count:
-            self.debug(Label.CONFIG, "Scheduled backups are disabled (NEXUS_BACKUP_COUNT is 0). Skipping backup.")
+            Log.debug(Label.CONFIG, "Scheduled backups are disabled (NEXUS_BACKUP_COUNT is 0). Skipping backup.")
             return
         try:
             base_path = self.backups_scheduled_path if scheduled else self.backups_manual_path
             backup_folder = base_path / f"nexus_tuner_backup_{datetime.now().isoformat(timespec='seconds').replace(':', '-')}"
             await aiofiles.os.makedirs(backup_folder, exist_ok=True)
             backup_path = backup_folder.with_name(f"{backup_folder.name}.zip")
-            self.info(Label.CONFIG, f"Creating backup at {backup_path}")
+            Log.info(Label.CONFIG, f"Creating backup at {backup_path}")
             async with self.file_lock:
                 await aioshutil.copy2(self.providers_path, backup_folder / self.providers_name)
                 await aioshutil.copy2(self.discovered_sources_path, backup_folder / self.discovered_sources_name)
@@ -671,7 +592,7 @@ class Config:
                 await aioshutil.rmtree(backup_folder, ignore_errors=True)
             return backup_path
         except Exception as e:
-            self.error(Label.CONFIG, f"Failed to create backup: {e}")
+            Log.error(Label.CONFIG, f"Failed to create backup: {e}")
             return
 
     async def cleanup_backups(self) -> None:
@@ -679,12 +600,12 @@ class Config:
         try:
             backup_names = sorted(await aiofiles.os.listdir(self.backups_scheduled_path), reverse=True)
         except Exception as e:
-            self.error(Label.CONFIG, f"Failed to get backups in {self.backups_scheduled_path}: {e}")
+            Log.error(Label.CONFIG, f"Failed to get backups in {self.backups_scheduled_path}: {e}")
             return
         for backup_name in backup_names[self.backup_count:]:
             backup_path = self.backups_scheduled_path / backup_name
             try:
                 await aiofiles.os.remove(backup_path)
-                self.debug(Label.CONFIG, f"Removed old backup: {backup_path}")
+                Log.debug(Label.CONFIG, f"Removed old backup: {backup_path}")
             except Exception as e:
-                self.error(Label.CONFIG, f"Failed to remove old backup {backup_path}: {e}")
+                Log.error(Label.CONFIG, f"Failed to remove old backup {backup_path}: {e}")

@@ -10,7 +10,7 @@ from nexus_tuner.config import Config
 from nexus_tuner.slots import ProviderSlots
 from nexus_tuner.utils import (M3UURL, NEXUS_TUNER_USER_AGENT, ClientChannelInfos, ClientChannelInfosImpl, ChannelListData, ChannelListDataImpl,
                                 ChannelListGroup, ChannelListInfo, ChannelMappings, ChannelMappingsImpl, ChannelMappingsData, ChannelMappingsDataImpl, ChannelNum, DateTimeISO,
-                                DiscoveredSource, DiscoveredSourceWithId, DiscoveredSourcesData, DiscoveredSourcesDataImpl, LogicalChannelInfo, LogicalChannelInfoWithId, LogicalChannelTitle, LogicalChannelsDataImpl, Priority, ProviderInfo,
+                                DiscoveredSource, DiscoveredSourceWithId, DiscoveredSourcesData, DiscoveredSourcesDataImpl, Log, LogicalChannelInfo, LogicalChannelInfoWithId, LogicalChannelTitle, LogicalChannelsDataImpl, Priority, ProviderInfo,
                                 ProviderStatuses, SourceInfo, SourceMappingInfoWithId, SourceId, StreamURL, TVGGroupTitle, Label, LogicalChannelId,
                                 LogicalChannelsData, M3USource, MainM3UPlaylist, MaxStreams, ProviderAlias, ProvidersData, ProvidersDataImpl,
                                 StreamKey, TVGDisplayTitle, TVGId, TVGLogo, TVGName, VideoType, create_stream_key, run_bg)
@@ -89,52 +89,52 @@ class ChannelHandler:
         while self.get_pending_stream_count():
             self._mutex.release()
             if not logged_waiting:
-                self.config.warn(self.label, "Waiting for streams to finish being created before reloading configurations...")
+                Log.warn(self.label, "Waiting for streams to finish being created before reloading configurations...")
                 logged_waiting = True
             await asyncio.sleep(0.01)
             await self._mutex.acquire()
         try:
-            self.config.info(self.label, "Reloading ChannelHandler configurations")
+            Log.info(self.label, "Reloading ChannelHandler configurations")
 
             new_discovered_sources_data = await self.config.get_discovered_sources_config(label=self.label)
             if new_discovered_sources_data is None:
                 if self.label == Label.STARTUP:
-                    self.config.critical(self.label, "Discovered sources configuration was not found, cannot start ChannelHandler.")
+                    Log.critical(self.label, "Discovered sources configuration was not found, cannot start ChannelHandler.")
                     raise RuntimeError("Discovered sources configuration invalid or missing.")
                 if await self.config.save_discovered_sources_config(self._discovered_sources_data):
-                    self.config.warn(self.label, "Discovered sources configuration was removed/corrupted after startup, reloaded with data in-memory.")
+                    Log.warn(self.label, "Discovered sources configuration was removed/corrupted after startup, reloaded with data in-memory.")
                 else:
-                    self.config.critical(self.label, "Discovered sources configuration was removed/corrupted after startup, cannot reload.")
+                    Log.critical(self.label, "Discovered sources configuration was removed/corrupted after startup, cannot reload.")
             else:
                 self._discovered_sources_data = new_discovered_sources_data
             new_logical_channels_data = await self.config.get_logical_channels_config(label=self.label)
             if new_logical_channels_data is None:
                 if self.label == Label.STARTUP:
-                    self.config.critical(self.label, "Logical channels configuration was not found, cannot start ChannelHandler.")
+                    Log.critical(self.label, "Logical channels configuration was not found, cannot start ChannelHandler.")
                     raise RuntimeError("Logical channels configuration invalid or missing.")
                 if await self.config.save_logical_channels_config(self._logical_channels_data):
-                    self.config.warn(self.label, "Logical channels configuration was removed/corrupted after startup, reloaded with data in-memory.")
+                    Log.warn(self.label, "Logical channels configuration was removed/corrupted after startup, reloaded with data in-memory.")
                 else:
-                    self.config.critical(self.label, "Logical channels configuration was removed/corrupted after startup, cannot reload.")
+                    Log.critical(self.label, "Logical channels configuration was removed/corrupted after startup, cannot reload.")
             else:
                 self._logical_channels_data = new_logical_channels_data
             new_channel_mappings_data = await self.config.get_channel_mappings_config(label=self.label)
             if new_channel_mappings_data is None:
                 if self.label == Label.STARTUP:
-                    self.config.critical(self.label, "Channel mappings configuration was not found, cannot start ChannelHandler.")
+                    Log.critical(self.label, "Channel mappings configuration was not found, cannot start ChannelHandler.")
                     raise RuntimeError("Channel mappings configuration invalid or missing.")
                 if await self.config.save_channel_mappings_config(self._channel_mappings_data):
-                    self.config.warn(self.label, "Channel mappings configuration was removed/corrupted after startup, reloaded with data in-memory.")
+                    Log.warn(self.label, "Channel mappings configuration was removed/corrupted after startup, reloaded with data in-memory.")
                 else:
-                    self.config.critical(self.label, "Channel mappings configuration was removed/corrupted after startup, cannot reload.")
+                    Log.critical(self.label, "Channel mappings configuration was removed/corrupted after startup, cannot reload.")
             else:
                 self._channel_mappings_data = new_channel_mappings_data
             new_channel_list_data = await self.config.get_channel_list_config(label=self.label)
             if new_channel_list_data is None:
                 if self.label == Label.STARTUP:
-                    self.config.critical(self.label, "Channel list configuration was not found, cannot start ChannelHandler.")
+                    Log.critical(self.label, "Channel list configuration was not found, cannot start ChannelHandler.")
                     raise RuntimeError("Channel list configuration invalid or missing.")
-                self.config.critical(self.label, "Channel list configuration was removed/corrupted after startup, cannot reload.")
+                Log.critical(self.label, "Channel list configuration was removed/corrupted after startup, cannot reload.")
             else:
                 self._channel_list_data = new_channel_list_data
 
@@ -142,12 +142,12 @@ class ChannelHandler:
                 new_providers_data = await self.config.get_providers_config(label=self.label)
                 if new_providers_data is None:
                     if self.label == Label.STARTUP:
-                        self.config.critical(self.label, "Providers configuration was not found, cannot start ChannelHandler.")
+                        Log.critical(self.label, "Providers configuration was not found, cannot start ChannelHandler.")
                         raise RuntimeError("Providers configuration invalid or missing.")
                     if await self.config.save_providers_config(self._providers_data):
-                        self.config.warn(self.label, "Providers configuration was removed/corrupted after startup, reloaded with data in-memory.")
+                        Log.warn(self.label, "Providers configuration was removed/corrupted after startup, reloaded with data in-memory.")
                     else:
-                        self.config.critical(self.label, "Providers configuration was removed/corrupted after startup, cannot reload.")
+                        Log.critical(self.label, "Providers configuration was removed/corrupted after startup, cannot reload.")
                 else:
                     self._providers_data = new_providers_data
                     self._update_providers_slots()
@@ -156,10 +156,10 @@ class ChannelHandler:
             min_updated_at = min([p_data["updated_at"] for p_data in self._providers_data.values()], default=DateTimeISO("0001-01-01"))
             now = datetime.now()
             if force_discover_sources or datetime.fromisoformat(min_updated_at) < now - timedelta(seconds=DISCOVER_SOURCES_INTERVAL):
-                self.config.info(self.label, "Discovering sources from configured providers...")
+                Log.info(self.label, "Discovering sources from configured providers...")
                 await self._parse_all_provider_m3us_and_populate_discovered_sources()
                 if not await self.config.save_discovered_sources_config(self._discovered_sources_data):
-                    self.config.critical(self.label, "Failed to save discovered sources configuration.")
+                    Log.critical(self.label, "Failed to save discovered sources configuration.")
                 new_providers_data = ProvidersDataImpl({alias: {
                     "m3u_url": details["m3u_url"],
                     "max_streams": details["max_streams"],
@@ -168,13 +168,13 @@ class ChannelHandler:
                 if await self.config.save_providers_config(new_providers_data):
                     self._providers_data = new_providers_data
                 else:
-                    self.config.critical(self.label, "Failed to save updated provider configuration after discovery.")
+                    Log.critical(self.label, "Failed to save updated provider configuration after discovery.")
 
             # Build in-memory data
             await self._build_client_channels(prev_discovered_sources)
             self.generate_main_client_m3u()
             
-            self.config.info(self.label,
+            Log.info(self.label,
                 f"ChannelHandler ready. Discovered: {len(self._discovered_sources_data)}, "
                 f"Client-Facing: {len(self._client_channels)}"
             )
@@ -194,7 +194,7 @@ class ChannelHandler:
         lines = (line.strip() for line in text.splitlines())
         extm3u = next(lines, None)
         if extm3u is None or not extm3u.startswith("#EXTM3U"):
-            self.config.error(self.label, "Invalid Extended M3U format: Missing #EXTM3U header.")
+            Log.error(self.label, "Invalid Extended M3U format: Missing #EXTM3U header.")
             return m3u_sources
 
         REGEX_DEFAULT: tuple[str, str] = ("", "")
@@ -202,12 +202,12 @@ class ChannelHandler:
         for line in lines:
             if line.startswith("#EXTINF:"):
                 if current_extinf:
-                    self.config.warn(self.label, f"Found #EXTINF without a preceding stream URL, skipping: {current_extinf}")
+                    Log.warn(self.label, f"Found #EXTINF without a preceding stream URL, skipping: {current_extinf}")
                 current_extinf = line
                 continue
             if HTTP_REGEX.match(line):
                 if not current_extinf:
-                    self.config.warn(self.label, "Invalid M3U format: Missing #EXTINF line before stream URL.")
+                    Log.warn(self.label, "Invalid M3U format: Missing #EXTINF line before stream URL.")
                     continue
                 tvg_id = (re.search(TVG_ID_REGEX, current_extinf) or REGEX_DEFAULT)[1].strip()
                 tvg_name = html.unescape((re.search(TVG_NAME_REGEX, current_extinf) or REGEX_DEFAULT)[1].strip())
@@ -245,25 +245,25 @@ class ChannelHandler:
                         "provider_alias": provider_alias,
                         **m3u_source
                     }
-                self.config.info(self.label, f"Discovered {len(m3u_sources)} sources from provider '{provider_alias}'.")
+                Log.info(self.label, f"Discovered {len(m3u_sources)} sources from provider '{provider_alias}'.")
                 return discovered_sources
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-            self.config.error(self.label, f"Failed to fetch or parse provider '{provider_alias}': {e}")
+            Log.error(self.label, f"Failed to fetch or parse provider '{provider_alias}': {e}")
             raise
         except BaseException as e:
-            self.config.error(self.label, f"An unexpected error occurred while processing provider '{provider_alias}': {e}")
+            Log.error(self.label, f"An unexpected error occurred while processing provider '{provider_alias}': {e}")
             raise
 
     async def _parse_all_provider_m3us_and_populate_discovered_sources(self) -> None:
         """Uses asyncio.gather to fetch and parse all configured provider M3Us concurrently."""
-        self.config.info(self.label, "Starting to parse all provider M3Us...")
+        Log.info(self.label, "Starting to parse all provider M3Us...")
         async with aiohttp.ClientSession() as session:
             tasks = [
                 self._fetch_and_parse_provider(session, alias, details["m3u_url"])
                 for alias, details in self._providers_data.items()
             ]
             if not tasks:
-                self.config.warn(self.label, "No providers configured to parse.")
+                Log.warn(self.label, "No providers configured to parse.")
                 return
 
             results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -273,11 +273,11 @@ class ChannelHandler:
                     discovered_sources.update(res)
             self._discovered_sources_data = discovered_sources
 
-        self.config.info(self.label, f"Finished parsing. Total discovered sources: {len(self._discovered_sources_data)}")
+        Log.info(self.label, f"Finished parsing. Total discovered sources: {len(self._discovered_sources_data)}")
 
     async def _build_client_channels(self, prev_discovered_sources: DiscoveredSourcesData) -> None:
         """Builds the final list of channels exposed to clients."""
-        self.config.info(self.label, "Building client-facing channels...")
+        Log.info(self.label, "Building client-facing channels...")
 
         name_url_map: dict[str, dict[ProviderAlias, list[tuple[SourceId, StreamURL]]]] = {}
         for source_id, discovered_source in self._discovered_sources_data.items():
@@ -306,37 +306,37 @@ class ChannelHandler:
                 channel_log = f"'{lc_def["logical_channel_title"]}'{f' ({lc_def['channel_num']})' if 'channel_num' in lc_def else ''}"
                 prev_discovered_source = prev_discovered_sources.get(source_id)
                 if not prev_discovered_source:
-                    self.config.warn(self.label, f"Mapped source 'Unknown Source' ({source_id}) for {channel_log} not found in discovered sources or previously discovered sources.")
+                    Log.warn(self.label, f"Mapped source 'Unknown Source' ({source_id}) for {channel_log} not found in discovered sources or previously discovered sources.")
                     continue
                 source_log = f"'{prev_discovered_source['tvg_name']}' ({source_id})"
                 alias = prev_discovered_source["provider_alias"]
-                self.config.warn(self.label, f"Mapped source {source_log} for {channel_log} from provider '{alias}' not found in discovered sources.")
+                Log.warn(self.label, f"Mapped source {source_log} for {channel_log} from provider '{alias}' not found in discovered sources.")
                 key = f"{prev_discovered_source['group_title']}|{prev_discovered_source['tvg_name']}"
                 if key not in name_url_map:
-                    self.config.warn(self.label, f"Could not match previously discovered source {source_log} for {channel_log} from provider '{alias}' to any current matching tvg-group and tvg-name.")
+                    Log.warn(self.label, f"Could not match previously discovered source {source_log} for {channel_log} from provider '{alias}' to any current matching tvg-group and tvg-name.")
                     continue
                 if not alias or alias not in name_url_map[key]:
-                    self.config.warn(self.label, f"Could not match previously discovered source {source_log} for {channel_log} from provider '{alias}' to any current provider using matching tvg-group and tvg-name.")
+                    Log.warn(self.label, f"Could not match previously discovered source {source_log} for {channel_log} from provider '{alias}' to any current provider using matching tvg-group and tvg-name.")
                     continue
                 id_urls = name_url_map[key][alias]
                 if len(id_urls) > 1:
-                    self.config.warn(self.label, f"Multiple stream URLs found for previously discovered source {source_log} for {channel_log} from provider '{alias}', cannot update stream URL using matching tvg-group and tvg-name.")
+                    Log.warn(self.label, f"Multiple stream URLs found for previously discovered source {source_log} for {channel_log} from provider '{alias}', cannot update stream URL using matching tvg-group and tvg-name.")
                     continue
                 new_source_id = id_urls[0][0]
                 if not await self._update_source_id_for_mapping(logical_channel_id, source_id, new_source_id):
-                    self.config.error(self.label, f"Failed to update {channel_log} source '{source_id}' to '{new_source_id}' for provider '{alias}' after successfully matching it to a new source using tvg-group and tvg-name.")
+                    Log.error(self.label, f"Failed to update {channel_log} source '{source_id}' to '{new_source_id}' for provider '{alias}' after successfully matching it to a new source using tvg-group and tvg-name.")
                     continue
                 if self.quality_monitor:
                     run_bg(self.quality_monitor.update_source_id(source_id, new_source_id))  # run_bg to prevent deadlocks if quality monitor is waiting on a handler function
                 else:
-                    self.config.warn(self.label, f"Quality monitor not yet initialized, cannot update source '{source_id}' to '{new_source_id}' from provider '{alias}' in {channel_log} in quality cache after successfully matching it to a new source using tvg-group and tvg-name.")
+                    Log.warn(self.label, f"Quality monitor not yet initialized, cannot update source '{source_id}' to '{new_source_id}' from provider '{alias}' in {channel_log} in quality cache after successfully matching it to a new source using tvg-group and tvg-name.")
                 processed_sources.append({
                     "source_id": new_source_id,
                     "priority": priority,
                     "provider_alias": alias,
                     "stream_url": id_urls[0][1],
                 })
-                self.config.info(self.label, f"Updated {channel_log} source '{source_id}' to '{new_source_id}' using matching tvg-group and tvg-name from provider '{alias}'.")
+                Log.info(self.label, f"Updated {channel_log} source '{source_id}' to '{new_source_id}' using matching tvg-group and tvg-name from provider '{alias}'.")
             if processed_sources:
                 new_client_channels[logical_channel_id] = {
                     "logical_channel_title": lc_def["logical_channel_title"] or LogicalChannelTitle(logical_channel_id),
@@ -347,9 +347,9 @@ class ChannelHandler:
                     "sources": processed_sources
                 }
             else:
-                self.config.warn(self.label, f"No valid mapped sources for logical channel '{logical_channel_id}'. It will not be included in the client M3U.")
+                Log.warn(self.label, f"No valid mapped sources for logical channel '{logical_channel_id}'. It will not be included in the client M3U.")
         self._client_channels = new_client_channels
-        self.config.info(self.label, f"Built {len(self._client_channels)} client-facing channels.")
+        Log.info(self.label, f"Built {len(self._client_channels)} client-facing channels.")
 
     async def get_num_providers(self) -> int:
         """Returns the number of configured providers."""
@@ -399,7 +399,7 @@ class ChannelHandler:
         """Generates the main M3U content to be served to clients. (Sync - CPU-bound)"""
         m3u_lines = ["#EXTM3U x-tvg-url=\"\""]
         if not self.config.nexus_url:
-            self.config.error(self.label, "NEXUS_URL not set. Client M3U URLs will be incorrect.")
+            Log.error(self.label, "NEXUS_URL not set. Client M3U URLs will be incorrect.")
             m3u_lines.extend(["#EXTINF:-1,Error: NEXUS_URL not configured", "http://error.invalid/stream"])
             self._main_m3u_playlist = MainM3UPlaylist("\n".join(m3u_lines) + "\n")
             return
@@ -419,7 +419,7 @@ class ChannelHandler:
             m3u_lines.append(f"{self.config.nexus_url}/{VideoType.HLS}/{logical_channel_id}/playlist.m3u8")
         
         self._main_m3u_playlist = MainM3UPlaylist("\n".join(m3u_lines) + "\n")
-        self.config.info(self.label, f"Generated main client M3U with {len(self._client_channels)} channels.")
+        Log.info(self.label, f"Generated main client M3U with {len(self._client_channels)} channels.")
 
     def get_sources_for_client_channel(self, logical_channel_id: LogicalChannelId) -> list[SourceInfo]:
         """Retrieves source stream URLs for a channel."""
@@ -430,7 +430,7 @@ class ChannelHandler:
         providers_to_delete: set[ProviderAlias] = set()
         for alias, curr_details in self._slots.items():
             if alias not in self._providers_data:
-                self.config.info(self.label, f"Removing slots for provider '{alias}' as it no longer exists in configuration.")
+                Log.info(self.label, f"Removing slots for provider '{alias}' as it no longer exists in configuration.")
                 providers_to_delete.add(alias)
                 self._kill_provider_streams.add(alias)
                 continue
@@ -438,7 +438,7 @@ class ChannelHandler:
             max_streams = self._providers_data[alias]["max_streams"]
             if curr_details.get_m3u_url() == m3u_url and curr_details.get_total_slots() == max_streams:
                 continue
-            self.config.info(self.label, f"Updating slots for provider '{alias}' with new URL or max streams.")
+            Log.info(self.label, f"Updating slots for provider '{alias}' with new URL or max streams.")
             self._slots[alias] = ProviderSlots(
                 alias=alias,
                 m3u_url=m3u_url,
@@ -456,7 +456,7 @@ class ChannelHandler:
                 m3u_url=details["m3u_url"],
                 total_slots=max_streams
             )
-            self.config.info(self.label, f"Initialized slots for provider '{alias}' with capacity {max_streams}")
+            Log.info(self.label, f"Initialized slots for provider '{alias}' with capacity {max_streams}")
         
     async def reload_handler_config(self, *, update_providers: bool = False, force_discover_sources: bool = False) -> None:
         """Public method to trigger a full async reload of the handler's configuration."""
@@ -490,7 +490,7 @@ class ChannelHandler:
                 "updated_at": DateTimeISO(datetime.now().isoformat())
             })})
             if not await self.config.save_providers_config(new_providers_data):
-                self.config.critical(self.label, f"Failed to save new provider configuration for '{alias}'.")
+                Log.critical(self.label, f"Failed to save new provider configuration for '{alias}'.")
                 return False
             self._providers_data = new_providers_data
             self._update_providers_slots()
@@ -511,7 +511,7 @@ class ChannelHandler:
                 "updated_at": self._providers_data[alias]["updated_at"]
             })
             if not await self.config.save_providers_config(new_providers_data):
-                self.config.critical(self.label, f"Failed to save updated provider configuration for '{alias}'.")
+                Log.critical(self.label, f"Failed to save updated provider configuration for '{alias}'.")
                 return False
             self._providers_data = new_providers_data
             self._update_providers_slots()
@@ -526,14 +526,14 @@ class ChannelHandler:
             new_discovered_sources = DiscoveredSourcesDataImpl({k: v for k, v in self._discovered_sources_data.items()
                                                                 if v["provider_alias"] != alias})
             if not await self.config.save_discovered_sources_config(new_discovered_sources):
-                self.config.critical(self.label, f"Failed to save discovered sources configuration when deleting provider '{alias}'.")
+                Log.critical(self.label, f"Failed to save discovered sources configuration when deleting provider '{alias}'.")
                 return False
             self._discovered_sources_data = new_discovered_sources
 
             new_providers_data = ProvidersDataImpl({**self._providers_data})
             del new_providers_data[alias]
             if not await self.config.save_providers_config(new_providers_data):
-                self.config.critical(self.label, f"Failed to save updated provider configuration after deleting '{alias}'.")
+                Log.critical(self.label, f"Failed to save updated provider configuration after deleting '{alias}'.")
                 return False
             self._providers_data = new_providers_data
             self._update_providers_slots()
@@ -586,7 +586,7 @@ class ChannelHandler:
             new_data = LogicalChannelsDataImpl({**self._logical_channels_data})
             new_data[new_lc_id] = new_lc_data
             if not await self.config.save_logical_channels_config(new_data):
-                self.config.critical(self.label, f"Failed to save new logical channel configuration: {new_lc_data}")
+                Log.critical(self.label, f"Failed to save new logical channel configuration: {new_lc_data}")
                 return
             self._logical_channels_data = new_data
             return new_lc_id
@@ -595,12 +595,12 @@ class ChannelHandler:
         """Updates a logical channel in the configuration."""
         async with self._mutex:
             if logical_channel_id not in self._logical_channels_data:
-                self.config.error(self.label, f"Failed to find Logical Channel ID {logical_channel_id} for update: {updated_lc_data}")
+                Log.error(self.label, f"Failed to find Logical Channel ID {logical_channel_id} for update: {updated_lc_data}")
                 return False
             new_data = LogicalChannelsDataImpl({**self._logical_channels_data})
             new_data[logical_channel_id] = LogicalChannelInfo({**updated_lc_data})
             if not await self.config.save_logical_channels_config(new_data):
-                self.config.critical(self.label, f"Failed to save updated logical channel configuration for {logical_channel_id}: {updated_lc_data}")
+                Log.critical(self.label, f"Failed to save updated logical channel configuration for {logical_channel_id}: {updated_lc_data}")
                 return False
             self._logical_channels_data = new_data
             return True
@@ -609,21 +609,21 @@ class ChannelHandler:
         """Deletes a logical channel from the configuration."""
         async with self._mutex:
             if logical_channel_id not in self._logical_channels_data:
-                self.config.error(self.label, f"Failed to delete logical channel {logical_channel_id}: not found.")
+                Log.error(self.label, f"Failed to delete logical channel {logical_channel_id}: not found.")
                 return False
             if logical_channel_id in self._channel_mappings_data:
                 new_mappings = ChannelMappingsDataImpl({k: ChannelMappingsImpl({x: y for x, y in v.items()})
                                                         for k, v in self._channel_mappings_data.items()})
                 del new_mappings[logical_channel_id]
                 if not await self.config.save_channel_mappings_config(new_mappings):
-                    self.config.critical(self.label, f"Failed to save channel mappings when deleting logical channel {logical_channel_id}. Restoring original mappings.")
+                    Log.critical(self.label, f"Failed to save channel mappings when deleting logical channel {logical_channel_id}. Restoring original mappings.")
                     return False
                 self._channel_mappings_data = new_mappings
 
             new_data = LogicalChannelsDataImpl({**self._logical_channels_data})
             del_lc_data = new_data.pop(logical_channel_id)
             if not await self.config.save_logical_channels_config(new_data):
-                self.config.critical(self.label, f"Failed to save updated logical channels configuration after deleting {logical_channel_id}: {del_lc_data}")
+                Log.critical(self.label, f"Failed to save updated logical channels configuration after deleting {logical_channel_id}: {del_lc_data}")
                 return False
             self._logical_channels_data = new_data
             return True
@@ -672,17 +672,17 @@ class ChannelHandler:
     async def _update_source_id_for_mapping(self, logical_channel_id: LogicalChannelId, old_source_id: SourceId, new_source_id: SourceId) -> bool:
         """Updates a source ID in the mappings for a logical channel."""
         if logical_channel_id not in self._channel_mappings_data:
-            self.config.error(self.label, f"Logical channel {logical_channel_id} not found for updating source ID.")
+            Log.error(self.label, f"Logical channel {logical_channel_id} not found for updating source ID.")
             return False
         mappings = self._channel_mappings_data[logical_channel_id]
         if old_source_id not in mappings:
-            self.config.error(self.label, f"Source ID {old_source_id} not found in mappings for logical channel {logical_channel_id}.")
+            Log.error(self.label, f"Source ID {old_source_id} not found in mappings for logical channel {logical_channel_id}.")
             return False
         new_mappings_data = ChannelMappingsDataImpl({k: ChannelMappingsImpl({x: y for x, y in v.items()})
                                                     for k, v in self._channel_mappings_data.items()})
         new_mappings_data[logical_channel_id][new_source_id] = new_mappings_data[logical_channel_id].pop(old_source_id)
         if not await self.config.save_channel_mappings_config(new_mappings_data):
-            self.config.critical(self.label, f"Failed to save updated channel mappings after changing source ID {old_source_id} to {new_source_id} for logical channel {logical_channel_id}.")
+            Log.critical(self.label, f"Failed to save updated channel mappings after changing source ID {old_source_id} to {new_source_id} for logical channel {logical_channel_id}.")
             return False
         self._channel_mappings_data = new_mappings_data
         return True
@@ -695,7 +695,7 @@ class ChannelHandler:
             new_mappings_data[logical_channel_id] = ChannelMappingsImpl({m["source_id"]: {"priority": m["priority"]}
                                                                          for m in new_mappings if "source_id" in m})
             if not await self.config.save_channel_mappings_config(new_mappings_data):
-                self.config.critical(self.label, f"Failed to save updated channel mappings for logical channel {logical_channel_id}.")
+                Log.critical(self.label, f"Failed to save updated channel mappings for logical channel {logical_channel_id}.")
                 return False
             self._channel_mappings_data = new_mappings_data
             return True

@@ -4,7 +4,7 @@ from typing import Awaitable, Callable, Final, NoReturn, Self
 from nexus_tuner.config import Config
 from nexus_tuner.handler import ChannelHandler
 from nexus_tuner.quality_monitor import QualityMonitor
-from nexus_tuner.utils import DateTimeISO, JobName, JobsDataImpl, Label, relative_time
+from nexus_tuner.utils import DateTimeISO, JobName, JobsDataImpl, Label, Log, relative_time
 
 
 SCHEDULER_TICK_INTERVAL_SECONDS: Final[int] = 60
@@ -33,14 +33,14 @@ class Job:
             return True
         self.active = True
         try:
-            config.info(Label.SCHEDULER, f"starting job: {self.name}")
+            Log.info(Label.SCHEDULER, f"starting job: {self.name}")
             await self.func()
             if not await set_last_run(self.name, start_time):
-                config.critical(Label.SCHEDULER, f"Failed to set last run for job {self.name}.")
+                Log.critical(Label.SCHEDULER, f"Failed to set last run for job {self.name}.")
                 return False
             self.log_next_run(config, start_time)
         except Exception as e:
-            config.error(Label.SCHEDULER, f"Job failed with exception: {e}")
+            Log.error(Label.SCHEDULER, f"Job failed with exception: {e}")
         finally:
             self.active = False
         return True
@@ -59,7 +59,7 @@ class Job:
         next_run = self.get_next_run(last_run)
         last_run_str = relative_time(last_run) if last_run else "never"
         next_run_str = relative_time(next_run) if next_run > datetime.now() else "now"
-        config.info(Label.SCHEDULER, f"{self.name}: last run {last_run_str}, next run {next_run_str}")
+        Log.info(Label.SCHEDULER, f"{self.name}: last run {last_run_str}, next run {next_run_str}")
 
 class Scheduler:
     """A background task for running tasks at specific times of day."""
@@ -95,12 +95,12 @@ class Scheduler:
         """Asynchronous factory for creating and initializing a Scheduler instance."""
         instance = cls(config, handler, quality_monitor)
         instance._scheduler_task = asyncio.create_task(instance._run())
-        config.info(Label.STARTUP, "Task Scheduler started.")
+        Log.info(Label.STARTUP, "Task Scheduler started.")
         return instance
 
     def shutdown(self) -> None:
         """Gracefully stops the scheduler and all its active jobs."""
-        self.config.info(Label.SCHEDULER, "Stopping Task Scheduler...")
+        Log.info(Label.SCHEDULER, "Stopping Task Scheduler...")
         self._scheduler_task.cancel()
         for task in self._tasks:
             task.cancel()
@@ -127,9 +127,9 @@ class Scheduler:
             for job_name in JobName:
                 new_jobs_data[job_name] = {"last_run": DateTimeISO(datetime.now().isoformat())}
             if not await self.config.save_jobs_config(new_jobs_data):
-                self.config.critical(Label.SCHEDULER, f"Failed to initialize {self.config.jobs_name} config, cannot run jobs.")
+                Log.critical(Label.SCHEDULER, f"Failed to initialize {self.config.jobs_name} config, cannot run jobs.")
                 raise RuntimeError(f"Failed to initialize {self.config.jobs_name} config, cannot run jobs.")
-            self.config.info(Label.SCHEDULER, f"Initialized {self.config.jobs_name} config with default values.")
+            Log.info(Label.SCHEDULER, f"Initialized {self.config.jobs_name} config with default values.")
             jobs_data = await self.config.get_jobs_config()
         for job in self.jobs:
             last_run_iso = jobs_data.get(job.name, {}).get("last_run") if jobs_data else None
@@ -139,7 +139,7 @@ class Scheduler:
                 now = datetime.now()
                 jobs_data = await self.config.get_jobs_config()
                 if jobs_data is None:
-                    self.config.critical(Label.SCHEDULER, f"{self.config.jobs_name} was removed/corrupted after startup, no longer running jobs.")
+                    Log.critical(Label.SCHEDULER, f"{self.config.jobs_name} was removed/corrupted after startup, no longer running jobs.")
                     raise RuntimeError(f"{self.config.jobs_name} was removed after startup, no longer running jobs.")
                 for job in self.jobs:
                     last_run_iso = jobs_data.get(job.name, {}).get("last_run")
@@ -147,16 +147,16 @@ class Scheduler:
                         self._tasks.append(asyncio.create_task(job.run(self.config, now, self.set_last_run)))
             except Exception as e:
                 if isinstance(e, RuntimeError):
-                    self.config.critical(Label.SCHEDULER, f"Scheduler encountered a critical error: {e}")
+                    Log.critical(Label.SCHEDULER, f"Scheduler encountered a critical error: {e}")
                     raise
-                self.config.error(Label.SCHEDULER, f"Scheduler encountered an error: {e}")
+                Log.error(Label.SCHEDULER, f"Scheduler encountered an error: {e}")
             to_delete = [task for task in self._tasks if task.done()]
             for task in to_delete:
                 e = task.exception()
                 if e:
-                    self.config.error(Label.SCHEDULER, f"Task failed with: {e}")
+                    Log.error(Label.SCHEDULER, f"Task failed with: {e}")
                 elif not task.cancelled() and not task.result():
-                    self.config.critical(Label.SCHEDULER, f"Failed to save to {self.config.jobs_name}, no longer running jobs.")
+                    Log.critical(Label.SCHEDULER, f"Failed to save to {self.config.jobs_name}, no longer running jobs.")
                     raise RuntimeError(f"Failed to save to {self.config.jobs_name}, no longer running jobs.")
                 self._tasks.remove(task)
             await asyncio.sleep(SCHEDULER_TICK_INTERVAL_SECONDS)

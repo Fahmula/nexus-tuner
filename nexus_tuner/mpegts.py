@@ -6,7 +6,7 @@ from quart import Response
 
 from nexus_tuner.config import Config
 from nexus_tuner.stream import StreamManager
-from nexus_tuner.utils import MPEGTS_PACKET_SIZE, FFmpegProcessInfoMutable, MPEGTSProcessInfo, ReaderId, VideoKey, VideoType, run_bg
+from nexus_tuner.utils import MPEGTS_PACKET_SIZE, FFmpegProcessInfoMutable, Log, MPEGTSProcessInfo, ReaderId, VideoKey, VideoType, run_bg
 
 BUFFER_CLEANUP_INTERVAL: Final[int] = 10
 BUFFER_SIZE_LIMIT: Final[int] = 100 * 1024 * 1024
@@ -68,7 +68,7 @@ class MPEGTSStream:
         """Unregister a reader from the MPEGTS stream, will stop the stream if no readers are left."""
         del self._reader_positions[reader_id]
         if not len(self._reader_positions):
-            self.config.info(VideoType.MPEGTS, f"Inactive MPEGTS stream for '{self.video_key}' as no readers are registered.")
+            Log.info(VideoType.MPEGTS, f"Inactive MPEGTS stream for '{self.video_key}' as no readers are registered.")
             self.shutdown()
 
     def unregister(self, reader_id: ReaderId) -> None:
@@ -107,24 +107,24 @@ class MPEGTSStream:
                 except Exception as e:
                     if self._cancelled:
                         raise asyncio.CancelledError()
-                    self.config.error(VideoType.MPEGTS, f"Error reading from MPEGTS stream for '{process_info['logical_channel_title']}' with key '{self.video_key}': {e}")
+                    Log.error(VideoType.MPEGTS, f"Error reading from MPEGTS stream for '{process_info['logical_channel_title']}' with key '{self.video_key}': {e}")
                     await self.stream_manager.stop_ffmpeg_process(self.video_key, process_info["logical_channel_title"])
                     res = await self.recreate_stream()
                     if isinstance(res, Response):
-                        self.config.error(VideoType.MPEGTS, f"Failed to recreate MPEGTS stream for '{process_info['logical_channel_title']}' with key '{self.video_key}': {res.status}")
+                        Log.error(VideoType.MPEGTS, f"Failed to recreate MPEGTS stream for '{process_info['logical_channel_title']}' with key '{self.video_key}': {res.status}")
                         raise
                     del self.streams[self.video_key]
                     self.video_key = res
                     self.streams[self.video_key] = self
                     process_info_res = cast(MPEGTSProcessInfo | None, await self.stream_manager.get_ffmpeg_process_info(self.video_key))
                     if not process_info_res:
-                        self.config.error(VideoType.MPEGTS, f"Internal error: MPEGTS FFmpeg process not found for logical channel '{process_info['logical_channel_title']}' with key '{self.video_key}' after recreating stream.")
+                        Log.error(VideoType.MPEGTS, f"Internal error: MPEGTS FFmpeg process not found for logical channel '{process_info['logical_channel_title']}' with key '{self.video_key}' after recreating stream.")
                         raise
                     process_info = process_info_res
         except asyncio.CancelledError:
             raise
         except BaseException as e:
-            self.config.error(VideoType.MPEGTS, f"Unexpected error in MPEGTS stream for '{self.video_key}': {e}")
+            Log.error(VideoType.MPEGTS, f"Unexpected error in MPEGTS stream for '{self.video_key}': {e}")
             raise
         finally:  # Don't stop early incase the user reconnects, let the timeout handle it
             async def bg_cleanup() -> None:
