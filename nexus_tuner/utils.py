@@ -420,7 +420,7 @@ def create_stream_key(video_type: VideoType, logical_channel_id: LogicalChannelI
 
 
 def create_video_key(stream_key: StreamKey, source_id: SourceId) -> VideoKey:
-    """Generates a unique key for the stream."""
+    """Generates a unique key for the video stream."""
     return VideoKey(f"{stream_key}_{source_id}")
 
 

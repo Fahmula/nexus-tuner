@@ -593,7 +593,6 @@ class Config:
             return backup_path
         except Exception as e:
             Log.error(Label.CONFIG, f"Failed to create backup: {e}")
-            return
 
     async def cleanup_backups(self) -> None:
         """Cleans up old scheduled backups, keeping only the most recent N backups."""

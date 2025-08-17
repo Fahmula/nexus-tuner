@@ -5,6 +5,7 @@ from typing import Coroutine, Final, Any, Self
 
 from nexus_tuner.config import Config
 from nexus_tuner.handler import ChannelHandler
+from nexus_tuner.slots import ProviderSlots
 from nexus_tuner.utils import (NEXUS_TUNER_USER_AGENT, Bitrate, BitrateScore, DateTimeISO, Framerate, FramerateScore, Height,
                                 Label, Log, LogicalChannelId, Percent, ProbeInfo, ProbeSuccess, ProviderAlias, QualityInfoImpl, QualityScores,
                                 QualityScoresImpl, ResolutionScore, QualityCacheData, QualityCacheDataImpl, SourceId,
@@ -62,10 +63,14 @@ class QualityMonitor:
                 if not await self.config.save_quality_cache(quality_cache):
                     Log.critical(Label.QUALITY, f"Failed to save quality cache after removing {source_id}.")
                     return False
+            else:
+                Log.debug(Label.QUALITY, f"Source {source_id} not found in quality cache, nothing to remove.")
             if source_id in self._quality_scores:
                 new_quality_scores = QualityScoresImpl({**self._quality_scores})
                 del new_quality_scores[source_id]
                 self._quality_scores = new_quality_scores
+            else:
+                Log.debug(Label.QUALITY, f"Source {source_id} not found in quality scores, nothing to remove.")
             return True
 
     async def update_source_id(self, old_source_id: SourceId, new_source_id: SourceId) -> bool:
@@ -80,13 +85,17 @@ class QualityMonitor:
                 if not await self.config.save_quality_cache(quality_cache):
                     Log.critical(Label.QUALITY, f"Failed to save quality cache after replacing {old_source_id} with {new_source_id}.")
                     return False
+            else:
+                Log.debug(Label.QUALITY, f"Source {old_source_id} not found in quality cache, cannot replace with {new_source_id}.")
             if old_source_id in self._quality_scores:
                 new_quality_scores = QualityScoresImpl({**self._quality_scores})
                 new_quality_scores[new_source_id] = new_quality_scores.pop(old_source_id)
                 self._quality_scores = new_quality_scores
+            else:
+                Log.debug(Label.QUALITY, f"Source {old_source_id} not found in quality scores, cannot replace with {new_source_id}.")
             return True
 
-    async def _get_stream_info(self, stream_url: StreamURL, channel_log: str, source_log: str) -> ProbeSuccess | None:
+    async def _get_stream_info(self, stream_url: StreamURL, provider_slots: ProviderSlots, channel_log: str, source_log: str) -> ProbeSuccess | None:
         """
         Extracts stream information using ffprobe, ensuring the subprocess is
         terminated on timeout or cancellation.
@@ -126,12 +135,15 @@ class QualityMonitor:
             return
         finally:
             async def bg_cleanup() -> None:
-                if proc and proc.returncode is None:
-                    try:
+                try:
+                    if proc and proc.returncode is None:
                         proc.kill()
                         await proc.wait()
-                    except ProcessLookupError:
-                        pass
+                        Log.debug(Label.QUALITY, f"ffprobe process for {source_log} in {channel_log} killed successfully.")
+                    run_bg(provider_slots.release())
+                except BaseException as e:
+                    Log.critical(Label.QUALITY, f"Error during background cleanup for {source_log} in {channel_log}: {e}")
+                    raise
             run_bg(bg_cleanup())
 
         stream = info.get('streams', [{}])[0]
@@ -190,17 +202,15 @@ class QualityMonitor:
                     await asyncio.sleep(BACKGROUND_SLOT_WAIT_INTERVAL)
                     continue
 
-                task = asyncio.create_task(self._get_stream_info(stream_url, channel_log, source_log))
+                task = asyncio.create_task(self._get_stream_info(stream_url, provider_slots, channel_log, source_log))
                 try:
                     provider_slots.add_background_task(task)
                     stream_info = await task
                 except asyncio.CancelledError:
-                    Log.warn(Label.QUALITY, f"ffprobe task for {source_log} in {channel_log} was cancelled.")
+                    Log.debug(Label.QUALITY, f"ffprobe task for {source_log} in {channel_log} was cancelled.")
                     if provider_slots.pop_cancelled_task(task):
                         continue  # Retry since we cancelled for a user stream
                     raise
-                finally:
-                    run_bg(provider_slots.release())
                 if not stream_info:
                     return source_id, {"status": "offline", "reason": "No stream info available"}, source_log
                 return source_id, stream_info, source_log

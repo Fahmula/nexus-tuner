@@ -21,7 +21,6 @@ import aiofiles.os
 import json
 import math
 import os
-from collections import deque
 from datetime import UTC, datetime, timedelta
 from typing import AsyncGenerator, Dict, Final, cast
 
@@ -42,7 +41,7 @@ from nexus_tuner.utils import (Log, LogicalChannelFormDetails, VideoKey, backgro
                                 DEFAULT_PRIORITY, M3UURL, NEXUS_TUNER_PORT, NEXUS_TUNER_VERSION, ChannelNum, DiscoveredSource,
                                 Label, LogicalChannelId, LogicalChannelInfo, LogicalChannelInfoWithId, LogicalChannelMetrics, LogicalChannelTitle, MaxStreams, 
                                 PercentDisplay, Priority, ProviderAlias, ProviderStatus, QualityScores, SourceInfo, SourceMappingInfoWithId, SourceMetrics,
-                                SourceId, TVGGroupTitle, TVGId, TVGLogo, VideoType, is_valid_url, run_bg, sort_sources)
+                                SourceId, TVGGroupTitle, TVGId, TVGLogo, VideoType, create_stream_key, is_valid_url, run_bg, sort_sources)
 
 # --- Constants ---
 PLAYLIST_POLL_INTERVAL: Final[float] = 0.2         # Seconds to wait between checking for a new playlist
@@ -232,10 +231,11 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
     added_pending_stream = False
     loop = asyncio.get_running_loop()
     end_time = loop.time() + CREATE_STREAM_DEADLINE
+    stream_key = create_stream_key(VideoType.MPEGTS, logical_channel_id)
     try:
-        while not await handler.add_pending_stream(logical_channel_id, VideoType.MPEGTS):
+        while not await handler.add_pending_stream(stream_key):
             if loop.time() > end_time:
-                msg = f"Exceeded timeout while waiting for earlier request for MPEGTS {logical_channel_id} to complete."
+                msg = f"Exceeded timeout while waiting for earlier request for {stream_key} to complete."
                 Log.error(VideoType.MPEGTS, msg)
                 abort(503, msg)
             await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
@@ -282,9 +282,9 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
                 while True:
                     yield await mpegts_stream.read(reader_id)
             except asyncio.CancelledError as e:
-                Log.info(VideoType.MPEGTS, f"Client disconnected from MPEGTS stream for '{logical_channel_title}'.")
+                Log.info(VideoType.MPEGTS, f"Client #{reader_id} disconnected from MPEGTS stream for '{logical_channel_title}'.")
             except BaseException as e:
-                Log.error(VideoType.MPEGTS, f"Unexpected error in MPEGTS stream for '{logical_channel_title}': {e}")
+                Log.error(VideoType.MPEGTS, f"Unexpected error in MPEGTS stream with Client #{reader_id} for '{logical_channel_title}': {e}")
                 raise
             finally:
                 mpegts_stream.unregister(reader_id)
@@ -297,7 +297,7 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
         return response
     finally:
         if added_pending_stream:
-            await handler.remove_pending_stream(logical_channel_id, VideoType.MPEGTS)
+            await handler.remove_pending_stream(stream_key)
 
 
 @app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/preview.m3u8')
@@ -328,10 +328,11 @@ async def serve_hls_playlist(logical_channel_id: LogicalChannelId, logical_chann
     added_pending_stream = False
     loop = asyncio.get_running_loop()
     end_time = loop.time() + CREATE_STREAM_DEADLINE
+    stream_key = create_stream_key(VideoType.HLS, logical_channel_id)
     try:
-        while not await handler.add_pending_stream(logical_channel_id, VideoType.HLS):
+        while not await handler.add_pending_stream(stream_key):
             if loop.time() > end_time:
-                msg = f"Exceeded timeout while waiting for earlier request for HLS {logical_channel_id} to complete."
+                msg = f"Exceeded timeout while waiting for earlier request for {stream_key} to complete."
                 Log.error(VideoType.HLS, msg)
                 abort(503, msg)
             await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
@@ -393,7 +394,7 @@ async def serve_hls_playlist(logical_channel_id: LogicalChannelId, logical_chann
         abort(408, msg)
     finally:
         if added_pending_stream:
-            await handler.remove_pending_stream(logical_channel_id, VideoType.HLS)
+            await handler.remove_pending_stream(stream_key)
 
 
 @app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/<path:segment_filename>')
@@ -419,6 +420,7 @@ async def serve_hls_segment(logical_channel_id: LogicalChannelId, segment_filena
 @app.route("/<string:video_type>/<string:logical_channel_id>/stop", methods=["POST"])
 async def stop_stream(video_type: VideoType, logical_channel_id: LogicalChannelId) -> Response:
     """Stops the stream for a logical channel asynchronously."""
+    Log.debug(Label.SERVER, f"Received request to stop {video_type} stream for logical channel {logical_channel_id}.")
     await stream_manager.stop_ffmpeg_processes_with_logical_channel_id(logical_channel_id, video_type)
     return Response(status=204)
 
@@ -507,15 +509,14 @@ async def ui_provider_add() -> Response | str:
             max_streams = MaxStreams(int(max_streams_str))
             if not is_valid_url(m3u_url):
                 raise ValueError(f"Invalid URL format: {m3u_url}")
-            if await handler.add_provider(alias, m3u_url, max_streams):
-                Log.info(Label.SERVER, f"Provider '{alias}' added with max streams {max_streams}.")
-                await flash(f"Provider '{alias}' added successfully, use 'Reload Providers & Sources' on the dashboard to discover sources.", "success")
-                all_providers = sorted((await handler.get_provider_stream_status()).values(), key=lambda p: p['alias'])
-                table_body_html = await render_template("_providers_table_body.html", providers=all_providers)
-                form_removal_html = '<div id="add-provider-form-wrapper" hx-swap-oob="true"></div>'
-                response = Response(table_body_html + form_removal_html)
-            else:
+            if not await handler.add_provider(alias, m3u_url, max_streams):
                 raise ValueError(f"Failed to add provider '{alias}'.")
+            Log.info(Label.SERVER, f"Provider '{alias}' added with max streams {max_streams}.")
+            await flash(f"Provider '{alias}' added successfully, use 'Reload Providers & Sources' on the dashboard to discover sources.", "success")
+            all_providers = sorted((await handler.get_provider_stream_status()).values(), key=lambda p: p['alias'])
+            table_body_html = await render_template("_providers_table_body.html", providers=all_providers)
+            form_removal_html = '<div id="add-provider-form-wrapper" hx-swap-oob="true"></div>'
+            response = Response(table_body_html + form_removal_html)
         except ValueError as e:
             Log.error(Label.SERVER, f"Failed to add provider '{alias}': {e}")
             await flash(f"Failed to add provider '{alias}`: {e}", "error")
@@ -544,13 +545,12 @@ async def ui_provider_edit(alias: ProviderAlias) -> Response | str:
         max_streams = MaxStreams(int(max_streams_str))
         if not is_valid_url(m3u_url):
             raise ValueError(f"Invalid URL format: {m3u_url}")
-        if await handler.update_provider(alias, m3u_url, max_streams):
-            Log.info(Label.SERVER, f"Provider '{alias}' updated with max streams {max_streams}.")
-            await flash(f"Provider '{alias}' updated successfully, use 'Reload Providers & Sources' on the dashboard to re-discover sources.", "success")
-            updated_provider_data = ProviderStatus({**provider, "m3u_url": m3u_url, "max_streams": max_streams})
-            response = Response(await render_template("_provider_row.html", provider=updated_provider_data))
-        else:
+        if not await handler.update_provider(alias, m3u_url, max_streams):
             raise ValueError(f"Failed to update provider '{alias}'.")
+        Log.info(Label.SERVER, f"Provider '{alias}' updated with max streams {max_streams}.")
+        await flash(f"Provider '{alias}' updated successfully, use 'Reload Providers & Sources' on the dashboard to re-discover sources.", "success")
+        updated_provider_data = ProviderStatus({**provider, "m3u_url": m3u_url, "max_streams": max_streams})
+        response = Response(await render_template("_provider_row.html", provider=updated_provider_data))
     except ValueError as e:
         Log.error(Label.SERVER, f"Failed to update provider '{alias}': {e}")
         await flash(f"Failed to update provider '{alias}': {e}", "error")
@@ -562,12 +562,11 @@ async def ui_provider_edit(alias: ProviderAlias) -> Response | str:
 @app.route("/ui/providers/delete/<string:alias>", methods=["DELETE"])
 async def ui_provider_delete(alias: ProviderAlias) -> Response:
     try:
-        if await handler.delete_provider(alias):
-            Log.info(Label.SERVER, f"Provider '{alias}' deleted successfully.")
-            await flash(f"Provider '{alias}' deleted successfully, use 'Reload Providers & Sources' on the dashboard to re-discover sources.", "success")
-            response = Response("", 200)
-        else:
+        if not await handler.delete_provider(alias):
             raise ValueError(f"Failed to delete provider '{alias}'.")
+        Log.info(Label.SERVER, f"Provider '{alias}' deleted successfully.")
+        await flash(f"Provider '{alias}' deleted successfully, use 'Reload Providers & Sources' on the dashboard to re-discover sources.", "success")
+        response = Response("", 200)
     except ValueError as e:
         Log.error(Label.SERVER, f"Failed to delete provider '{alias}': {e}")
         await flash(f"Failed to delete provider '{alias}': {e}", "error")
@@ -628,7 +627,7 @@ async def ui_logical_channel_delete(logical_channel_id: LogicalChannelId) -> Res
             Log.error(Label.SERVER, f"Failed to delete logical channel {channel_log}.")
             await flash(f"Error deleting channel {channel_log}.", "error")
     else:
-        Log.warn(Label.SERVER, f"Logical Channel with ID '{logical_channel_id}' not found for deletion.")
+        Log.error(Label.SERVER, f"Logical Channel with ID '{logical_channel_id}' not found for deletion.")
         await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "warning")
     return redirect(url_for('ui_logical_channels_list'))
 
@@ -647,13 +646,13 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
         tvg_log: TVGLogo = TVGLogo(form_data.get("tvg_logo", "").strip())
 
         if not logical_channel_title or not channel_num:
-            Log.warn(Label.SERVER, "Display Name and Channel Number are required.")
+            Log.error(Label.SERVER, "Display Name and Channel Number are required.")
             await flash("Display Name and Channel Number are required.", "error") 
             return redirect(request.url)
         try:
             int(channel_num)
         except ValueError:
-            Log.warn(Label.SERVER, f"Channel Number must be a valid integer, received: {channel_num}")
+            Log.error(Label.SERVER, f"Channel Number must be a valid integer, received: {channel_num}")
             await flash(f"Channel Number must be a valid integer, received: {channel_num}", "error")
             return redirect(request.url)
 
@@ -723,7 +722,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     if logical_channel_id:
         channel = await handler.get_logical_channel_with_id(logical_channel_id)
         if not channel:
-            Log.warn(Label.SERVER, f"Logical Channel with ID '{logical_channel_id}' not found.")
+            Log.error(Label.SERVER, f"Logical Channel with ID '{logical_channel_id}' not found.")
             await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
             return redirect(url_for('ui_logical_channels_list'))
     
@@ -831,7 +830,7 @@ async def ui_analyze_mappings(logical_channel_id: LogicalChannelId) -> Response:
     """Analyzes the mappings for a logical channel asynchronously."""
     channel = await handler.get_logical_channel_by_id(logical_channel_id)
     if not channel:
-        Log.warn(Label.SERVER, f"Logical Channel with ID '{logical_channel_id}' not found for analysis.")
+        Log.error(Label.SERVER, f"Logical Channel with ID '{logical_channel_id}' not found for analysis.")
         await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
         response = Response("", 404)
         response.headers["HX-Refresh"] = "true"
@@ -861,7 +860,7 @@ async def ui_remove_dead_mappings(logical_channel_id: LogicalChannelId) -> Respo
     """Removes dead mappings from logical channels asynchronously."""
     channel = await handler.get_logical_channel_by_id(logical_channel_id)
     if not channel:
-        Log.warn(Label.SERVER, f"Logical Channel with ID '{logical_channel_id}' not found for dead mapping removal.")
+        Log.error(Label.SERVER, f"Logical Channel with ID '{logical_channel_id}' not found for dead mapping removal.")
         await flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
         response = Response("", 404)
         response.headers["HX-Refresh"] = "true"
@@ -875,7 +874,7 @@ async def ui_remove_dead_mappings(logical_channel_id: LogicalChannelId) -> Respo
             discovered_mappings.append(source)
         else:
             if not await quality_monitor.remove_source(source['source_id']):
-                Log.warn(Label.SERVER, f"Failed to remove dead source {source['source_id']} from quality monitor for {channel_log}.")
+                Log.error(Label.SERVER, f"Failed to remove dead source {source['source_id']} from quality monitor for {channel_log}.")
                 await flash(f"Failed to remove dead source {source['source_id']} from quality monitor for {channel_log}.", "error")
                 response = Response("", 500)
                 response.headers["HX-Refresh"] = "true"
@@ -905,30 +904,61 @@ async def ui_remove_dead_mappings(logical_channel_id: LogicalChannelId) -> Respo
 
 @app.route("/ui/logs/modal/<int:num_lines>")
 async def ui_logs_modal(num_lines: int) -> str:
+    now = datetime.now()
+    current_year = str(now.year)
+    prev_year = str(int(current_year) - 1)
     if num_lines < 1:
         num_lines = 1
-    log_lines = []
-    log_path = config.logs_dir / Log.LOG_FILE_NAME
+    log_lines: list[str] = []
+    info_log_path = config.logs_dir / Log.LOG_FILE_NAME
+    verbose_log_path = config.logs_dir / Log.LOG_FILE_NAME_VERBOSE
+
+    def parse_log_line(raw_line: str) -> None:
+        """Handles a single log message spread across multiple lines."""
+        if raw_line.startswith(current_year) or raw_line.startswith(prev_year):
+            log_lines.append(raw_line)
+        elif len(log_lines):
+            log_lines[-1] += raw_line
+        else:
+            log_lines.append(raw_line)
+
     try:
-        async with aiofiles.open(log_path, 'r') as f:
-            log_lines = list(deque(await f.readlines(), num_lines))
-        prev_date = datetime.now() - timedelta(days=1)
-        num_logs = 0
+        async with aiofiles.open(info_log_path, 'r') as f:
+            while raw_line := await f.readline():
+                parse_log_line(raw_line)
+        async with aiofiles.open(verbose_log_path, 'r') as f:
+            while raw_line := await f.readline():
+                parse_log_line(raw_line)
+        prev_date = now - timedelta(days=1)
+        fmt_str = "%Y-%m-%d"
         while len(log_lines) < num_lines:
-            prev_log_path = log_path.with_name(f"{Log.LOG_FILE_NAME}.{prev_date.strftime('%Y-%m-%d')}")
-            if not prev_log_path.exists():
+            not_found_count = 0
+
+            prev_info_log_path = info_log_path.with_name(f"{Log.LOG_FILE_NAME}.{prev_date.strftime(fmt_str)}")
+            if prev_info_log_path.exists():
+                async with aiofiles.open(prev_info_log_path, 'r') as f:
+                    while raw_line := await f.readline():
+                        parse_log_line(raw_line)
+            else:
+                not_found_count += 1
+
+            prev_verbose_log_path = verbose_log_path.with_name(f"{Log.LOG_FILE_NAME_VERBOSE}.{prev_date.strftime(fmt_str)}")
+            if prev_verbose_log_path.exists():
+                async with aiofiles.open(prev_verbose_log_path, 'r') as f:
+                    while raw_line := await f.readline():
+                        parse_log_line(raw_line)
+            else:
+                not_found_count += 1
+
+            if not_found_count >= 2:
                 break
-            async with aiofiles.open(prev_log_path, 'r') as f:
-                prev_lines = await f.readlines()
-            num_logs += 1
-            log_lines = list(deque(prev_lines + log_lines, num_lines))
             if len(log_lines) >= num_lines:
                 break
-            if num_logs >= config.log_backup_count:
-                break
             prev_date -= timedelta(days=1)
-    except FileNotFoundError:
-        log_lines = [f"Error: Log file not found at '{log_path}'."]
+        log_lines.sort(key=lambda x: "".join(x.split()[:2]))
+        log_lines = log_lines[-num_lines:]
+    except FileNotFoundError as e:
+        log_lines = [f"Error: Log file not found in '{config.logs_dir}': {e}"]
     except Exception as e:
         log_lines = [f"An error occurred while reading the log file: {e}"]
     return await render_template("_logs_modal_content.html", log_lines=log_lines, num_lines=num_lines)
@@ -938,7 +968,7 @@ async def ui_logs_modal(num_lines: int) -> str:
 async def ui_player_for_source(source_id: SourceId) -> str:
     discovered_source = await handler.get_discovered_source(source_id)
     if not discovered_source:
-        Log.warn(Label.SERVER, f"Source ID '{source_id}' not found for preview.")
+        Log.error(Label.SERVER, f"Source ID '{source_id}' not found for preview.")
         await flash(f"Error: source ID not found.", "error")
         abort(404, f"Source ID '{source_id}' not found.")
     source_name = discovered_source["display_title"] or discovered_source["tvg_name"] or "Preview"

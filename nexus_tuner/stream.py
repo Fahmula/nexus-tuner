@@ -60,8 +60,11 @@ class StreamManager:
         """Sets if an FFmpeg process is long term for a given Video key asynchronously."""
         async with self.stream_process_lock:
             if video_key in self.ffmpeg_processes:
+                Log.debug(Label.STREAM, f"Setting long term status for {video_key} to {long_term}.")
                 cast(FFmpegProcessInfoMutable, self.ffmpeg_processes[video_key])['is_long_term'] = long_term
                 cast(FFmpegProcessInfoMutable, self.ffmpeg_processes[video_key])['last_access'] = datetime.now()  # Prevent immediate pruning
+            else:
+                Log.debug(Label.STREAM, f"Cannot set long term status for {video_key} to {long_term}: process not found.")
 
     async def get_ffmpeg_processes_from_logical_id(self, logical_channel_id: LogicalChannelId, *, video_type: VideoType, long_term_only: bool) -> FFmpegProcessInfosMutable:
         """
@@ -94,27 +97,25 @@ class StreamManager:
                 data = self.ffmpeg_processes[video_key]
                 if not data['is_long_term']:
                     Log.error(VideoType.HLS, f"Stream {video_key} is not long-term, cannot return playlist path.")
-                    return None
+                    return
                 if not data['channel_hls_dir']:
                     Log.error(VideoType.HLS, f"Stream {video_key} has no HLS directory set.")
-                    return None
+                    return
                 return data['channel_hls_dir'] / "playlist.m3u8"
-        return None
         
     async def get_hls_segment_path(self, logical_channel_id: LogicalChannelId, video_type: VideoType, segment_filename: str) -> Path | None:
         """Returns the path to a specific HLS segment file if the stream is active asynchronously."""
         processes = await self.get_ffmpeg_processes_from_logical_id(logical_channel_id, video_type=video_type, long_term_only=True)
         if not processes:
-            return None
+            return
         video_key = next(iter(processes))
         async with self.stream_process_lock:
             if video_key in self.ffmpeg_processes:
                 channel_hls_dir = self.ffmpeg_processes[video_key]['channel_hls_dir']
                 if not channel_hls_dir:
                     Log.error(Label.STREAM, f"Stream {video_key} has no HLS directory set.")
-                    return None
+                    return
                 return channel_hls_dir / segment_filename
-        return None
 
     async def get_hls_latest_segment(self, logical_channel_id: LogicalChannelId) -> tuple[int, datetime] | None:
         """Returns the latest segment number and its timestamp for the given logical channel ID asynchronously."""
@@ -145,11 +146,7 @@ class StreamManager:
 
                 now = datetime.now()
                 for video_key, data in current_processes:
-                    if video_key not in self.ffmpeg_processes:
-                        continue
-
                     timeout = self.config.segment_prune_timeout if data['is_preview'] else self.config.ffmpeg_inactivity_timeout
-                    
                     if data['process'].returncode is not None:
                         logical_channel_title = data['logical_channel_title']
                         Log.info(Label.STREAM, f"Cleanup: Found dead process for '{logical_channel_title}' (PID: {data['process'].pid}).")
@@ -210,8 +207,10 @@ class StreamManager:
                 if (data_to_cleanup := cast(FFmpegProcessInfosMutable, self.ffmpeg_processes).pop(video_key, None)) is None:
                     return
             should_release_slot = True
+            Log.debug(Label.STREAM, f"{name} [{video_key}]: Stopping FFmpeg process.")
         else:
             should_release_slot = False
+            Log.debug(Label.STREAM, f"{name} [{video_key}]: Stopping FFmpeg process with provided data.")
 
         video_type: VideoType = data_to_cleanup['video_type']
         process: Process = data_to_cleanup['process']
@@ -221,16 +220,24 @@ class StreamManager:
 
         if process.returncode is None:
             try:
-                process.terminate()
-                if process.stdout:
-                    process.stdout._transport.close()  # type: ignore[reportAttributeAccessIssue]
-                await asyncio.wait_for(process.wait(), timeout=FFMPEG_TERMINATE_TIMEOUT)
-            except asyncio.TimeoutError:
-                Log.warn(video_type, f"{name} [{video_key}]: Killing unresponsive FFmpeg process.")
-                process.kill()
-            except Exception as e:
-                Log.error(video_type, f"{name} [{video_key}]: Error terminating FFmpeg process: {e}")
-                process.kill()
+                try:
+                    process.terminate()
+                    if process.stdout:
+                        Log.debug(video_type, f"{name} [{video_key}]: Closing FFmpeg process stdout stream.")
+                        process.stdout._transport.close()  # type: ignore[reportAttributeAccessIssue]
+                    await asyncio.wait_for(process.wait(), timeout=FFMPEG_TERMINATE_TIMEOUT)
+                    Log.debug(video_type, f"{name} [{video_key}]: FFmpeg process terminated successfully.")
+                except asyncio.TimeoutError:
+                    Log.warn(video_type, f"{name} [{video_key}]: Killing unresponsive FFmpeg process.")
+                    process.kill()
+                except Exception as e:
+                    Log.error(video_type, f"{name} [{video_key}]: Error terminating FFmpeg process: {e}")
+                    process.kill()
+            except BaseException as e:
+                Log.critical(video_type, f"{name} [{video_key}]: Error while stopping FFmpeg process: {e}")
+                raise
+        else:
+            Log.debug(video_type, f"{name} [{video_key}]: FFmpeg process already terminated with code {process.returncode}.")
         
         try:
             await log_file.close()
@@ -240,8 +247,10 @@ class StreamManager:
         provider_slots = await self.handler.get_provider_slots(alias)
         if provider_slots:
             if should_release_slot:
+                Log.debug(video_type, f"{name} [{video_key}]: Releasing slot for provider '{alias}'.")
                 new_active_count = await provider_slots.release()
             else:
+                Log.debug(video_type, f"{name} [{video_key}]: Not releasing slot for provider '{alias}' as it should have been already released.")
                 new_active_count = f"0/{provider_slots.get_total_slots()}"
         else:
             Log.error(video_type, f"{name} [{video_key}]: No slots found for provider '{alias}'.")
@@ -250,7 +259,7 @@ class StreamManager:
         try:
             if hls_dir and await aiofiles.os.path.exists(hls_dir):
                 await aioshutil.rmtree(hls_dir)
-        except OSError as e:
+        except Exception as e:
             Log.error(video_type, f"{name} [{video_key}]: Failed to clean HLS directory {hls_dir}: {e}")
 
         Log.info(video_type, f"{name} [{video_key}]: Successfully stopped and cleaned up all resources {{{alias}:{new_active_count}}}")

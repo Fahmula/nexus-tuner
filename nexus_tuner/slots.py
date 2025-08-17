@@ -100,7 +100,7 @@ class ProviderSlots:
                     self._semaphore.release()
                 if isinstance(e, asyncio.TimeoutError):
                     return False
-                raise e
+                raise
 
     async def release(self) -> str:
         """Cancel the release. WARNING: This method must be called with run_bg() or

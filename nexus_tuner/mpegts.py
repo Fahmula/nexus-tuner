@@ -45,7 +45,7 @@ class MPEGTSStream:
 
     @classmethod
     async def register(cls, config: Config, stream_manager: StreamManager, video_key: VideoKey, recreate_stream: Callable[[], Awaitable[Response | VideoKey]]) -> tuple[Self, ReaderId]:
-        """Register a new MPEGTS stream or return an existing one."""
+        """Create a new MPEGTS stream or return an existing one."""
         if video_key not in cls.streams:  # If stream is cancelled, still choose it to prevent dual ownership
             instance = cls(config, stream_manager, video_key, recreate_stream)
             cls.streams[video_key] = instance
@@ -55,6 +55,7 @@ class MPEGTSStream:
                 del cls.streams[video_key]
                 raise
         else:
+            Log.debug(VideoType.MPEGTS, f"Reusing existing MPEGTS stream for '{video_key}'")
             instance = cls.streams[video_key]
         return instance, instance._register()
 
@@ -62,25 +63,22 @@ class MPEGTSStream:
         """Register a new reader for the MPEGTS stream and return its ID."""
         reader_id = ReaderId(max(self._reader_positions.keys(), default=-1) + 1)
         self._reader_positions[reader_id] = 0
+        Log.debug(VideoType.MPEGTS, f"Registering Client #{reader_id} for MPEGTS stream '{self.video_key}': {len(self._reader_positions)} readers total.")
         return reader_id
-
-    async def _unregister(self, reader_id: ReaderId) -> None:
-        """Unregister a reader from the MPEGTS stream, will stop the stream if no readers are left."""
-        del self._reader_positions[reader_id]
-        if not len(self._reader_positions):
-            Log.info(VideoType.MPEGTS, f"Inactive MPEGTS stream for '{self.video_key}' as no readers are registered.")
-            self.shutdown()
 
     def unregister(self, reader_id: ReaderId) -> None:
         """Unregister a reader from the MPEGTS stream, will stop the stream if no readers are left."""
-        run_bg(self._unregister(reader_id))
+        del self._reader_positions[reader_id]
+        Log.debug(VideoType.MPEGTS, f"Unregistering Client #{reader_id} from MPEGTS stream for '{self.video_key}': {len(self._reader_positions)} readers left.")
+        if not len(self._reader_positions):
+            self.shutdown()
 
     async def read(self, reader_id: ReaderId) -> bytes:
         """Read a chunk of data from the MPEGTS stream for the given reader ID, blocking until data is available.
         Raises:
             asyncio.CancelledError: If the stream is unrecoverable.
         """
-        if self._reader_positions[reader_id] >= len(self._buffer):  
+        if self._reader_positions[reader_id] >= len(self._buffer):
             await self._event.wait()
         if self._cancelled:
             raise asyncio.CancelledError("MPEGTS stream has been cancelled.")
@@ -92,6 +90,7 @@ class MPEGTSStream:
         """Continuously read data from the MPEGTS stream and fill the buffer, notifying readers when new data is available."""
         try:
             while True:
+                Log.debug(VideoType.MPEGTS, f"Marking MPEGTS stream for '{process_info['logical_channel_title']}' with key '{self.video_key}' as active.")
                 cast(FFmpegProcessInfoMutable, process_info)["is_mpegts_active"] = True
                 stdout: asyncio.StreamReader = cast(asyncio.StreamReader, process_info["process"].stdout)
                 try:
@@ -130,6 +129,7 @@ class MPEGTSStream:
             async def bg_cleanup() -> None:
                 self.shutdown()
                 async with self.stream_manager.stream_process_lock:
+                    Log.debug(VideoType.MPEGTS, f"Marking MPEGTS stream for '{process_info['logical_channel_title']}' with key '{self.video_key}' as inactive.")
                     cast(FFmpegProcessInfoMutable, process_info)["last_access"] = datetime.now() - timedelta(seconds=self.config.segment_prune_timeout)  # Elligible for pruning immediately
                     cast(FFmpegProcessInfoMutable, process_info)["is_mpegts_active"] = False
                     del self.streams[self.video_key]  # Make this atomic with is_mpegts_active
@@ -146,12 +146,16 @@ class MPEGTSStream:
                 self._reader_positions[reader_id] -= min_index
             if len(self._buffer) > max_entries:
                 dropped = len(self._buffer) - max_entries
+                Log.debug(VideoType.MPEGTS, f"Cleaning up MPEGTS buffer for '{self.video_key}': {len(self._buffer)} entries, dropping {dropped} entries.")
                 self._buffer = self._buffer[-max_entries:]
                 for reader_id in self._reader_positions:
-                    self._reader_positions[reader_id] = max(0, self._reader_positions[reader_id] - dropped)
+                    new_pos = max(0, self._reader_positions[reader_id] - dropped)
+                    Log.debug(VideoType.MPEGTS, f"--- Adjusting Client #{reader_id} position from {self._reader_positions[reader_id]} to {new_pos}.")
+                    self._reader_positions[reader_id] = new_pos
 
     def shutdown(self) -> None:
         """Cancel the MPEGTS stream, cleaning up resources and stopping the writer task."""
+        Log.debug(VideoType.MPEGTS, f"Shutting down MPEGTS stream for '{self.video_key}'...")
         self._cancelled = True  # Let the stdout reader finish gracefully incase we will reconnect
         self._cleaner.cancel()
         self._event.set()  # Ensure any waiting readers are woken up

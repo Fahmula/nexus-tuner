@@ -19,7 +19,7 @@ from nexus_tuner.utils import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERV
                                 VideoType, create_stream_key, create_video_key, create_video_name, get_segment_format, run_bg, sort_sources)
 
 
-async def create_hls_ffmpeg_command(stream_manager: StreamManager, config: Config, input_url: str, video_key: VideoKey, logical_channel_id: LogicalChannelId) -> tuple[list[str], Path]:
+async def create_hls_ffmpeg_command(stream_manager: StreamManager, config: Config, input_url: str, video_key: VideoKey, logical_channel_id: LogicalChannelId, video_name: VideoName, stream_info: str) -> tuple[list[str], Path]:
     """Constructs the FFmpeg command list and creates the necessary HLS directory asynchronously."""
     channel_hls_dir = config.hls_base_segment_dir / config.get_fs_safe_alphanum(f"{video_key}_{time.time()}")
     await aiofiles.os.makedirs(channel_hls_dir, exist_ok=True)
@@ -27,6 +27,8 @@ async def create_hls_ffmpeg_command(stream_manager: StreamManager, config: Confi
     playlist_path = channel_hls_dir / "playlist.m3u8"
     segment_filename = channel_hls_dir / get_segment_format()
     latest_segment = await stream_manager.get_hls_latest_segment(logical_channel_id)
+    start_number = latest_segment[0] if latest_segment else 0
+    Log.debug(VideoType.HLS, f"{video_name} {stream_info}: Starting HLS stream at segment number {start_number} in directory '{channel_hls_dir}'")
 
     command = [
         str(config.ffmpeg_path),
@@ -42,7 +44,7 @@ async def create_hls_ffmpeg_command(stream_manager: StreamManager, config: Confi
         "-hls_list_size", str(config.hls_playlist_length),
         "-hls_flags", "delete_segments+omit_endlist+program_date_time",
         "-hls_segment_filename", str(segment_filename),
-        "-start_number", str(latest_segment[0] if latest_segment else 0),
+        "-start_number", str(start_number),
         str(playlist_path)
     ]
     return command, channel_hls_dir
@@ -103,7 +105,7 @@ class CreateStream:
         self._results: list[tuple[VideoKey, SourceInfo]] = []
         self._selected: bool = False
         self._slots_acquired: set[VideoKey] = set()
-        self._active_video_keys: list[VideoKey] = []
+        self._active_video_keys: set[VideoKey] = set()
         self._source_quality_messages: dict[VideoKey, str] = {}
         self._video_names: dict[VideoKey, VideoName] = {}
         self._deadline: float = 0
@@ -155,37 +157,57 @@ class CreateStream:
         await self._result_event.wait()
         return self._res
 
-    def _set_deadline(self, source: SourceInfo) -> None:
+    def _add_result(self, video_key: VideoKey, source: SourceInfo, video_name: VideoName, stream_info: str) -> bool:
+        """Adds a result to the internal results list and updates the deadline if necessary."""
+        if self._selected:
+            Log.debug(self.video_type, f"{video_name} {stream_info}: Another source has already been selected, not adding result.")
+            return False
+        self._results.append((video_key, source))
         loop = asyncio.get_running_loop()
         if self._remaining_priorities[source["source_id"]] <= min(self._remaining_priorities.values()):
             new_deadline = loop.time()
+            if new_deadline <= self._deadline:
+                Log.debug(self.video_type, f"{video_name} {stream_info}: Best remaining source is healthy, setting immediate deadline.")
+                self._deadline = new_deadline
+            else:
+                Log.debug(self.video_type, f"{video_name} {stream_info}: Best remaining source is healthy, but current deadline is sooner.")
         else:
             new_deadline = loop.time() + NEW_DEADLINE_NON_BEST
-        self._deadline = min(self._deadline, new_deadline)
-
-    def _set_result(self, video_key: VideoKey, source: SourceInfo) -> bool:
-        if self._selected:
-            return False
-        self._results.append((video_key, source))
+            if new_deadline <= self._deadline:
+                Log.debug(self.video_type, f"{video_name} {stream_info}: Non-best remaining source is healthy, setting new deadline to {NEW_DEADLINE_NON_BEST}s from now.")
+                self._deadline = new_deadline
+            else:
+                Log.debug(self.video_type, f"{video_name} {stream_info}: Non-best remaining source is healthy, but current deadline is sooner than {NEW_DEADLINE_NON_BEST}s from now.")
         return True
 
-    def _release_slot(self, provider_slots: ProviderSlots, video_key: VideoKey) -> None:
+    def _release_slot(self, provider_slots: ProviderSlots, video_key: VideoKey, video_name: VideoName, stream_info: str) -> None:
         """Releases a slot for a specific video key if not already released."""
         # This cannot be an async method as cancelled asyncio.CancelledError prevents cleanup
         if video_key in self._slots_acquired:
+            Log.debug(self.video_type, f"{video_name} {stream_info}: Releasing slot for provider '{provider_slots.get_alias()}'")
             self._slots_acquired.remove(video_key)
             run_bg(provider_slots.release())
 
-    def _remove_active_video_key(self, video_key: VideoKey) -> None:
-        if video_key in self._active_video_keys:
-            self._active_video_keys.remove(video_key)
+    def _remove_active_video_key(self, video_key: VideoKey, video_name: VideoName, stream_info: str) -> None:
+        """Removes a video key from the active video keys set."""
+        Log.debug(self.video_type, f"{video_name} {stream_info}: Removing active video key '{video_key}'")
+        self._active_video_keys.remove(video_key)
 
-    def _pop_source(self, provider_sources: list[SourceInfo], current_source: SourceInfo | None) -> SourceInfo | None:
-        if current_source:
-            self._remaining_priorities.pop(current_source["source_id"], None)
-        if provider_sources:
-            return provider_sources.pop()
-        return
+    def _pop_source(self, provider_sources: list[SourceInfo], prev_source: SourceInfo | None) -> tuple[SourceInfo, VideoKey, VideoName, str] | None:
+        if prev_source:
+            Log.debug(self.video_type, f"Removing source '{prev_source['source_id']}' from remaining priorities.")
+            self._remaining_priorities.pop(prev_source["source_id"], None)
+        if not provider_sources:
+            return
+        new_source = provider_sources.pop()
+        video_key = create_video_key(create_stream_key(self.video_type, self.logical_channel_id), new_source["source_id"])
+        video_name = create_video_name(self.logical_channel_title, self._source_names[new_source["source_id"]], new_source["source_id"])
+        self._video_names[video_key] = video_name
+        quality_score = self._quality_scores.get(new_source["source_id"])
+        score_msg = f"Score={quality_score['total_score']:.2f} | Uptime={quality_score['uptime']*100:.0f}%" if quality_score else "Score=Unknown | Uptime=Unknown"
+        stream_info = f"[Priority={new_source['priority']} | {score_msg}]"
+        Log.debug(self.video_type, f"{video_name} {stream_info}: Using source for stream creation...")
+        return new_source, video_key, video_name, stream_info
 
     async def _create_provider_stream(self, provider_alias: ProviderAlias, provider_sources: list[SourceInfo]) -> None:
         """Creates streams for a provider by launching concurrent worker tasks."""
@@ -212,31 +234,34 @@ class CreateStream:
 
     async def _provider_worker_task(self, provider_alias: ProviderAlias, provider_sources: list[SourceInfo]) -> None:
         """Tries sources for a provider until a stream is created or sources are exhausted."""
-        source = self._pop_source(provider_sources, None)
-        if not source:
+        source_res = self._pop_source(provider_sources, None)
+        if not source_res:
             return
-
-        video_key = create_video_key(create_stream_key(self.video_type, self.logical_channel_id), source["source_id"])
-        video_name = create_video_name(self.logical_channel_title, self._source_names[source["source_id"]], source["source_id"])
-        self._video_names[video_key] = video_name
+        source, video_key, video_name, stream_info = source_res
         
         loop = asyncio.get_running_loop()
+        logged_existing = False
         logged_failure = False
         while loop.time() < self._deadline:
             if self._selected:
+                Log.debug(self.video_type, f"{video_name} {stream_info}: Another source has already been selected, stopping worker task.")
                 return
 
             to_sleep = False
             async with self.stream_manager.stream_process_lock:
                 if video_key in self.stream_manager.ffmpeg_processes and self.stream_manager.ffmpeg_processes[video_key]["process"].returncode is None:
                     if self.stream_manager.ffmpeg_processes[video_key]["is_long_term"]:
-                        if self._set_result(video_key, source):
-                            self._set_deadline(source)
+                        Log.debug(self.video_type, f"{video_name} {stream_info}: Using existing long term stream...")
+                        self._add_result(video_key, source, video_name, stream_info)
                         return
+                    elif not logged_existing:
+                        logged_existing = True
+                        Log.debug(self.video_type, f"{video_name} {stream_info}: Existing non-long term stream is found, waiting...")
                     to_sleep = True
             if to_sleep:
                 await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
                 continue
+            logged_existing = False
 
             provider_slots = await self.handler.get_provider_slots(provider_alias)
             if not provider_slots:
@@ -250,28 +275,25 @@ class CreateStream:
             if new_active_count is False:
                 if not logged_failure:
                     logged_failure = True
-                    Log.warn(self.video_type, f"{video_name} failed to acquire user slot from '{provider_alias}', retrying...")
+                    Log.info(self.video_type, f"{video_name} failed to acquire user slot from '{provider_alias}', retrying...")
+                provider_slots.cancel_background_tasks()
                 run_bg(self.stream_manager.prune_ffmpeg_processes(provider_alias))
                 await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
                 continue
             self._slots_acquired.add(video_key)
             logged_failure = False
             try:
-                if await self._create_stream(video_key, video_name, provider_alias, provider_slots, source, new_active_count):
-                    if self._set_result(video_key, source):
-                        self._set_deadline(source)
-                    else:
+                if await self._create_stream(video_key, video_name, provider_alias, provider_slots, source, stream_info, new_active_count):
+                    if not self._add_result(video_key, source, video_name, stream_info):
                         await self.stream_manager.stop_ffmpeg_process(video_key, video_name)
                     return
             finally:
-                self._release_slot(provider_slots, video_key)
+                self._release_slot(provider_slots, video_key, video_name, stream_info)
 
-            source = self._pop_source(provider_sources, source)
-            if not source:
+            source_res = self._pop_source(provider_sources, source)
+            if not source_res:
                 return
-            video_key = create_video_key(create_stream_key(self.video_type, self.logical_channel_id), source["source_id"])
-            video_name = create_video_name(self.logical_channel_title, self._source_names[source["source_id"]], source["source_id"])
-            self._video_names[video_key] = video_name
+            source, video_key, video_name, stream_info = source_res
 
     async def _check_mpegts_ffmpeg_health_async(self, video_name: VideoName, stream_info: str, stdout_reader: asyncio.StreamReader, is_healthy: list[bool | None]) -> None:
         """Tries to read from stdout, blocks until data is available or the stream ends."""
@@ -299,18 +321,15 @@ class CreateStream:
             except Exception as cleanup_error:
                 Log.critical(self.video_type, f"{video_name} {stream_info}: Failed to clean up HLS directory: {cleanup_error}")
 
-    async def _create_stream(self, video_key: VideoKey, video_name: VideoName, provider_alias: ProviderAlias, provider_slots: ProviderSlots, source: SourceInfo, new_active_count: str) -> bool:
+    async def _create_stream(self, video_key: VideoKey, video_name: VideoName, provider_alias: ProviderAlias, provider_slots: ProviderSlots, source: SourceInfo, stream_info: str, new_active_count: str) -> bool:
         """Creates a stream using FFmpeg via an asynchronous subprocess."""
-        quality_score = self._quality_scores.get(source["source_id"])
-        score_msg = f"Score={quality_score['total_score']:.2f} | Uptime={quality_score['uptime']*100:.0f}%" if quality_score else "Score=Unknown | Uptime=Unknown"
-        stream_info = f"[Priority={source['priority']} | {score_msg}]"
         self._source_quality_messages[video_key] = stream_info
 
         channel_hls_dir: Path | None = None
         stderr_log_file: aiofiles.threadpool.text.AsyncTextIOWrapper | None = None
         try:
             if self.video_type == VideoType.HLS:
-                command, channel_hls_dir = await create_hls_ffmpeg_command(self.stream_manager, self.config, source["stream_url"], video_key, self.logical_channel_id)
+                command, channel_hls_dir = await create_hls_ffmpeg_command(self.stream_manager, self.config, source["stream_url"], video_key, self.logical_channel_id, video_name, stream_info)
             elif self.video_type == VideoType.MPEGTS:
                 command = create_mpegts_ffmpeg_command(self.config, source["stream_url"])
             else:
@@ -318,7 +337,7 @@ class CreateStream:
             log_path = self.config.get_ffmpeg_log_path(video_key)
             stderr_log_file = await aiofiles.open(log_path, 'a', encoding='utf-8')
         except BaseException as e:
-            self._release_slot(provider_slots, video_key)
+            self._release_slot(provider_slots, video_key, video_name, stream_info)
             Log.critical(self.video_type, f"{video_name} {stream_info}: Failed to create FFmpeg command: {e}")
             await self._cleanup_pre_stream_failure(video_name, stream_info, channel_hls_dir, stderr_log_file)
             if isinstance(e, Exception):
@@ -326,6 +345,7 @@ class CreateStream:
             raise
 
         process: asyncio.subprocess.Process | None = None
+        is_preview = self.logical_channel_id.startswith("preview_")
         try:
             async with self._mutex:
                 if self._selected:
@@ -334,7 +354,7 @@ class CreateStream:
                     process = await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.PIPE, stderr=cast(IO[Any], stderr_log_file))
                     async with self.stream_manager.stream_process_lock:
                         cast(FFmpegProcessInfosMutable, self.stream_manager.ffmpeg_processes)[video_key] = {
-                            'process': process, 'is_long_term': False, 'is_preview': self.logical_channel_id.startswith("preview_"),
+                            'process': process, 'is_long_term': False, 'is_preview': is_preview,
                             'video_type': VideoType.MPEGTS, 'provider_alias': provider_alias, 'logical_channel_id': self.logical_channel_id,
                             'source_id': source["source_id"], 'logical_channel_title': self.logical_channel_title,
                             'channel_hls_dir': None, 'last_access': datetime.now(), 'is_mpegts_active': False,
@@ -344,14 +364,14 @@ class CreateStream:
                     process = await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.DEVNULL, stderr=cast(IO[Any], stderr_log_file))
                     async with self.stream_manager.stream_process_lock:
                         cast(FFmpegProcessInfosMutable, self.stream_manager.ffmpeg_processes)[video_key] = {
-                            'process': process, 'is_long_term': False, 'is_preview': self.logical_channel_id.startswith("preview_"),
+                            'process': process, 'is_long_term': False, 'is_preview': is_preview,
                             'video_type': VideoType.HLS, 'provider_alias': provider_alias, 'logical_channel_id': self.logical_channel_id,
                             'source_id': source["source_id"], 'logical_channel_title': self.logical_channel_title,
                             'channel_hls_dir': cast(Path, channel_hls_dir), 'last_access': datetime.now(), 'is_mpegts_active': None,
                             'stderr_log_file_obj': stderr_log_file
                         }
                 self._slots_acquired.remove(video_key)  # Slot is now owned by the FFmpeg process
-                self._active_video_keys.append(video_key)
+                self._active_video_keys.add(video_key)
         except BaseException as e:
             try:
                 if not isinstance(e, asyncio.CancelledError):
@@ -363,8 +383,10 @@ class CreateStream:
                     try:
                         process.terminate()
                         if process.stdout:
+                            Log.debug(self.video_type, f"{video_name} [{video_key}]: Closing FFmpeg process stdout stream.")
                             process.stdout._transport.close()  # type: ignore[reportAttributeAccessIssue]
                         await asyncio.wait_for(process.wait(), timeout=FFMPEG_TERMINATE_TIMEOUT)
+                        Log.debug(self.video_type, f"{video_name} [{video_key}]: FFmpeg process terminated successfully.")
                     except asyncio.TimeoutError:
                         Log.warn(self.video_type, f"{video_name} {stream_info}: Killing unresponsive FFmpeg process.")
                         process.kill()
@@ -372,7 +394,7 @@ class CreateStream:
                         Log.error(self.video_type, f"{video_name} {stream_info}: Error terminating FFmpeg process: {terminate_error}")
                         process.kill()
             finally:
-                self._release_slot(provider_slots, video_key)
+                self._release_slot(provider_slots, video_key, video_name, stream_info)
             await self._cleanup_pre_stream_failure(video_name, stream_info, channel_hls_dir, stderr_log_file)
             if isinstance(e, Exception):
                 return False
@@ -384,9 +406,10 @@ class CreateStream:
             if self.video_type == VideoType.MPEGTS:
                 run_bg(self._check_mpegts_ffmpeg_health_async(video_name, stream_info, cast(asyncio.StreamReader, process.stdout), is_healthy))
             loop = asyncio.get_running_loop()
-            end_time = loop.time() + self.config.ffmpeg_start_timeout
+            end_time = loop.time() + (CREATE_STREAM_DEADLINE if is_preview else self.config.ffmpeg_start_timeout)
             while loop.time() < end_time:
                 if self._selected:
+                    Log.debug(self.video_type, f"{video_name} {stream_info}: Another source has already been selected, stopping health check.")
                     return False
                 if process.returncode is not None:
                     raise ChildProcessError(f"exited prematurely with code {process.returncode}")
@@ -407,7 +430,7 @@ class CreateStream:
             raise TimeoutError("timed out waiting for segments or process stability")
         except BaseException as e:
             Log.error(self.video_type, f"{video_name} {stream_info}: FFmpeg validation failed (PID: {process.pid if process else 'N/A'}): {e}. Cleaning up.")
-            self._remove_active_video_key(video_key)
+            self._remove_active_video_key(video_key, video_name, stream_info)
             await self.stream_manager.stop_ffmpeg_process(video_key, video_name)
             if isinstance(e, Exception):
                 return False

@@ -13,7 +13,7 @@ from nexus_tuner.utils import (M3UURL, NEXUS_TUNER_USER_AGENT, ClientChannelInfo
                                 DiscoveredSource, DiscoveredSourceWithId, DiscoveredSourcesData, DiscoveredSourcesDataImpl, Log, LogicalChannelInfo, LogicalChannelInfoWithId, LogicalChannelTitle, LogicalChannelsDataImpl, Priority, ProviderInfo,
                                 ProviderStatuses, SourceInfo, SourceMappingInfoWithId, SourceId, StreamURL, TVGGroupTitle, Label, LogicalChannelId,
                                 LogicalChannelsData, M3USource, MainM3UPlaylist, MaxStreams, ProviderAlias, ProvidersData, ProvidersDataImpl,
-                                StreamKey, TVGDisplayTitle, TVGId, TVGLogo, TVGName, VideoType, create_stream_key, run_bg)
+                                StreamKey, TVGDisplayTitle, TVGId, TVGLogo, TVGName, VideoType, run_bg)
 
 if TYPE_CHECKING:
     from nexus_tuner.quality_monitor import QualityMonitor
@@ -89,7 +89,7 @@ class ChannelHandler:
         while self.get_pending_stream_count():
             self._mutex.release()
             if not logged_waiting:
-                Log.warn(self.label, "Waiting for streams to finish being created before reloading configurations...")
+                Log.info(self.label, "Waiting for streams to finish being created before reloading configurations...")
                 logged_waiting = True
             await asyncio.sleep(0.01)
             await self._mutex.acquire()
@@ -277,8 +277,6 @@ class ChannelHandler:
 
     async def _build_client_channels(self, prev_discovered_sources: DiscoveredSourcesData) -> None:
         """Builds the final list of channels exposed to clients."""
-        Log.info(self.label, "Building client-facing channels...")
-
         name_url_map: dict[str, dict[ProviderAlias, list[tuple[SourceId, StreamURL]]]] = {}
         for source_id, discovered_source in self._discovered_sources_data.items():
             key = f"{discovered_source['group_title']}|{discovered_source['tvg_name']}"
@@ -382,18 +380,17 @@ class ChannelHandler:
     def get_pending_stream_count(self) -> int:
         return len(self._pending_streams)
 
-    async def add_pending_stream(self, logical_channel_id: LogicalChannelId, video_type: VideoType) -> bool:
-        stream_key = create_stream_key(video_type, logical_channel_id)
+    async def add_pending_stream(self, stream_key: StreamKey) -> bool:
         async with self._mutex:
             if stream_key in self._pending_streams:
                 return False
             self._pending_streams.add(stream_key)
             return True
 
-    async def remove_pending_stream(self, logical_channel_id: LogicalChannelId, video_type: VideoType) -> None:
+    async def remove_pending_stream(self, stream_key: StreamKey) -> None:
         """Removes a pending stream from the set of pending streams."""
         async with self._mutex:
-            self._pending_streams.remove(create_stream_key(video_type, logical_channel_id))
+            self._pending_streams.remove(stream_key)
 
     def generate_main_client_m3u(self) -> None:
         """Generates the main M3U content to be served to clients. (Sync - CPU-bound)"""
@@ -569,7 +566,6 @@ class ChannelHandler:
             lc_info = self._logical_channels_data.get(logical_channel_id)
             if lc_info:
                 return LogicalChannelInfoWithId({**lc_info, "logical_channel_id": logical_channel_id})
-            return
 
     def _generate_next_logical_channel_id(self) -> LogicalChannelId:
         """Generates the next available ID. (Sync - CPU-bound)"""
@@ -634,7 +630,6 @@ class ChannelHandler:
             for channel_mapping in self._channel_mappings_data.values():
                 if source_id in channel_mapping:
                     return channel_mapping[source_id]["priority"]
-            return None
 
     async def get_sources_mapped_elsewhere(self, logical_channel_id: LogicalChannelId | None) -> dict[SourceId, str]:
         """Returns the sources with their channel numbers that are mapped to channels other than the specified logical channel."""
@@ -724,7 +719,6 @@ class ChannelHandler:
         for _, channel_list in channel_list_data.items():
             for pre_channel in channel_list:
                 if channel_num == pre_channel["num"]: return pre_channel
-        return None
 
     def search_predefined_channel_nums(self, raw_query: str) -> list[ChannelListGroup]:
         """Searches the predefined channel lists for channels matching the number."""
