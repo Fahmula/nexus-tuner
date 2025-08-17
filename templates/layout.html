@@ -300,6 +300,41 @@
         .modal-open #provider-status-bar {
             padding-right: 0 !important;
         }
+
+        #modal-logs .modal-dialog {
+            height: calc(100% - env(safe-area-inset-top));
+            margin: env(safe-area-inset-top) auto 0;
+            max-width: 95vw;
+            align-items: stretch;
+        }
+
+        #modal-logs .modal-content {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            border-radius: 0;
+        }
+
+        #modal-logs .modal-header,
+        #modal-logs .modal-footer {
+            flex: 0 0 auto;
+        }
+
+        #modal-logs .modal-body {
+            flex: 1 1 auto;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            padding: 0.75rem;
+        }
+
+        #modal-logs pre {
+            flex: 1 1 auto;
+            min-height: 0;
+            margin: 0;
+            overflow-y: auto;
+            max-height: none !important;
+        }
     </style>
 </head>
 
