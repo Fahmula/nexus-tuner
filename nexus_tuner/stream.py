@@ -60,7 +60,7 @@ class StreamManager:
         """Sets if an FFmpeg process is long term for a given Video key asynchronously."""
         async with self.stream_process_lock:
             if video_key in self.ffmpeg_processes:
-                Log.debug(Label.STREAM, f"Setting long term status for {video_key} to {long_term}.")
+                Log.debug(Label.STREAM, f"Setting long term status to {long_term} for {video_key}.", self.ffmpeg_processes[video_key]['video_type'])
                 cast(FFmpegProcessInfoMutable, self.ffmpeg_processes[video_key])['is_long_term'] = long_term
                 cast(FFmpegProcessInfoMutable, self.ffmpeg_processes[video_key])['last_access'] = datetime.now()  # Prevent immediate pruning
             else:
@@ -207,10 +207,10 @@ class StreamManager:
                 if (data_to_cleanup := cast(FFmpegProcessInfosMutable, self.ffmpeg_processes).pop(video_key, None)) is None:
                     return
             should_release_slot = True
-            Log.debug(Label.STREAM, f"{name} [{video_key}]: Stopping FFmpeg process.")
+            Log.debug(Label.STREAM, f"{name} [{video_key}]: Stopping FFmpeg process.", data_to_cleanup['video_type'])
         else:
             should_release_slot = False
-            Log.debug(Label.STREAM, f"{name} [{video_key}]: Stopping FFmpeg process with provided data.")
+            Log.debug(Label.STREAM, f"{name} [{video_key}]: Stopping FFmpeg process with provided data.", data_to_cleanup['video_type'])
 
         video_type: VideoType = data_to_cleanup['video_type']
         process: Process = data_to_cleanup['process']

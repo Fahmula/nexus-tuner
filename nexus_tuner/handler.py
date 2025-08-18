@@ -433,9 +433,15 @@ class ChannelHandler:
                 continue
             m3u_url = self._providers_data[alias]["m3u_url"]
             max_streams = self._providers_data[alias]["max_streams"]
-            if curr_details.get_m3u_url() == m3u_url and curr_details.get_total_slots() == max_streams:
+            if curr_details.get_total_slots() != max_streams:
+                if curr_details.get_m3u_url() != m3u_url:
+                    Log.info(self.label, f"Updating slots for provider '{alias}' with new URL and max streams: {curr_details.get_total_slots()} -> {max_streams}.")
+                else:
+                    Log.info(self.label, f"Updating slots for provider '{alias}' with new max streams: {curr_details.get_total_slots()} -> {max_streams}.")
+            elif curr_details.get_m3u_url() != m3u_url:
+                Log.info(self.label, f"Updating slots for provider '{alias}' with new URL.")
+            else:
                 continue
-            Log.info(self.label, f"Updating slots for provider '{alias}' with new URL or max streams.")
             self._slots[alias] = ProviderSlots(
                 alias=alias,
                 m3u_url=m3u_url,

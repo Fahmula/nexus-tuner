@@ -154,11 +154,15 @@ class QualityMonitor:
         framerate: Framerate = Framerate(float(nums[0]) / float(nums[1]) if len(nums) == 2 and nums[1] != '0' else float(nums[0]))
 
         packets = info.get('packets', [])
-        if not packets: return
+        if not packets:
+            Log.debug(Label.QUALITY, f"No packets found in ffprobe output for {source_log} in {channel_log}.")
+            return
 
         sizes, times = zip(*((float(pkt['size']), float(pkt['pts_time'])) for pkt in packets))
         duration_s = max(times) - min(times)
-        if duration_s <= 0: return
+        if duration_s <= 0:
+            Log.debug(Label.QUALITY, f"Invalid duration {duration_s} for {source_log} in {channel_log}.")
+            return
         
         total_bytes = sum(sizes)
         bitrate: Bitrate = Bitrate((total_bytes * 8) / duration_s)
@@ -331,7 +335,7 @@ class QualityMonitor:
                         source_entry["bitrates"].append(probe_info["bitrate"])
                         source_entry["framerates"].append(probe_info["framerate"])
                     else:
-                        Log.debug(Label.QUALITY, f"{source_log} in {channel_log} is offline: {probe_info["reason"]}")
+                        Log.debug(Label.QUALITY, f"{source_log} in {channel_log} is offline: {probe_info['reason']}")
                         source_entry["statuses"].append("offline")
 
                     if len(source_entry["statuses"]) > MAX_HISTORY_PER_SOURCE:

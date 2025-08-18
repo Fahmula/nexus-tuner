@@ -5,18 +5,29 @@
   </div>
   <div class="modal-body">
     <pre id="log-output" class="bg-dark text-white p-3" style="font-size: 0.8rem; line-height: 1.4; overflow-y:auto; max-height:none;"><code>
+    {%- set ns = namespace(last_level='') -%}
     {%- for line in log_lines -%}
       {%- if ' DEBUG: ' in line -%}
-        <span class="log-debug">{{- line -}}</span>
+        {%- set level = 'debug' -%}
+      {%- elif ' INFO: ' in line -%}
+        {%- set level = 'info' -%}
       {%- elif ' WARNING: ' in line -%}
-        <span class="log-warning">{{- line -}}</span>
+        {%- set level = 'warning' -%}
       {%- elif ' ERROR: ' in line -%}
-        <span class="log-error">{{- line -}}</span>
+        {%- set level = 'error' -%}
       {%- elif ' CRITICAL: ' in line -%}
-        <span class="log-critical">{{- line -}}</span>
+        {%- set level = 'critical' -%}
+      {%- else -%}
+        {%- set level = ns.last_level -%}
+      {%- endif -%}
+
+      {%- if level -%}
+        <span class="log-{{ level }}">{{- line -}}</span>
       {%- else -%}
         {{- line -}}
       {%- endif -%}
+
+      {%- set ns.last_level = level -%}
     {%- else -%}
       No log entries found.
     {%- endfor -%}
@@ -36,22 +47,11 @@
 </div>
 
 <style>
-  .log-debug {
-    color: #6c757d !important;
-  }
-
-  .log-warning {
-    color: #ffc107 !important;
-  }
-
-  .log-error {
-    color: #dc3545 !important;
-  }
-
-  .log-critical {
-    color: #ff0000 !important;
-    font-weight: bold;
-  }
+  .log-debug { color: #949fa8 !important; }
+  .log-info { color: #6ba4b8 !important; }
+  .log-warning { color: #ffc107 !important; }
+  .log-error { color: #dc3545 !important; }
+  .log-critical { color: #ff0000 !important; font-weight: bold; }
 </style>
 
 <script>

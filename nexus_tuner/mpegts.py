@@ -47,15 +47,16 @@ class MPEGTSStream:
     async def register(cls, config: Config, stream_manager: StreamManager, video_key: VideoKey, recreate_stream: Callable[[], Awaitable[Response | VideoKey]]) -> tuple[Self, ReaderId]:
         """Create a new MPEGTS stream or return an existing one."""
         if video_key not in cls.streams:  # If stream is cancelled, still choose it to prevent dual ownership
+            Log.debug(Label.STREAM, f"Creating MPEGTS stream handler for '{video_key}'", VideoType.MPEGTS)
             instance = cls(config, stream_manager, video_key, recreate_stream)
             cls.streams[video_key] = instance
             try:
                 await instance._initialize()
-            except:
+            except BaseException:
                 del cls.streams[video_key]
                 raise
         else:
-            Log.debug(Label.STREAM, f"Reusing existing MPEGTS stream for '{video_key}'", VideoType.MPEGTS)
+            Log.debug(Label.STREAM, f"Reusing existing MPEGTS stream handler for '{video_key}'", VideoType.MPEGTS)
             instance = cls.streams[video_key]
         return instance, instance._register()
 
