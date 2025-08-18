@@ -317,7 +317,6 @@ class Log:
     LOG_FILE_NAME: Final[str] = "app.log"
     LOG_FILE_NAME_VERBOSE: Final[str] = "verbose.app.log"
     _logger: logging.Logger
-    _logger_verbose: logging.Logger
     initialized: bool = False
 
     @classmethod
@@ -327,15 +326,22 @@ class Log:
             return   
         logger = logging.getLogger(cls.LOG_FILE_NAME)
         logger.propagate = False
-        logger.setLevel(logging.DEBUG)  # Controlled via config.level functions
+        logger.setLevel(logging.DEBUG)  # Each handler will filter its own level
         cls._logger = logger
         format_str = "%(asctime)s.%(msecs)03d %(levelname)s: %(message)s"
         date_fmt = "%Y-%m-%d %H:%M:%S"
 
         # app.log
         file_handler = TimedRotatingFileHandler(logs_dir / cls.LOG_FILE_NAME, when='midnight', backupCount=log_backup_count)
+        file_handler.setLevel(logging.INFO)
         file_handler.setFormatter(logging.Formatter(format_str, datefmt=date_fmt))
         logger.addHandler(file_handler)
+
+        # verbose.app.log
+        file_handler_verbose = TimedRotatingFileHandler(logs_dir / cls.LOG_FILE_NAME_VERBOSE, when='midnight', backupCount=log_backup_count)
+        file_handler_verbose.setLevel(logging.DEBUG)
+        file_handler_verbose.setFormatter(logging.Formatter(format_str, datefmt=date_fmt))
+        logger.addHandler(file_handler_verbose)
 
         # Console logger
         class ColoredFormatter(logging.Formatter):
@@ -364,27 +370,18 @@ class Log:
                 formatter = logging.Formatter(log_fmt, datefmt=date_fmt)
                 return formatter.format(record)
         console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
         console_handler.setFormatter(ColoredFormatter())
         logger.addHandler(console_handler)
-
-        # verbose.app.log
-        logger_verbose = logging.getLogger(cls.LOG_FILE_NAME_VERBOSE)
-        logger_verbose.propagate = False
-        logger_verbose.setLevel(logging.DEBUG)
-        cls._logger_verbose = logger_verbose
-        file_handler_verbose = TimedRotatingFileHandler(logs_dir / cls.LOG_FILE_NAME_VERBOSE, when='midnight', backupCount=log_backup_count)
-        file_handler_verbose.setFormatter(logging.Formatter(format_str, datefmt=date_fmt))
-        logger_verbose.addHandler(file_handler_verbose)
-
         cls.initialized = True
 
     @classmethod
     def debug(cls, label: Label, msg: str, video_type: VideoType | None = None) -> None:
         """Logs a debug message with the specified label."""
         if video_type:
-            cls._logger_verbose.debug(f"[{label}/{video_type}] {msg}")
+            cls._logger.debug(f"[{label}/{video_type}] {msg}")
         else:
-            cls._logger_verbose.debug(f"[{label}] {msg}")
+            cls._logger.debug(f"[{label}] {msg}")
 
     @classmethod
     def info(cls, label: Label, msg: str, video_type: VideoType | None = None) -> None:

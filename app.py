@@ -10,6 +10,7 @@ StreamManager, GhostSessionMonitor) and defines all the web routes for:
 - A manual reload endpoint.
 """
 
+from collections import deque
 import signal
 import sys
 from types import FrameType
@@ -419,7 +420,7 @@ async def serve_hls_segment(logical_channel_id: LogicalChannelId, segment_filena
 
 @app.route("/<string:video_type>/<string:logical_channel_id>/stop", methods=["POST"])
 async def stop_stream(video_type: VideoType, logical_channel_id: LogicalChannelId) -> Response:
-    """Stops the stream for a logical channel asynchronously."""
+    """Stops the stream for a logical channel."""
     await stream_manager.stop_ffmpeg_processes_with_logical_channel_id(logical_channel_id, video_type)
     return Response(status=204)
 
@@ -903,59 +904,23 @@ async def ui_remove_dead_mappings(logical_channel_id: LogicalChannelId) -> Respo
 
 @app.route("/ui/logs/modal/<int:num_lines>")
 async def ui_logs_modal(num_lines: int) -> str:
-    now = datetime.now()
-    current_year = str(now.year)
-    prev_year = str(int(current_year) - 1)
+    prev_date = datetime.now() - timedelta(days=1)
     if num_lines < 1:
         num_lines = 1
     log_lines: list[str] = []
-    info_log_path = config.logs_dir / Log.LOG_FILE_NAME
     verbose_log_path = config.logs_dir / Log.LOG_FILE_NAME_VERBOSE
-
-    def parse_log_line(raw_line: str) -> None:
-        """Handles a single log message spread across multiple lines."""
-        if raw_line.startswith(current_year) or raw_line.startswith(prev_year):
-            log_lines.append(raw_line)
-        elif len(log_lines):
-            log_lines[-1] += raw_line
-        else:
-            log_lines.append(raw_line)
-
     try:
-        async with aiofiles.open(info_log_path, 'r') as f:
-            while raw_line := await f.readline():
-                parse_log_line(raw_line)
         async with aiofiles.open(verbose_log_path, 'r') as f:
-            while raw_line := await f.readline():
-                parse_log_line(raw_line)
-        prev_date = now - timedelta(days=1)
-        fmt_str = "%Y-%m-%d"
+            log_lines = list(deque(await f.readlines(), maxlen=num_lines))
         while len(log_lines) < num_lines:
-            not_found_count = 0
-
-            prev_info_log_path = info_log_path.with_name(f"{Log.LOG_FILE_NAME}.{prev_date.strftime(fmt_str)}")
-            if prev_info_log_path.exists():
-                async with aiofiles.open(prev_info_log_path, 'r') as f:
-                    while raw_line := await f.readline():
-                        parse_log_line(raw_line)
-            else:
-                not_found_count += 1
-
-            prev_verbose_log_path = verbose_log_path.with_name(f"{Log.LOG_FILE_NAME_VERBOSE}.{prev_date.strftime(fmt_str)}")
-            if prev_verbose_log_path.exists():
-                async with aiofiles.open(prev_verbose_log_path, 'r') as f:
-                    while raw_line := await f.readline():
-                        parse_log_line(raw_line)
-            else:
-                not_found_count += 1
-
-            if not_found_count >= 2:
+            prev_verbose_log_path = verbose_log_path.with_name(f"{Log.LOG_FILE_NAME_VERBOSE}.{prev_date.strftime('%Y-%m-%d')}")
+            if not prev_verbose_log_path.exists():
                 break
+            async with aiofiles.open(prev_verbose_log_path, 'r') as f:
+                log_lines = list(deque(await f.readlines() + log_lines, maxlen=num_lines))
             if len(log_lines) >= num_lines:
                 break
             prev_date -= timedelta(days=1)
-        log_lines.sort(key=lambda x: "".join(x.split()[:2]))
-        log_lines = log_lines[-num_lines:]
     except FileNotFoundError as e:
         log_lines = [f"Error: Log file not found in '{config.logs_dir}': {e}"]
     except Exception as e:

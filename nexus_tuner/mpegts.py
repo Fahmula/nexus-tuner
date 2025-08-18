@@ -61,7 +61,7 @@ class MPEGTSStream:
 
     def _register(self) -> ReaderId:
         """Register a new reader for the MPEGTS stream and return its ID."""
-        reader_id = ReaderId(max(self._reader_positions.keys(), default=-1) + 1)
+        reader_id = ReaderId(max(self._reader_positions.keys(), default=0) + 1)
         self._reader_positions[reader_id] = 0
         Log.debug(Label.STREAM, f"Registering Client #{reader_id} for MPEGTS stream '{self.video_key}': {len(self._reader_positions)} readers total.", VideoType.MPEGTS)
         return reader_id
@@ -127,6 +127,7 @@ class MPEGTSStream:
             raise
         finally:  # Don't stop early incase the user reconnects, let the timeout handle it
             async def bg_cleanup() -> None:
+                Log.debug(Label.STREAM, f"Shutting down MPEGTS stream for '{self.video_key}'...", VideoType.MPEGTS)
                 self.shutdown()
                 async with self.stream_manager.stream_process_lock:
                     Log.debug(Label.STREAM, f"Marking MPEGTS stream for '{process_info['logical_channel_title']}' with key '{self.video_key}' as inactive.", VideoType.MPEGTS)
@@ -155,7 +156,6 @@ class MPEGTSStream:
 
     def shutdown(self) -> None:
         """Cancel the MPEGTS stream, cleaning up resources and stopping the writer task."""
-        Log.debug(Label.STREAM, f"Shutting down MPEGTS stream for '{self.video_key}'...", VideoType.MPEGTS)
         self._cancelled = True  # Let the stdout reader finish gracefully incase we will reconnect
         self._cleaner.cancel()
         self._event.set()  # Ensure any waiting readers are woken up
