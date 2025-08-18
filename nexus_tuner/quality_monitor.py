@@ -6,7 +6,7 @@ from typing import Coroutine, Final, Any, Self
 from nexus_tuner.config import Config
 from nexus_tuner.handler import ChannelHandler
 from nexus_tuner.slots import ProviderSlots
-from nexus_tuner.utils import (NEXUS_TUNER_USER_AGENT, Bitrate, BitrateScore, DateTimeISO, Framerate, FramerateScore, Height,
+from nexus_tuner.utils import (FFMPEG_TERMINATE_TIMEOUT, NEXUS_TUNER_USER_AGENT, Bitrate, BitrateScore, DateTimeISO, Framerate, FramerateScore, Height,
                                 Label, Log, LogicalChannelId, Percent, ProbeInfo, ProbeSuccess, ProviderAlias, QualityInfoImpl, QualityScores,
                                 QualityScoresImpl, ResolutionScore, QualityCacheData, QualityCacheDataImpl, SourceId,
                                 StreamURL, TotalScore, UptimeScore, Width, run_bg)
@@ -112,18 +112,18 @@ class QualityMonitor:
             stream_url
         ]
 
-        proc = None
+        process: asyncio.subprocess.Process | None = None
         try:
-            proc = await asyncio.create_subprocess_exec(
+            process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
             
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=QUALITY_MONITOR_TIMEOUT + 3)
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=QUALITY_MONITOR_TIMEOUT + 3)
 
-            if proc.returncode != 0:
-                Log.debug(Label.QUALITY, f"ffprobe for {source_log} in {channel_log} failed with code {proc.returncode}: {stderr.decode()}".replace(stream_url, "{{stream_url}}").strip())
+            if process.returncode != 0:
+                Log.debug(Label.QUALITY, f"ffprobe for {source_log} in {channel_log} failed with code {process.returncode}: {stderr.decode()}".replace(stream_url, "{{stream_url}}").strip())
                 return
             info = json.loads(stdout)
 
@@ -136,15 +136,24 @@ class QualityMonitor:
         finally:
             async def bg_cleanup() -> None:
                 try:
-                    if proc and proc.returncode is None:
-                        proc.kill()
-                        await proc.wait()
-                        Log.debug(Label.QUALITY, f"ffprobe process for {source_log} in {channel_log} killed successfully.")
+                    if process and process.returncode is None:
+                        try:
+                            process.terminate()
+                            if process.stdout:
+                                process.stdout._transport.close()  # type: ignore[reportAttributeAccessIssue]
+                            await asyncio.wait_for(process.wait(), timeout=FFMPEG_TERMINATE_TIMEOUT)
+                            Log.debug(Label.QUALITY, f"ffprobe process for {source_log} in {channel_log} terminated successfully.")
+                        except asyncio.TimeoutError:
+                            Log.warn(Label.QUALITY, f"Killing unresponsive ffprobe process for {source_log} in {channel_log}.")
+                            process.kill()
+                        except Exception as e:
+                            Log.error(Label.QUALITY, f"Error terminating ffprobe process for {source_log} in {channel_log}: {e}")
+                            process.kill()
                     run_bg(provider_slots.release())
                 except BaseException as e:
-                    Log.critical(Label.QUALITY, f"Error during background cleanup for {source_log} in {channel_log}: {e}")
+                    Log.critical(Label.QUALITY, f"Error during stopping ffprobe process for {source_log} in {channel_log}: {e}")
                     raise
-            run_bg(bg_cleanup())
+            run_bg(bg_cleanup())  # Prevent asyncio.CancelledError from interrupting cleanup
 
         stream = info.get('streams', [{}])[0]
         width: Width = Width(int(stream.get('width', 0)))
@@ -174,12 +183,6 @@ class QualityMonitor:
         Probes a single stream, persistently trying to acquire a slot, and ensures
         all resources are cleaned up upon completion, failure, or cancellation.
         """
-        current_task = asyncio.current_task()
-        if not current_task:
-            msg = "Current task is None, cannot run probe without a task context"
-            Log.error(Label.QUALITY, msg)
-            raise RuntimeError(msg)
-
         try:
             paused = False
             while True:
@@ -335,7 +338,6 @@ class QualityMonitor:
                         source_entry["bitrates"].append(probe_info["bitrate"])
                         source_entry["framerates"].append(probe_info["framerate"])
                     else:
-                        Log.debug(Label.QUALITY, f"{source_log} in {channel_log} is offline: {probe_info['reason']}")
                         source_entry["statuses"].append("offline")
 
                     if len(source_entry["statuses"]) > MAX_HISTORY_PER_SOURCE:

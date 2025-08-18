@@ -5,8 +5,6 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Any, Coroutine, Final, Iterable, NoReturn, Self, cast
 
-from asyncio.subprocess import Process
-
 from nexus_tuner.config import Config
 from nexus_tuner.handler import ChannelHandler
 from nexus_tuner.utils import (CREATE_STREAM_DEADLINE, FFMPEG_TERMINATE_TIMEOUT, NEW_DEADLINE_NON_BEST, FFmpegProcessInfo, FFmpegProcessInfoMutable, FFmpegProcessInfos, FFmpegProcessInfosMutable,
@@ -213,7 +211,7 @@ class StreamManager:
             Log.debug(Label.STREAM, f"{name} [{video_key}]: Stopping FFmpeg process with provided data.", data_to_cleanup['video_type'])
 
         video_type: VideoType = data_to_cleanup['video_type']
-        process: Process = data_to_cleanup['process']
+        process: asyncio.subprocess.Process = data_to_cleanup['process']
         alias = data_to_cleanup['provider_alias']
         hls_dir: Path | None = data_to_cleanup['channel_hls_dir']
         log_file: aiofiles.threadpool.text.AsyncTextIOWrapper = data_to_cleanup["stderr_log_file_obj"]
