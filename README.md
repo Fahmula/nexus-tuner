@@ -56,7 +56,7 @@ venv\Scripts\pip install -r requirements.txt  # Windows
 
 > [!IMPORTANT]
 > You'll need to install FFmpeg separately on your system, you'll be able to configure the path to
-> FFmpeg in the `.env` file later. FFprobe will be inferred from the FFmpeg path.
+> FFmpeg in the `.env` file later. ffprobe will be inferred from the FFmpeg path.
 
 ### Configuring `NexusTuner`
 
