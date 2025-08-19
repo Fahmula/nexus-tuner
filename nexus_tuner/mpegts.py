@@ -53,7 +53,7 @@ class MPEGTSStream:
             try:
                 await instance._initialize()
             except BaseException:
-                del cls.streams[video_key]
+                cls.streams.pop(video_key, None)
                 raise
         else:
             Log.debug(Label.STREAM, f"Reusing existing MPEGTS stream handler for '{video_key}'", VideoType.MPEGTS)
@@ -82,7 +82,7 @@ class MPEGTSStream:
         if self._reader_positions[reader_id] >= len(self._buffer):
             await self._event.wait()
         if self._cancelled:
-            raise asyncio.CancelledError("MPEGTS stream has been cancelled.")
+            raise asyncio.CancelledError("MPEGTS stream has been shutdown.")
         buf = self._buffer[self._reader_positions[reader_id]]
         self._reader_positions[reader_id] += 1
         return buf
@@ -113,7 +113,7 @@ class MPEGTSStream:
                     if isinstance(res, Response):
                         Log.error(Label.STREAM, f"Failed to recreate MPEGTS stream for '{process_info['logical_channel_title']}' with key '{self.video_key}': {res.status}", VideoType.MPEGTS)
                         raise
-                    del self.streams[self.video_key]
+                    self.streams.pop(self.video_key, None)
                     self.video_key = res
                     self.streams[self.video_key] = self
                     process_info_res = cast(MPEGTSProcessInfo | None, await self.stream_manager.get_ffmpeg_process_info(self.video_key))
@@ -134,7 +134,7 @@ class MPEGTSStream:
                     Log.debug(Label.STREAM, f"Marking MPEGTS stream for '{process_info['logical_channel_title']}' with key '{self.video_key}' as inactive.", VideoType.MPEGTS)
                     cast(FFmpegProcessInfoMutable, process_info)["last_access"] = datetime.now() - timedelta(seconds=self.config.segment_prune_timeout)  # Elligible for pruning immediately
                     cast(FFmpegProcessInfoMutable, process_info)["is_mpegts_active"] = False
-                    del self.streams[self.video_key]  # Make this atomic with is_mpegts_active
+                    self.streams.pop(self.video_key, None)  # Make this atomic with is_mpegts_active
             run_bg(bg_cleanup())
 
     async def _cleanup(self) -> NoReturn:

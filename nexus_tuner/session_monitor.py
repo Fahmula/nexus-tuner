@@ -1,15 +1,16 @@
 import asyncio
 import aiohttp
-from typing import Coroutine, Final, NoReturn, Self, Set, Any
+from typing import Final, NoReturn, Self, Set, Any
 
 from nexus_tuner.config import Config
 from nexus_tuner.handler import ChannelHandler
+from nexus_tuner.mpegts import MPEGTSStream
 from nexus_tuner.stream import StreamManager
-from nexus_tuner.utils import Label, Log, LogicalChannelId, LogicalChannelTitle, VideoKey
+from nexus_tuner.utils import Label, Log, LogicalChannelId, LogicalChannelTitle, VideoKey, VideoType
 
 # --- Constants ---
 SESSION_MONITOR_STARTUP_DELAY: Final[int] = 15
-MEDIA_SERVER_API_TIMEOUT: Final[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=10)
+MEDIA_SERVER_API_TIMEOUT: Final[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=20)
 SESSION_ACTIVE_BUFFER_SECONDS: Final[int] = 60
 
 class GhostSessionMonitor:
@@ -48,14 +49,6 @@ class GhostSessionMonitor:
         instance = cls(config, handler, stream_manager)
         instance.ghost_monitor_task = asyncio.create_task(instance._run())
         return instance
-
-    async def _build_name_to_id_map(self) -> None:
-        """Creates a mapping from a channel's display name to its logical_channel_id."""
-        Log.debug(Label.SESSION, "Building channel name to stream ID map...")
-        name_map = {channel_data["logical_channel_title"]: lc_id
-                    for lc_id, channel_data in (await self.handler.copy_client_channels()).items()}
-        self.lc_title_to_lc_id_map = name_map
-        Log.debug(Label.SESSION, f"Built map with {len(self.lc_title_to_lc_id_map)} entries.")
 
     async def _fetch_sessions_from_server(self, session: aiohttp.ClientSession, base_url: str | None, api_key: str | None, server_type: str) -> list[Any]:
         """Fetches active session data from a single media server asynchronously."""
@@ -96,43 +89,45 @@ class GhostSessionMonitor:
                 if (channel_name := now_playing.get("Name")) in self.lc_title_to_lc_id_map:
                     lc_id = self.lc_title_to_lc_id_map[channel_name]
                     active_lc_ids.add(lc_id)
-                    Log.debug(Label.SESSION, f"Found legitimate session for '{channel_name}' (ID: {lc_id}) on device '{session_data.get('DeviceName', 'Unknown')}'.")
         
         return active_lc_ids
 
     async def _check_for_ghost_sessions(self) -> None:
         """The main logic loop to find and terminate ghost streams asynchronously."""
-        Log.debug(Label.SESSION, "Running check for ghost sessions...")
-        await self._build_name_to_id_map()
+        self.lc_title_to_lc_id_map = {channel_data["logical_channel_title"]: lc_id
+                    for lc_id, channel_data in (await self.handler.copy_client_channels()).items()}
 
         try:
             legitimately_active_lc_ids = await self._get_legitimate_stream_ids()
-            Log.debug(Label.SESSION, f"Found {len(legitimately_active_lc_ids)} legitimate sessions: {legitimately_active_lc_ids or 'None'}")
         except Exception as e:
             Log.error(Label.SESSION, f"Could not get active sessions from media servers: {e}")
             return
 
-        ghost_video_keys: Set[tuple[VideoKey, LogicalChannelTitle]] = set()
+        mpegts_video_keys: list[VideoKey] = []
+        hls_video_keys: list[VideoKey] = []
         async with self.stream_manager.stream_process_lock:
             for video_key, data in self.stream_manager.ffmpeg_processes.items():
                 if data['is_preview']:
                     continue
-                if data['is_long_term'] and data['logical_channel_id'] not in legitimately_active_lc_ids:
-                    ghost_video_keys.add((video_key, data['logical_channel_title']))
-
-        if not ghost_video_keys:
-            Log.debug(Label.SESSION, "No ghost sessions found.")
+                if not data['is_long_term']:
+                    continue
+                if data['logical_channel_id'] in legitimately_active_lc_ids:
+                    continue
+                video_type = data['video_type']
+                Log.warn(Label.SESSION, f"Found ghost session for '{data['logical_channel_title']}' [{video_key}].", video_type)
+                if video_type == VideoType.MPEGTS:
+                    mpegts_video_keys.append(video_key)
+                elif video_type == VideoType.HLS:
+                    hls_video_keys.append(video_key)
+                else:
+                    Log.error(Label.SESSION, f"Unknown video type '{video_type}' for stream '{video_key}', cannot terminate.", video_type)
+        if not mpegts_video_keys and not hls_video_keys:
             return
 
-        Log.warn(Label.SESSION, f"Found {len(ghost_video_keys)} ghost session(s) to terminate: {', '.join(g[0] for g in ghost_video_keys)}")
-        
-        stop_tasks: list[Coroutine[Any, Any, None]] = []
-        for video_key, logical_channel_title in ghost_video_keys:
-            Log.info(Label.SESSION, f"Terminating ghost stream for '{logical_channel_title}' [{video_key}]...")
-            stop_tasks.append(self.stream_manager.stop_ffmpeg_process(video_key, logical_channel_title))
-        
-        if stop_tasks:
-            await asyncio.gather(*stop_tasks)
+        for video_key in mpegts_video_keys:
+            if video_key in MPEGTSStream.streams:
+                MPEGTSStream.streams[video_key].shutdown()
+        await self.stream_manager.stop_ffmpeg_processes(hls_video_keys)
 
     async def _run(self) -> NoReturn:
         """The main execution loop for the monitor task."""
