@@ -1994,6 +1994,1166 @@
             "num": "599",
             "title": "Hustler TV",
             "aliases": ["Hustler TV"]
+        },
+        {
+            "num": "600",
+            "title": "SPORTSMIX HD",
+            "aliases": ["SPORTSMIX HD"]
+        },
+        {
+            "num": "602",
+            "title": "FanDuel TV",
+            "aliases": ["FanDuel TV"]
+        },
+        {
+            "num": "603",
+            "title": "Cowboy Channel",
+            "aliases": ["Cowboy Channel"]
+        },
+        {
+            "num": "604",
+            "title": "Pursuit Channel",
+            "aliases": ["Pursuit Channel"]
+        },
+        {
+            "num": "605",
+            "title": "Sportsman Channel",
+            "aliases": ["Sportsman Channel"]
+        },
+        {
+            "num": "606",
+            "title": "Outdoor Channel",
+            "aliases": ["Outdoor Channel"]
+        },
+        {
+            "num": "610",
+            "title": "Big Ten Network",
+            "aliases": ["Big Ten Network"]
+        },
+        {
+            "num": "611",
+            "title": "SEC Network",
+            "aliases": ["SEC Network"]
+        },
+        {
+            "num": "612",
+            "title": "ACC Network",
+            "aliases": ["ACC Network"]
+        },
+        {
+            "num": "618",
+            "title": "Fox Sports 2",
+            "aliases": ["Fox Sports 2"]
+        },
+        {
+            "num": "621",
+            "title": "Fox Soccer Plus",
+            "aliases": ["Fox Soccer Plus"]
+        },
+        {
+            "num": "621-1",
+            "title": "Fox Soccer Plus",
+            "aliases": ["Fox Soccer Plus"]
+        },
+        {
+            "num": "623",
+            "title": "Next Level Sports",
+            "aliases": ["Next Level Sports"]
+        },
+        {
+            "num": "625",
+            "title": "Willow",
+            "aliases": ["Willow"]
+        },
+        {
+            "num": "626",
+            "title": "Willow 2",
+            "aliases": ["Willow 2"]
+        },
+        {
+            "num": "628",
+            "title": "NESN",
+            "aliases": ["NESN"]
+        },
+        {
+            "num": "628-1",
+            "title": "NESN Plus",
+            "aliases": ["NESN Plus"]
+        },
+        {
+            "num": "630",
+            "title": "NBC Sports Boston",
+            "aliases": ["NBC Sports Boston"]
+        },
+        {
+            "num": "631",
+            "title": "YES Network",
+            "aliases": ["YES Network"]
+        },
+        {
+            "num": "631-1",
+            "title": "YES Network 2",
+            "aliases": ["YES Network 2"]
+        },
+        {
+            "num": "634",
+            "title": "MSG",
+            "aliases": ["MSG"]
+        },
+        {
+            "num": "635",
+            "title": "MSG Sportsnet",
+            "aliases": ["MSG Sportsnet"]
+        },
+        {
+            "num": "635-1",
+            "title": "MSG Buffalo",
+            "aliases": ["MSG Buffalo"]
+        },
+        {
+            "num": "635-2",
+            "title": "MSG Sportsnet 2",
+            "aliases": ["MSG Sportsnet 2"]
+        },
+        {
+            "num": "635-3",
+            "title": "MSG 2",
+            "aliases": ["MSG 2"]
+        },
+        {
+            "num": "639",
+            "title": "SNY",
+            "aliases": ["SNY"]
+        },
+        {
+            "num": "640",
+            "title": "MASN",
+            "aliases": ["MASN"]
+        },
+        {
+            "num": "640-1",
+            "title": "MASN 2",
+            "aliases": ["MASN 2"]
+        },
+        {
+            "num": "642",
+            "title": "Monumental Sports Network",
+            "aliases": ["Monumental Sports Network"]
+        },
+        {
+            "num": "642-1",
+            "title": "Monumental Sports Network 2",
+            "aliases": ["Monumental Sports Network 2"]
+        },
+        {
+            "num": "646",
+            "title": "FanDuel Sports Network South",
+            "aliases": ["FanDuel Sports Network South"]
+        },
+        {
+            "num": "646-1",
+            "title": "FanDuel Sports Network Southeast (Carolinas feed)",
+            "aliases": ["FanDuel Sports Network Southeast (Carolinas feed)"]
+        },
+        {
+            "num": "646-2",
+            "title": "FanDuel Sports Network Southeast (Tennessee feed)",
+            "aliases": ["FanDuel Sports Network Southeast (Tennessee feed)"]
+        },
+        {
+            "num": "649",
+            "title": "FanDuel Sports Network Southeast",
+            "aliases": ["FanDuel Sports Network Southeast"]
+        },
+        {
+            "num": "649-1",
+            "title": "FanDuel Sports Network Southeast Alternate",
+            "aliases": ["FanDuel Sports Network Southeast Alternate"]
+        },
+        {
+            "num": "649-2",
+            "title": "FanDuel Sports Network Southeast Alternate 2",
+            "aliases": ["FanDuel Sports Network Southeast Alternate 2"]
+        },
+        {
+            "num": "653",
+            "title": "FanDuel Sports Network Sun",
+            "aliases": ["FanDuel Sports Network Sun"]
+        },
+        {
+            "num": "653-1",
+            "title": "FanDuel Sports Network Sun Alternate",
+            "aliases": ["FanDuel Sports Network Sun Alternate"]
+        },
+        {
+            "num": "654",
+            "title": "FanDuel Sports Network Florida",
+            "aliases": ["FanDuel Sports Network Florida"]
+        },
+        {
+            "num": "654-1",
+            "title": "FanDuel Sports Network Florida Alternate",
+            "aliases": ["FanDuel Sports Network Florida Alternate"]
+        },
+        {
+            "num": "659",
+            "title": "SportsNet Pittsburgh",
+            "aliases": ["SportsNet Pittsburgh"]
+        },
+        {
+            "num": "660",
+            "title": "FanDuel Sports Network Ohio (Cleveland feed)",
+            "aliases": ["FanDuel Sports Network Ohio (Cleveland feed)"]
+        },
+        {
+            "num": "660-1",
+            "title": "FanDuel Sports Network Ohio (Cleveland feed)",
+            "aliases": ["FanDuel Sports Network Ohio (Cleveland feed)"]
+        },
+        {
+            "num": "661",
+            "title": "FanDuel Sports Network Ohio (Cincinnati feed)",
+            "aliases": ["FanDuel Sports Network Ohio (Cincinnati feed)"]
+        },
+        {
+            "num": "661-1",
+            "title": "FanDuel Sports Network Ohio (Cincinnati feed)",
+            "aliases": ["FanDuel Sports Network Ohio (Cincinnati feed)"]
+        },
+        {
+            "num": "661-3",
+            "title": "FanDuel Sports Network Ohio (Cincinnati feed)",
+            "aliases": ["FanDuel Sports Network Ohio (Cincinnati feed)"]
+        },
+        {
+            "num": "663",
+            "title": "FanDuel Sports Network Detroit",
+            "aliases": ["FanDuel Sports Network Detroit"]
+        },
+        {
+            "num": "663-1",
+            "title": "FanDuel Sports Network Detroit Extra",
+            "aliases": ["FanDuel Sports Network Detroit Extra"]
+        },
+        {
+            "num": "664",
+            "title": "Marquee Sports Network",
+            "aliases": ["Marquee Sports Network"]
+        },
+        {
+            "num": "665",
+            "title": "Chicago Sports Network",
+            "aliases": ["Chicago Sports Network"]
+        },
+        {
+            "num": "668",
+            "title": "FanDuel Sports Network North",
+            "aliases": ["FanDuel Sports Network North"]
+        },
+        {
+            "num": "669",
+            "title": "FanDuel Sports Network Wisconsin",
+            "aliases": ["FanDuel Sports Network Wisconsin"]
+        },
+        {
+            "num": "671",
+            "title": "FanDuel Sports Network Midwest",
+            "aliases": ["FanDuel Sports Network Midwest"]
+        },
+        {
+            "num": "671-1",
+            "title": "FanDuel Sports Network Midwest alternate",
+            "aliases": ["FanDuel Sports Network Midwest alternate"]
+        },
+                {
+            "num": "671-1",
+            "title": "FanDuel Sports Network Midwest alternate",
+            "aliases": ["FanDuel Sports Network Midwest alternate"]
+        },
+        {
+            "num": "671-2",
+            "title": "FanDuel Sports Network Midwest alternate 2",
+            "aliases": ["FanDuel Sports Network Midwest alternate 2"]
+        },
+        {
+            "num": "671-3",
+            "title": "FanDuel Sports Network Midwest alternate 3",
+            "aliases": ["FanDuel Sports Network Midwest alternate 3"]
+        },
+        {
+            "num": "671-4",
+            "title": "FanDuel Sports Network Indiana",
+            "aliases": ["FanDuel Sports Network Indiana"]
+        },
+        {
+            "num": "671-5",
+            "title": "FanDuel Sports Network Kansas City",
+            "aliases": ["FanDuel Sports Network Kansas City"]
+        },
+        {
+            "num": "674",
+            "title": "Space City Home Network",
+            "aliases": ["Space City Home Network"]
+        },
+        {
+            "num": "674-1",
+            "title": "Space City Home Network alternate",
+            "aliases": ["Space City Home Network alternate"]
+        },
+        {
+            "num": "675",
+            "title": "FanDuel Sports Network Oklahoma",
+            "aliases": ["FanDuel Sports Network Oklahoma"]
+        },
+        {
+            "num": "676",
+            "title": "FanDuel Sports Network Southwest",
+            "aliases": ["FanDuel Sports Network Southwest"]
+        },
+        {
+            "num": "676-1",
+            "title": "FanDuel Sports Network Southwest Extra",
+            "aliases": ["FanDuel Sports Network Southwest Extra"]
+        },
+        {
+            "num": "676-2",
+            "title": "FanDuel Sports Network Southwest alternate",
+            "aliases": ["FanDuel Sports Network Southwest alternate"]
+        },
+        {
+            "num": "676-3",
+            "title": "FanDuel Sports Network Southwest alternate 2",
+            "aliases": ["FanDuel Sports Network Southwest alternate 2"]
+        },
+        {
+            "num": "681",
+            "title": "Altitude",
+            "aliases": ["Altitude"]
+        },
+        {
+            "num": "681-1",
+            "title": "Altitude 2",
+            "aliases": ["Altitude 2"]
+        },
+        {
+            "num": "686-3",
+            "title": "MLB Arizona Diamondbacks",
+            "aliases": ["MLB Arizona Diamondbacks"]
+        },
+        {
+            "num": "687",
+            "title": "Root Sports Northwest",
+            "aliases": ["Root Sports Northwest"]
+        },
+        {
+            "num": "687-1",
+            "title": "Root Sports Northwest alternate",
+            "aliases": ["Root Sports Northwest alternate"]
+        },
+        {
+            "num": "690",
+            "title": "Spectrum SportsNet LA",
+            "aliases": ["Spectrum SportsNet LA"]
+        },
+        {
+            "num": "691",
+            "title": "Spectrum SportsNet",
+            "aliases": ["Spectrum SportsNet"]
+        },
+        {
+            "num": "692",
+            "title": "FanDuel Sports Network West",
+            "aliases": ["FanDuel Sports Network West"]
+        },
+        {
+            "num": "693",
+            "title": "FanDuel Sports Network SoCal",
+            "aliases": ["FanDuel Sports Network SoCal"]
+        },
+        {
+            "num": "694-3",
+            "title": "MLB San Diego Padres",
+            "aliases": ["MLB San Diego Padres"]
+        },
+        {
+            "num": "696",
+            "title": "NBC Sports Bay Area",
+            "aliases": ["NBC Sports Bay Area"]
+        },
+        {
+            "num": "696-1",
+            "title": "NBC Sports Bay Area Plus",
+            "aliases": ["NBC Sports Bay Area Plus"]
+        },
+        {
+            "num": "696-2",
+            "title": "NBC Sports Bay Area Plus2",
+            "aliases": ["NBC Sports Bay Area Plus2"]
+        },
+        {
+            "num": "698",
+            "title": "NBC Sports California",
+            "aliases": ["NBC Sports California"]
+        },
+        {
+            "num": "698-1",
+            "title": "NBC Sports California Plus",
+            "aliases": ["NBC Sports California Plus"]
+        },
+        {
+            "num": "703",
+            "title": "NFL RedZone",
+            "aliases": ["NFL RedZone"]
+        },
+        {
+            "num": "719",
+            "title": "MLB Strike Zone",
+            "aliases": ["MLB Strike Zone"]
+        },
+        {
+            "num": "801",
+            "title": "Big Band",
+            "aliases": ["Big Band"]
+        },
+        {
+            "num": "802",
+            "title": "Malt Shop Favorites",
+            "aliases": ["Malt Shop Favorites"]
+        },
+        {
+            "num": "803",
+            "title": "60's Movement",
+            "aliases": ["60's Movement"]
+        },
+        {
+            "num": "804",
+            "title": "70's",
+            "aliases": ["70's"]
+        },
+        {
+            "num": "805",
+            "title": "80's",
+            "aliases": ["80's"]
+        },
+        {
+            "num": "806",
+            "title": "90's",
+            "aliases": ["90's"]
+        },
+        {
+            "num": "807",
+            "title": "Singers & Swing",
+            "aliases": ["Singers & Swing"]
+        },
+        {
+            "num": "808",
+            "title": "Classic Country",
+            "aliases": ["Classic Country"]
+        },
+        {
+            "num": "809",
+            "title": "Country Hits",
+            "aliases": ["Country Hits"]
+        },
+        {
+            "num": "810",
+            "title": "Americana",
+            "aliases": ["Americana"]
+        },
+        {
+            "num": "811",
+            "title": "Honky Tonk",
+            "aliases": ["Honky Tonk"]
+        },
+        {
+            "num": "812",
+            "title": "Bluegrass",
+            "aliases": ["Bluegrass"]
+        },
+        {
+            "num": "813",
+            "title": "Folk",
+            "aliases": ["Folk"]
+        },
+        {
+            "num": "814",
+            "title": "Today's Country",
+            "aliases": ["Today's Country"]
+        },
+        {
+            "num": "816",
+            "title": "Hit List",
+            "aliases": ["Hit List"]
+        },
+        {
+            "num": "817",
+            "title": "Y2K",
+            "aliases": ["Y2K"]
+        },
+        {
+            "num": "818",
+            "title": "Max",
+            "aliases": ["Max"]
+        },
+        {
+            "num": "819",
+            "title": "Love Songs",
+            "aliases": ["Love Songs"]
+        },
+        {
+            "num": "820",
+            "title": "Contemporary Instrumentals",
+            "aliases": ["Contemporary Instrumentals"]
+        },
+        {
+            "num": "821",
+            "title": "Pop Hits",
+            "aliases": ["Pop Hits"]
+        },
+        {
+            "num": "822",
+            "title": "Movie Scores",
+            "aliases": ["Movie Scores"]
+        },
+        {
+            "num": "823",
+            "title": "Broadway",
+            "aliases": ["Broadway"]
+        },
+        {
+            "num": "824",
+            "title": "Lounge",
+            "aliases": ["Lounge"]
+        },
+        {
+            "num": "825",
+            "title": "Hip Hip and R&B",
+            "aliases": ["Hip Hip and R&B"]
+        },
+        {
+            "num": "826",
+            "title": "Contemporary Christian",
+            "aliases": ["Contemporary Christian"]
+        },
+        {
+            "num": "827",
+            "title": "Gospel",
+            "aliases": ["Gospel"]
+        },
+        {
+            "num": "828",
+            "title": "Gospel Hallelujah",
+            "aliases": ["Gospel Hallelujah"]
+        },
+        {
+            "num": "829",
+            "title": "80's Rock",
+            "aliases": ["80's Rock"]
+        },
+        {
+            "num": "830",
+            "title": "Metal",
+            "aliases": ["Metal"]
+        },
+        {
+            "num": "831",
+            "title": "Indie",
+            "aliases": ["Indie"]
+        },
+        {
+            "num": "832",
+            "title": "Adult Alternative",
+            "aliases": ["Adult Alternative"]
+        },
+        {
+            "num": "833",
+            "title": "Classic Rock",
+            "aliases": ["Classic Rock"]
+        },
+        {
+            "num": "834",
+            "title": "Alternative",
+            "aliases": ["Alternative"]
+        },
+        {
+            "num": "835",
+            "title": "Hard Rock",
+            "aliases": ["Hard Rock"]
+        },
+        {
+            "num": "836",
+            "title": "Coffee Shop Cuts",
+            "aliases": ["Coffee Shop Cuts"]
+        },
+        {
+            "num": "837",
+            "title": "Rock Hits",
+            "aliases": ["Rock Hits"]
+        },
+        {
+            "num": "838",
+            "title": "Classic Alternative",
+            "aliases": ["Classic Alternative"]
+        },
+        {
+            "num": "839",
+            "title": "New Wave",
+            "aliases": ["New Wave"]
+        },
+        {
+            "num": "840",
+            "title": "Pop & Country",
+            "aliases": ["Pop & Country"]
+        },
+        {
+            "num": "841",
+            "title": "Rock",
+            "aliases": ["Rock"]
+        },
+        {
+            "num": "842",
+            "title": "R&B Classics",
+            "aliases": ["R&B Classics"]
+        },
+        {
+            "num": "843",
+            "title": "R&B Soul",
+            "aliases": ["R&B Soul"]
+        },
+        {
+            "num": "844",
+            "title": "Funk",
+            "aliases": ["Funk"]
+        },
+        {
+            "num": "845",
+            "title": "Classic Dance",
+            "aliases": ["Classic Dance"]
+        },
+        {
+            "num": "846",
+            "title": "Rap",
+            "aliases": ["Rap"]
+        },
+        {
+            "num": "847",
+            "title": "Mainstream Rap",
+            "aliases": ["Mainstream Rap"]
+        },
+        {
+            "num": "848",
+            "title": "Throwback Jamz",
+            "aliases": ["Throwback Jamz"]
+        },
+        {
+            "num": "849",
+            "title": "Soft Rock",
+            "aliases": ["Soft Rock"]
+        },
+        {
+            "num": "850",
+            "title": "Jazz Vocal Hits",
+            "aliases": ["Jazz Vocal Hits"]
+        },
+        {
+            "num": "851",
+            "title": "Smooth Jazz",
+            "aliases": ["Smooth Jazz"]
+        },
+        {
+            "num": "852",
+            "title": "Jazz",
+            "aliases": ["Jazz"]
+        },
+        {
+            "num": "853",
+            "title": "Easy Listening",
+            "aliases": ["Easy Listening"]
+        },
+        {
+            "num": "854",
+            "title": "Blues",
+            "aliases": ["Blues"]
+        },
+        {
+            "num": "855",
+            "title": "Jazz Vocal Standards",
+            "aliases": ["Jazz Vocal Standards"]
+        },
+        {
+            "num": "856",
+            "title": "New Age",
+            "aliases": ["New Age"]
+        },
+        {
+            "num": "857",
+            "title": "Soundscapes",
+            "aliases": ["Soundscapes"]
+        },
+        {
+            "num": "858",
+            "title": "All Xmas",
+            "aliases": ["All Xmas"]
+        },
+        {
+            "num": "859",
+            "title": "Dance/EDM",
+            "aliases": ["Dance/EDM"]
+        },
+        {
+            "num": "860",
+            "title": "Workout",
+            "aliases": ["Workout"]
+        },
+        {
+            "num": "861",
+            "title": "K-Pop",
+            "aliases": ["K-Pop"]
+        },
+        {
+            "num": "862",
+            "title": "Retro Workout",
+            "aliases": ["Retro Workout"]
+        },
+        {
+            "num": "863",
+            "title": "Reggae",
+            "aliases": ["Reggae"]
+        },
+        {
+            "num": "864",
+            "title": "Symphony",
+            "aliases": ["Symphony"]
+        },
+        {
+            "num": "866",
+            "title": "Light Classical",
+            "aliases": ["Light Classical"]
+        },
+        {
+            "num": "867",
+            "title": "Teen Beats",
+            "aliases": ["Teen Beats"]
+        },
+        {
+            "num": "868",
+            "title": "Kidz Only",
+            "aliases": ["Kidz Only"]
+        },
+        {
+            "num": "869",
+            "title": "Toddler Tunes",
+            "aliases": ["Toddler Tunes"]
+        },
+        {
+            "num": "870",
+            "title": "Romances",
+            "aliases": ["Romances"]
+        },
+        {
+            "num": "871",
+            "title": "Pop Latino",
+            "aliases": ["Pop Latino"]
+        },
+        {
+            "num": "874",
+            "title": "Tropicales",
+            "aliases": ["Tropicales"]
+        },
+        {
+            "num": "875",
+            "title": "Musica Urbana",
+            "aliases": ["Musica Urbana"]
+        },
+        {
+            "num": "876",
+            "title": "Mexicana",
+            "aliases": ["Mexicana"]
+        },
+        {
+            "num": "878",
+            "title": "Rock Latino",
+            "aliases": ["Rock Latino"]
+        },
+        {
+            "num": "879",
+            "title": "Latin Jazz",
+            "aliases": ["Latin Jazz"]
+        },
+        {
+            "num": "880",
+            "title": "Party Favorites",
+            "aliases": ["Party Favorites"]
+        },
+        {
+            "num": "883",
+            "title": "Irish Favorites",
+            "aliases": ["Irish Favorites"]
+        },
+        {
+            "num": "885",
+            "title": "Filipino",
+            "aliases": ["Filipino"]
+        },
+        {
+            "num": "886",
+            "title": "Vietnamese",
+            "aliases": ["Vietnamese"]
+        },
+        {
+            "num": "1920",
+            "title": "Lifetime Movies Club",
+            "aliases": ["Lifetime Movies Club"]
+        },
+        {
+            "num": "1922",
+            "title": "Hallmark Movies Now",
+            "aliases": ["Hallmark Movies Now"]
+        },
+        {
+            "num": "1924",
+            "title": "UP Faith & Family",
+            "aliases": ["UP Faith & Family"]
+        },
+        {
+            "num": "1928",
+            "title": "Acorn TV",
+            "aliases": ["Acorn TV"]
+        },
+        {
+            "num": "1930",
+            "title": "History Vault",
+            "aliases": ["History Vault"]
+        },
+        {
+            "num": "1934",
+            "title": "A&E Crime Central",
+            "aliases": ["A&E Crime Central"]
+        },
+        {
+            "num": "1941",
+            "title": "BET+",
+            "aliases": ["BET+"]
+        },
+        {
+            "num": "1942",
+            "title": "Allblk",
+            "aliases": ["Allblk"]
+        },
+        {
+            "num": "1945",
+            "title": "Revry",
+            "aliases": ["Revry"]
+        },
+        {
+            "num": "1948",
+            "title": "Pantaya",
+            "aliases": ["Pantaya"]
+        },
+        {
+            "num": "1960",
+            "title": "Fox Nation",
+            "aliases": ["Fox Nation"]
+        },
+        {
+            "num": "2020",
+            "title": "Mediaset Italia",
+            "aliases": ["Mediaset Italia"]
+        },
+        {
+            "num": "2021",
+            "title": "RAI Italia",
+            "aliases": ["RAI Italia"]
+        },
+        {
+            "num": "2022",
+            "title": "RAI News 24",
+            "aliases": ["RAI News 24"]
+        },
+        {
+            "num": "2023",
+            "title": "RAI World Premium",
+            "aliases": ["RAI World Premium"]
+        },
+        {
+            "num": "2024",
+            "title": "RAI Radio",
+            "aliases": ["RAI Radio"]
+        },
+        {
+            "num": "2030",
+            "title": "SBTN",
+            "aliases": ["SBTN"]
+        },
+        {
+            "num": "2031",
+            "title": "VGN TV",
+            "aliases": ["VGN TV"]
+        },
+        {
+            "num": "2032",
+            "title": "TViet Network",
+            "aliases": ["TViet Network"]
+        },
+        {
+            "num": "2033",
+            "title": "Vietface TV",
+            "aliases": ["Vietface TV"]
+        },
+        {
+            "num": "2034",
+            "title": "S Channel",
+            "aliases": ["S Channel"]
+        },
+        {
+            "num": "2035",
+            "title": "Viên Thao TV",
+            "aliases": ["Viên Thao TV"]
+        },
+        {
+            "num": "2036",
+            "title": "VIETV Network",
+            "aliases": ["VIETV Network"]
+        },
+        {
+            "num": "2037",
+            "title": "Film 24H",
+            "aliases": ["Film 24H"]
+        },
+        {
+            "num": "2038",
+            "title": "HONVIETV",
+            "aliases": ["HONVIETV"]
+        },
+        {
+            "num": "2039",
+            "title": "Little Saigon Radio",
+            "aliases": ["Little Saigon Radio"]
+        },
+        {
+            "num": "2041",
+            "title": "Nippon TV HD",
+            "aliases": ["Nippon TV HD"]
+        },
+        {
+            "num": "2049",
+            "title": "NHK World-Japan",
+            "aliases": ["NHK World-Japan", "NHK World Japan"]
+        },
+        {
+            "num": "2050",
+            "title": "Phoenix North America Chinese Channel",
+            "aliases": ["Phoenix North America Chinese Channel"]
+        },
+        {
+            "num": "2051",
+            "title": "Phoenix InfoNews Channel",
+            "aliases": ["Phoenix InfoNews Channel", "Phoenix Info News"]
+        },
+        {
+            "num": "2052",
+            "title": "CCTV-4",
+            "aliases": ["CCTV-4", "CCTV 4"]
+        },
+        {
+            "num": "2053",
+            "title": "CGTN",
+            "aliases": ["CGTN"]
+        },
+        {
+            "num": "2055",
+            "title": "Charming China",
+            "aliases": ["Charming China"]
+        },
+        {
+            "num": "2056",
+            "title": "CTI Zhong Tian",
+            "aliases": ["CTI Zhong Tian"]
+        },
+        {
+            "num": "2057",
+            "title": "CBO China TV Series Channel",
+            "aliases": ["CBO China TV Series Channel", "CBO China TV Series"]
+        },
+        {
+            "num": "2060",
+            "title": "The Filipino Channel",
+            "aliases": ["The Filipino Channel", "TFC"]
+        },
+        {
+            "num": "2061",
+            "title": "GMA Pinoy TV",
+            "aliases": ["GMA Pinoy TV"]
+        },
+        {
+            "num": "2062",
+            "title": "Pinoy Box Office",
+            "aliases": ["Pinoy Box Office", "PBO"]
+        },
+        {
+            "num": "2063",
+            "title": "Cinema One Global",
+            "aliases": ["Cinema One Global"]
+        },
+        {
+            "num": "2064",
+            "title": "OPM TV",
+            "aliases": ["OPM TV"]
+        },
+        {
+            "num": "2065",
+            "title": "MOR Entertainment",
+            "aliases": ["MOR Entertainment"]
+        },
+        {
+            "num": "2066",
+            "title": "TeleRadyo",
+            "aliases": ["TeleRadyo"]
+        },
+        {
+            "num": "2067",
+            "title": "MYX",
+            "aliases": ["MYX"]
+        },
+        {
+            "num": "2068",
+            "title": "Sari-Sari Channel",
+            "aliases": ["Sari-Sari Channel"]
+        },
+        {
+            "num": "2069",
+            "title": "GMA Life TV",
+            "aliases": ["GMA Life TV"]
+        },
+        {
+            "num": "2070",
+            "title": "ABS-CBN News Channel",
+            "aliases": ["ABS-CBN News Channel", "ANC"]
+        },
+        {
+            "num": "2071",
+            "title": "Kapatid TV5",
+            "aliases": ["Kapatid TV5", "TV5"]
+        },
+        {
+            "num": "2080",
+            "title": "SBS",
+            "aliases": ["SBS"]
+        },
+        {
+            "num": "2081",
+            "title": "MBC",
+            "aliases": ["MBC"]
+        },
+        {
+            "num": "2082",
+            "title": "KBS World",
+            "aliases": ["KBS World"]
+        },
+        {
+            "num": "2083",
+            "title": "YTN",
+            "aliases": ["YTN"]
+        },
+        {
+            "num": "2084",
+            "title": "SBS Plus",
+            "aliases": ["SBS Plus"]
+        },
+        {
+            "num": "2085",
+            "title": "KBS World 24",
+            "aliases": ["KBS World 24"]
+        },
+        {
+            "num": "2086",
+            "title": "TVN",
+            "aliases": ["TVN"]
+        },
+        {
+            "num": "2087",
+            "title": "EBS",
+            "aliases": ["EBS"]
+        },
+        {
+            "num": "2088",
+            "title": "MBN",
+            "aliases": ["MBN"]
+        },
+        {
+            "num": "2089",
+            "title": "TAN TV",
+            "aliases": ["TAN TV"]
+        },
+        {
+            "num": "2092",
+            "title": "CTS",
+            "aliases": ["CTS"]
+        },
+        {
+            "num": "2093",
+            "title": "Radio Korea",
+            "aliases": ["Radio Korea"]
+        },
+        {
+            "num": "2095",
+            "title": "Arirang",
+            "aliases": ["Arirang"]
+        },
+        {
+            "num": "2102",
+            "title": "GZTV",
+            "aliases": ["GZTV"]
+        },
+        {
+            "num": "2103",
+            "title": "88TV",
+            "aliases": ["88TV"]
+        },
+        {
+            "num": "2105",
+            "title": "88Films",
+            "aliases": ["88Films"]
+        },
+        {
+            "num": "2108",
+            "title": "i-CABLE Financial Info News",
+            "aliases": ["i-CABLE Financial Info News", "i-CABLE Financial"]
+        },
+        {
+            "num": "2109",
+            "title": "i-CABLE News Channel",
+            "aliases": ["i-CABLE News Channel"]
+        },
+        {
+            "num": "2112",
+            "title": "CTI Zhong Tian",
+            "aliases": ["CTI Zhong Tian"]
+        },
+        {
+            "num": "2113",
+            "title": "CCTV-4",
+            "aliases": ["CCTV-4", "CCTV 4"]
+        },
+        {
+            "num": "2115",
+            "title": "Phoenix North America Chinese Channel",
+            "aliases": ["Phoenix North America Chinese Channel"]
+        },
+        {
+            "num": "2116",
+            "title": "Charming China",
+            "aliases": ["Charming China"]
+        },
+        {
+            "num": "2119",
+            "title": "CGTN",
+            "aliases": ["CGTN"]
+        },
+        {
+            "num": "2134",
+            "title": "TV Globo",
+            "aliases": ["TV Globo", "Globo"]
         }
     ]
 }
