@@ -92,7 +92,7 @@ class CreateStream:
         self.logical_channel_title: LogicalChannelTitle = logical_channel_title
         self.video_type: VideoType = video_type
         
-        self._res: VideoKey | tuple[int, str] = (500, f"[{video_type}] Stream not created yet")
+        self._res: VideoKey | tuple[int, str] = (500, f"Stream not created yet")
         self._mutex: asyncio.Lock = asyncio.Lock()
         self._result_event: asyncio.Event = asyncio.Event()
 
@@ -136,7 +136,7 @@ class CreateStream:
                 continue
             self._source_names[source["source_id"]] = discovered_source["display_title"] or discovered_source["tvg_name"]
         if not self._sources:
-            self._res = (404, f"[{self.video_type}] Logical channel '{self.logical_channel_title}' ({self.logical_channel_id}) not found or has no sources.")
+            self._res = (404, f"Logical channel '{self.logical_channel_title}' ({self.logical_channel_id}) not found or has no sources.")
             self._result_event.set()
             return
 
@@ -451,7 +451,7 @@ class CreateStream:
             async with self._mutex:
                 self._selected = True
                 if not self._results:
-                    self._res = (503, f"[{self.video_type}] {self.logical_channel_title}: Failed to start {self.video_type} stream from any source.")
+                    self._res = (503, f"{self.logical_channel_title}: Failed to start {self.video_type} stream from any source.")
                     return
                 video_key = min(self._results, key=lambda x: self._remaining_priorities[x[1]["source_id"]])[0]
                 await self.stream_manager.set_ffmpeg_process_long_term(video_key, True)
