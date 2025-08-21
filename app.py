@@ -48,7 +48,6 @@ from nexus_tuner.utils import (Log, LogicalChannelFormDetails, VideoKey, backgro
 PLAYLIST_POLL_INTERVAL: Final[float] = 0.2         # Seconds to wait between checking for a new playlist
 HIGHEST_PRIORITY_SOURCES_NUM: Final[int] = 8       # Maximum number of sources to consider for quality metrics
 NUM_SOURCES_PER_PAGE: Final[int] = 100             # Number of sources to display per page in the UI
-MIN_CHARS_FOR_SEARCH: Final[int] = 3               # Minimum characters for search queries
 MULTI_SEARCH_QUERY_DELIMITER: Final[str] = " OR "  # Delimiter for multi-word search queries
 
 # --- App Initialization ---
@@ -816,7 +815,7 @@ async def ui_channel_populate_from_suggestion() -> str:
 
 @app.route("/ui/channels/suggest", methods=["GET"])
 async def ui_channel_suggest() -> str:
-    if len(query := request.args.get('logical_channel_title', '')) >= MIN_CHARS_FOR_SEARCH:
+    if len(query := request.args.get('logical_channel_title', '')):
         suggestions = handler.search_predefined_channel_names(query)
     elif len(query := request.args.get('channel_num', '')) > 0:
         suggestions = handler.search_predefined_channel_nums(query)

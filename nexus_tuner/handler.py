@@ -742,13 +742,12 @@ class ChannelHandler:
             channel_title = x["title"]
             if channel_num == query_num:
                 return (0, 0, channel_num, channel_title)  # Exact match gets highest priority
-            elif channel_num.startswith(query_num):
+            if channel_num.startswith(query_num):
                 return (1, len(channel_num), channel_num, channel_title)  # Prefix match, shorter numbers first
-            else:
-                try:
-                    return (2, float(channel_num), channel_num, channel_title)  # Convert to float for proper numeric sorting
-                except ValueError:
-                    return (2, float('inf'), channel_num, channel_title)  # Non-numeric
+            try:
+                return (2, float(channel_num), channel_num, channel_title)  # Convert to float for proper numeric sorting
+            except ValueError:
+                return (2, float('inf'), channel_num, channel_title)  # Non-numeric
         
         matches.sort(key=sort_key)
         return matches[:10]
@@ -766,15 +765,25 @@ class ChannelHandler:
                 words = query.split()
                 if all(word in title for word in words):
                     matches.append({**channel, 'group': group})
-                    found_with[channel['title']] = channel['title']
+                    found_with[channel['title']] = title
                     continue
                 for name in channel["aliases"]:
                     title = name.lower()
                     if all(word in title for word in words):
                         matches.append({**channel, 'group': group})
-                        found_with[channel["title"]] = name
+                        found_with[channel["title"]] = title
                         break
-        matches.sort(key=lambda x: found_with[x["title"]].lower().find(query))
+
+        def sort_key(x: ChannelListGroup) -> tuple[int, float, int, str]:
+            channel_title = found_with[x["title"]]
+            pos = channel_title.find(query)
+            if pos == -1:
+                pos = float('inf')
+            if channel_title == query:
+                return (0, pos, len(channel_title), x["title"])
+            return (1, pos, len(channel_title), x["title"])
+        
+        matches.sort(key=sort_key)
         return matches[:10]
 
     async def get_provider_slots(self, alias: ProviderAlias) -> ProviderSlots | None:
