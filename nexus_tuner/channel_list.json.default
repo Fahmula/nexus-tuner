@@ -13,7 +13,7 @@
         {
             "num": "70-1",
             "title": "HSN",
-            "aliases": ["HSN"]
+            "aliases": ["HSN", "Home Shopping Network"]
         },
         {
             "num": "71",
@@ -43,7 +43,7 @@
         {
             "num": "77",
             "title": "MeTV",
-            "aliases": ["MeTV"]
+            "aliases": ["MeTV", "Me TV"]
         },
         {
             "num": "77-1",
@@ -243,7 +243,7 @@
         {
             "num": "202",
             "title": "CNN",
-            "aliases": ["CNN"]
+            "aliases": ["CNN", "Cable News Network"]
         },
         {
             "num": "203",
@@ -253,7 +253,7 @@
         {
             "num": "204",
             "title": "HLN",
-            "aliases": ["HLN"]
+            "aliases": ["HLN", "Headline News"]
         },
         {
             "num": "205",
@@ -283,7 +283,7 @@
         {
             "num": "211",
             "title": "NFL RedZone",
-            "aliases": ["NFL RedZone"]
+            "aliases": ["RedZone"]
         },
         {
             "num": "212",
@@ -333,12 +333,12 @@
         {
             "num": "219",
             "title": "FOX Sports 1",
-            "aliases": ["FOX Sports 1"]
+            "aliases": ["FOX Sports 1", "FS1"]
         },
         {
             "num": "221",
             "title": "CBS Sports Network",
-            "aliases": ["CBS Sports Network"]
+            "aliases": ["CBS Sports Network", "CBSSN"]
         },
         {
             "num": "222",
@@ -428,17 +428,17 @@
         {
             "num": "239",
             "title": "SundanceTV",
-            "aliases": ["SundanceTV"]
+            "aliases": ["Sundance"]
         },
         {
             "num": "240",
             "title": "HSN",
-            "aliases": ["HSN"]
+            "aliases": ["HSN", "Home Shopping Network"]
         },
         {
             "num": "241",
             "title": "Paramount Network",
-            "aliases": ["Paramount Network"]
+            "aliases": ["Paramount"]
         },
         {
             "num": "242",
@@ -468,7 +468,7 @@
         {
             "num": "246",
             "title": "truTV",
-            "aliases": ["truTV"]
+            "aliases": ["truTV", "tru TV"]
         },
         {
             "num": "247",
@@ -513,12 +513,12 @@
         {
             "num": "253",
             "title": "LMN",
-            "aliases": ["LMN"]
+            "aliases": ["LMN", "Lifetime Movie Network"]
         },
         {
             "num": "254",
             "title": "AMC",
-            "aliases": ["AMC"]
+            "aliases": ["AMC", "American Movie Classics"]
         },
         {
             "num": "255",
@@ -528,12 +528,12 @@
         {
             "num": "256",
             "title": "TCM",
-            "aliases": ["TCM"]
+            "aliases": ["TCM", "Turner Classic Movies"]
         },
         {
             "num": "258",
             "title": "FXM",
-            "aliases": ["FXM"]
+            "aliases": ["FXM", "FX Movies"]
         },
         {
             "num": "259",
@@ -573,7 +573,7 @@
         {
             "num": "265",
             "title": "A&E",
-            "aliases": ["A&E"]
+            "aliases": ["A&E", "Arts Entertainment"]
         },
         {
             "num": "266",
@@ -603,7 +603,7 @@
         {
             "num": "271",
             "title": "Vice TV",
-            "aliases": ["Vice TV"]
+            "aliases": ["Vice"]
         },
         {
             "num": "272",
@@ -628,7 +628,7 @@
         {
             "num": "276",
             "title": "National Geographic",
-            "aliases": ["National Geographic"]
+            "aliases": ["National Geographic", "Nat Geo", "NatGeo"]
         },
         {
             "num": "277",
@@ -643,17 +643,17 @@
         {
             "num": "279",
             "title": "Oprah Winfrey Network (East)",
-            "aliases": ["Oprah Winfrey"]
+            "aliases": ["Oprah Winfrey", "OWN"]
         },
         {
             "num": "279-1",
             "title": "Oprah Winfrey Network (West)",
-            "aliases": ["Oprah Winfrey"]
+            "aliases": ["Oprah Winfrey", "OWN"]
         },
         {
             "num": "280",
             "title": "TLC",
-            "aliases": ["TLC"]
+            "aliases": ["TLC", "The Learning Channel"]
         },
         {
             "num": "281",
@@ -668,7 +668,7 @@
         {
             "num": "283",
             "title": "Nat Geo Wild",
-            "aliases": ["Nat Geo Wild"]
+            "aliases": ["Nat Geo Wild", "NatGeo Wild", "National Geographic Wild"]
         },
         {
             "num": "284",
@@ -688,7 +688,7 @@
         {
             "num": "287",
             "title": "American Heroes Channel",
-            "aliases": ["American Heroes"]
+            "aliases": ["American Heroes", "AHC"]
         },
         {
             "num": "288",
@@ -798,12 +798,12 @@
         {
             "num": "310",
             "title": "HSN 2",
-            "aliases": ["HSN 2"]
+            "aliases": ["HSN 2", "Home Shopping Network"]
         },
         {
             "num": "311",
             "title": "Freeform",
-            "aliases": ["Freeform"]
+            "aliases": ["Freeform", "ABC Family"]
         },
         {
             "num": "312",
@@ -813,7 +813,7 @@
         {
             "num": "313",
             "title": "Jewelry Television",
-            "aliases": ["Jewelry Television"]
+            "aliases": ["Jewelry"]
         },
         {
             "num": "314",
@@ -852,8 +852,8 @@
         },
         {
             "num": "323",
-            "title": "fetv",
-            "aliases": ["fetv"]
+            "title": "FETV",
+            "aliases": ["FETV", "Family Entertainment"]
         },
         {
             "num": "324",
@@ -883,7 +883,7 @@
         {
             "num": "327",
             "title": "CMT",
-            "aliases": ["CMT"]
+            "aliases": ["CMT", "Country Music Television"]
         },
         {
             "num": "328",
@@ -923,7 +923,7 @@
         {
             "num": "333",
             "title": "IFC",
-            "aliases": ["IFC"]
+            "aliases": ["IFC", "Independent Film Channel"]
         },
         {
             "num": "334",
@@ -958,7 +958,7 @@
         {
             "num": "340",
             "title": "AXS TV",
-            "aliases": ["AXS TV"]
+            "aliases": ["AXS"]
         },
         {
             "num": "341",
@@ -1003,7 +1003,7 @@
         {
             "num": "349",
             "title": "Newsmax TV",
-            "aliases": ["Newsmax TV"]
+            "aliases": ["Newsmax"]
         },
         {
             "num": "350",
@@ -1018,7 +1018,7 @@
         {
             "num": "353",
             "title": "Bloomberg Television",
-            "aliases": ["Bloomberg Television"]
+            "aliases": ["Bloomberg"]
         },
         {
             "num": "354",
@@ -1073,7 +1073,7 @@
         {
             "num": "364",
             "title": "INSP",
-            "aliases": ["INSP"]
+            "aliases": ["INSP", "Inspiration"]
         },
         {
             "num": "365",
@@ -1088,7 +1088,7 @@
         {
             "num": "367",
             "title": "WHT",
-            "aliases": ["WHT"]
+            "aliases": ["WHT", "World Harvest Television"]
         },
         {
             "num": "368",
@@ -1103,7 +1103,7 @@
         {
             "num": "370",
             "title": "EWTN",
-            "aliases": ["EWTN"]
+            "aliases": ["EWTN", "Eternal Word Television Network"]
         },
         {
             "num": "371",
@@ -1113,7 +1113,7 @@
         {
             "num": "372",
             "title": "TBN",
-            "aliases": ["TBN"]
+            "aliases": ["TBN", "Trinity Broadcasting Network"]
         },
         {
             "num": "373",
@@ -1123,7 +1123,7 @@
         {
             "num": "374",
             "title": "BYUtv",
-            "aliases": ["BYUtv"]
+            "aliases": ["BYUtv", "Brigham Young University"]
         },
         {
             "num": "375",
@@ -1133,17 +1133,17 @@
         {
             "num": "376",
             "title": "CTN",
-            "aliases": ["CTN"]
+            "aliases": ["CTN", "Christian Television Network"]
         },
         {
             "num": "377",
             "title": "TCT",
-            "aliases": ["TCT"]
+            "aliases": ["TCT", "Total Christian Television"]
         },
         {
             "num": "378",
             "title": "NRBTV",
-            "aliases": ["NRBTV"]
+            "aliases": ["NRBTV", "National Religious Broadcasters Television"]
         },
         {
             "num": "379",
@@ -1533,7 +1533,7 @@
         {
             "num": "461",
             "title": "HITN",
-            "aliases": ["HITN"]
+            "aliases": ["HITN", "Hispanic Information Telecommunications Network"]
         },
         {
             "num": "462",
@@ -1548,7 +1548,7 @@
         {
             "num": "464",
             "title": "TUDN",
-            "aliases": ["TUDN"]
+            "aliases": ["TUDN", "Televisa Univision Deportes Network"]
         },
         {
             "num": "465",
@@ -1803,12 +1803,12 @@
         {
             "num": "553",
             "title": "The Movie Channel (East)",
-            "aliases": ["Movie"]
+            "aliases": ["The Movie Channel", "TMC"]
         },
         {
             "num": "554",
             "title": "The Movie Channel (West)",
-            "aliases": ["Movie"]
+            "aliases": ["The Movie Channel", "TMC"]
         },
         {
             "num": "555",
@@ -1883,7 +1883,7 @@
         {
             "num": "570",
             "title": "Smithsonian Channel",
-            "aliases": ["Smithsonian Channel"]
+            "aliases": ["Smithsonian"]
         },
         {
             "num": "571",
@@ -2028,7 +2028,7 @@
         {
             "num": "610",
             "title": "Big Ten Network",
-            "aliases": ["Big Ten Network"]
+            "aliases": ["Big Ten", "BTN", "Big 10"]
         },
         {
             "num": "611",
@@ -2043,7 +2043,7 @@
         {
             "num": "618",
             "title": "Fox Sports 2",
-            "aliases": ["Fox Sports 2"]
+            "aliases": ["Fox Sports 2", "FS2"]
         },
         {
             "num": "621",
@@ -2073,7 +2073,7 @@
         {
             "num": "628",
             "title": "NESN",
-            "aliases": ["NESN"]
+            "aliases": ["NESN", "New England Sports Network"]
         },
         {
             "num": "628-1",
@@ -2088,7 +2088,7 @@
         {
             "num": "631",
             "title": "YES Network",
-            "aliases": ["YES Network"]
+            "aliases": ["YES"]
         },
         {
             "num": "631-1",
@@ -2123,17 +2123,17 @@
         {
             "num": "639",
             "title": "SNY",
-            "aliases": ["SNY"]
+            "aliases": ["SNY", "SportsNet New York"]
         },
         {
             "num": "640",
             "title": "MASN",
-            "aliases": ["MASN"]
+            "aliases": ["MASN", "Mid Atlantic Sports Network"]
         },
         {
             "num": "640-1",
             "title": "MASN 2",
-            "aliases": ["MASN 2"]
+            "aliases": ["MASN 2", "Mid Atlantic Sports Network 2"]
         },
         {
             "num": "642",
@@ -2168,12 +2168,12 @@
         {
             "num": "649-1",
             "title": "FanDuel Sports Network Southeast Alternate",
-            "aliases": ["FanDuel Sports Network Southeast Alternate"]
+            "aliases": ["FanDuel Sports Network Southeast Alt"]
         },
         {
             "num": "649-2",
             "title": "FanDuel Sports Network Southeast Alternate 2",
-            "aliases": ["FanDuel Sports Network Southeast Alternate 2"]
+            "aliases": ["FanDuel Sports Network Southeast Alt 2"]
         },
         {
             "num": "653",
@@ -2183,7 +2183,7 @@
         {
             "num": "653-1",
             "title": "FanDuel Sports Network Sun Alternate",
-            "aliases": ["FanDuel Sports Network Sun Alternate"]
+            "aliases": ["FanDuel Sports Network Sun Alt"]
         },
         {
             "num": "654",
@@ -2193,7 +2193,7 @@
         {
             "num": "654-1",
             "title": "FanDuel Sports Network Florida Alternate",
-            "aliases": ["FanDuel Sports Network Florida Alternate"]
+            "aliases": ["FanDuel Sports Network Florida Alt"]
         },
         {
             "num": "659",
@@ -2262,23 +2262,23 @@
         },
         {
             "num": "671-1",
-            "title": "FanDuel Sports Network Midwest alternate",
-            "aliases": ["FanDuel Sports Network Midwest alternate"]
+            "title": "FanDuel Sports Network Midwest Alternate",
+            "aliases": ["FanDuel Sports Network Midwest Alt"]
         },
                 {
             "num": "671-1",
-            "title": "FanDuel Sports Network Midwest alternate",
-            "aliases": ["FanDuel Sports Network Midwest alternate"]
+            "title": "FanDuel Sports Network Midwest Alternate",
+            "aliases": ["FanDuel Sports Network Midwest Alt"]
         },
         {
             "num": "671-2",
-            "title": "FanDuel Sports Network Midwest alternate 2",
-            "aliases": ["FanDuel Sports Network Midwest alternate 2"]
+            "title": "FanDuel Sports Network Midwest Alternate 2",
+            "aliases": ["FanDuel Sports Network Midwest Alt 2"]
         },
         {
             "num": "671-3",
-            "title": "FanDuel Sports Network Midwest alternate 3",
-            "aliases": ["FanDuel Sports Network Midwest alternate 3"]
+            "title": "FanDuel Sports Network Midwest Alternate 3",
+            "aliases": ["FanDuel Sports Network Midwest Alt 3"]
         },
         {
             "num": "671-4",
@@ -2297,8 +2297,8 @@
         },
         {
             "num": "674-1",
-            "title": "Space City Home Network alternate",
-            "aliases": ["Space City Home Network alternate"]
+            "title": "Space City Home Network Alternate",
+            "aliases": ["Space City Home Network Alt"]
         },
         {
             "num": "675",
@@ -2317,13 +2317,13 @@
         },
         {
             "num": "676-2",
-            "title": "FanDuel Sports Network Southwest alternate",
-            "aliases": ["FanDuel Sports Network Southwest alternate"]
+            "title": "FanDuel Sports Network Southwest Alternate",
+            "aliases": ["FanDuel Sports Network Southwest Alt"]
         },
         {
             "num": "676-3",
-            "title": "FanDuel Sports Network Southwest alternate 2",
-            "aliases": ["FanDuel Sports Network Southwest alternate 2"]
+            "title": "FanDuel Sports Network Southwest Alternate 2",
+            "aliases": ["FanDuel Sports Network Southwest Alt 2"]
         },
         {
             "num": "681",
@@ -2347,8 +2347,8 @@
         },
         {
             "num": "687-1",
-            "title": "Root Sports Northwest alternate",
-            "aliases": ["Root Sports Northwest alternate"]
+            "title": "Root Sports Northwest Alternate",
+            "aliases": ["Root Sports Northwest Alt"]
         },
         {
             "num": "690",
@@ -2443,7 +2443,7 @@
         {
             "num": "807",
             "title": "Singers & Swing",
-            "aliases": ["Singers & Swing"]
+            "aliases": ["Singers Swing"]
         },
         {
             "num": "808",
@@ -2528,7 +2528,7 @@
         {
             "num": "825",
             "title": "Hip Hip and R&B",
-            "aliases": ["Hip Hip and R&B"]
+            "aliases": ["Hip Hip R&B"]
         },
         {
             "num": "826",
@@ -2603,7 +2603,7 @@
         {
             "num": "840",
             "title": "Pop & Country",
-            "aliases": ["Pop & Country"]
+            "aliases": ["Pop Country"]
         },
         {
             "num": "841",
@@ -2813,7 +2813,7 @@
         {
             "num": "1924",
             "title": "UP Faith & Family",
-            "aliases": ["UP Faith & Family"]
+            "aliases": ["UP Faith Family"]
         },
         {
             "num": "1928",
@@ -2828,7 +2828,7 @@
         {
             "num": "1934",
             "title": "A&E Crime Central",
-            "aliases": ["A&E Crime Central"]
+            "aliases": ["A&E Crime Central", "Arts Entertainment Crime Central"]
         },
         {
             "num": "1941",
