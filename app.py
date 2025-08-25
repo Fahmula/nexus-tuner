@@ -937,7 +937,7 @@ async def ui_player_for_source(source_id: SourceId) -> str:
     source_name = discovered_source["display_title"] or discovered_source["tvg_name"] or "Preview"
     logical_channel_id = f"preview_{source_id}"
     playlist_url = url_for('serve_hls_preview', logical_channel_id=logical_channel_id)
-    return await render_template("_video_player_modal.html", playlist_url=playlist_url, logical_channel_id=logical_channel_id, source_name=source_name)
+    return await render_template("_video_player_modal.html", playlist_url=playlist_url, logical_channel_id=logical_channel_id, source_id=source_id, source_name=source_name)
 
 
 # --- HDHomeRun Emulation Endpoints ---

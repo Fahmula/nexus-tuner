@@ -23,9 +23,13 @@
         const stopStreamBtn = document.getElementById('stop-stream-btn');
         let hls = null;
 
-        const modalTitleElement = document.getElementById('previewModalLabel');
-        if (modalTitleElement) {
-            modalTitleElement.textContent = '{{ source_name }}';
+        const modalTitleTextEl = document.getElementById('previewModalTitleText');
+        const modalSourceIdEl = document.getElementById('previewModalSourceId');
+        if (modalTitleTextEl) {
+            modalTitleTextEl.textContent = '{{ source_name }}';
+        }
+        if (modalSourceIdEl) {
+            modalSourceIdEl.textContent = '(' + '{{ source_id }}' + ')';
         }
 
         // Set up modal close event listener
@@ -39,8 +43,11 @@
                     if (modal_hidden) return;
                     modal_hidden = true;
                     console.log("Modal hidden event triggered");
-                    if (modalTitleElement) {
-                        modalTitleElement.textContent = 'Stream Preview';
+                    if (modalTitleTextEl) {
+                        modalTitleTextEl.textContent = 'Stream Preview';
+                    }
+                    if (modalSourceIdEl) {
+                        modalSourceIdEl.textContent = '';
                     }
                     destroyPreviewPlayer();
                 });
@@ -70,7 +77,7 @@
                         console.error('Fatal HLS.js error:', data.type, data.details);
                         statusDiv.className = 'alert alert-danger mt-2 small p-2';
                         statusDiv.innerHTML = `<i class="fas fa-exclamation-triangle"></i> <strong>Error:</strong> ${data.details}`;
-                        switch(data.type) {
+                        switch (data.type) {
                             case Hls.ErrorTypes.NETWORK_ERROR:
                                 hls.startLoad();
                                 break;

@@ -70,7 +70,8 @@
 
         .navbar {
             padding-top: env(safe-area-inset-top);
-            width: 100vw;  /* Prevent scrollbar jump */
+            width: 100vw;
+            /* Prevent scrollbar jump */
             left: 0;
             right: 0;
         }
@@ -116,7 +117,8 @@
             /* Height of the fixed navbar */
             z-index: 1020;
             /* Below navbar (1030) but above other content */
-            width: 100vw; /* Prevent scrollbar jump */
+            width: 100vw;
+            /* Prevent scrollbar jump */
             left: 0;
             right: 0;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
@@ -397,7 +399,8 @@
     </div>
 
     <main class="container mt-4 mb-5 flex-shrink-0">
-        <div id="flash-messages-container" hx-trigger="flashMessagesUpdated from:body" hx-get="{{ url_for('ui_flash_messages') }}" hx-swap="innerHTML">
+        <div id="flash-messages-container" hx-trigger="flashMessagesUpdated from:body"
+            hx-get="{{ url_for('ui_flash_messages') }}" hx-swap="innerHTML">
             {% include "_flash_messages.html" %}
         </div>
         {% block content %}{% endblock %}
@@ -426,6 +429,18 @@
         crossorigin="anonymous"></script>
     <script>
         document.body.addEventListener('htmx:afterSwap', function (event) {
+            document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (tooltipEl) {
+                if (!tooltipEl.hasAttribute('data-tooltip-initialized')) {
+                    new bootstrap.Tooltip(tooltipEl, {
+                        trigger: 'hover focus'
+                    });
+                    tooltipEl.setAttribute('data-tooltip-initialized', 'true');
+                }
+            });
+        });
+
+        // Ensure tooltips are initialized for elements present on initial page load
+        document.addEventListener('DOMContentLoaded', function () {
             document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (tooltipEl) {
                 if (!tooltipEl.hasAttribute('data-tooltip-initialized')) {
                     new bootstrap.Tooltip(tooltipEl, {

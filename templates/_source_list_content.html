@@ -27,7 +27,7 @@
                         value="{{ source.source_id }}" checked>
                 </td>
                 <td class="align-middle">
-                    {{ source.tvg_name }}
+                    <span data-bs-toggle="tooltip" title="{{ source.source_id }}">{{ source.tvg_name}}</span>
                     <small class="text-muted">({{ source.provider_alias }})</small>
                     <span class="badge bg-success ms-2">Mapped</span>
                     {% if source.source_id in sources_mapped_elsewhere %}
@@ -78,7 +78,7 @@
                         value="{{ source.source_id }}">
                 </td>
                 <td class="align-middle">
-                    {{ source.tvg_name }}
+                    <span data-bs-toggle="tooltip" title="{{ source.source_id }}">{{ source.tvg_name}}</span>
                     <small class="text-muted">({{ source.provider_alias }})</small>
                     {% if source.source_id in sources_mapped_elsewhere %}
                         <span class="badge bg-secondary ms-2" data-bs-toggle="tooltip" title="Already mapped to Ch No. {{ sources_mapped_elsewhere[source.source_id] }}">
