@@ -8,8 +8,8 @@ from nexus_tuner.handler import ChannelHandler
 from nexus_tuner.slots import ProviderSlots
 from nexus_tuner.utils import (FFMPEG_TERMINATE_TIMEOUT, NEXUS_TUNER_USER_AGENT, Bitrate, BitrateScore, DateTimeISO, Framerate, FramerateScore, Height,
                                 Label, Log, LogicalChannelId, Percent, ProbeInfo, ProbeSuccess, ProviderAlias, QualityInfoImpl, QualityScores,
-                                QualityScoresImpl, ResolutionScore, QualityCacheData, QualityCacheDataImpl, SourceId,
-                                StreamURL, TotalScore, UptimeScore, Width, run_bg)
+                                QualityScoresImpl, ResolutionScore, QualityCacheData, QualityCacheDataImpl, SourceId, StreamName,
+                                StreamURL, TotalScore, UptimeScore, VideoName, Width, create_stream_name, create_video_name, run_bg)
 
 # --- Constants ---
 RESOLUTION_WEIGHT: Final[int] = 50
@@ -95,7 +95,7 @@ class QualityMonitor:
                 Log.debug(Label.QUALITY, f"Source {old_source_id} not found in quality scores, cannot replace with {new_source_id}.")
             return True
 
-    async def _get_stream_info(self, stream_url: StreamURL, provider_slots: ProviderSlots, channel_log: str, source_log: str) -> ProbeSuccess | None:
+    async def _get_stream_info(self, stream_url: StreamURL, provider_slots: ProviderSlots, video_name: VideoName) -> ProbeSuccess | None:
         """
         Extracts stream information using ffprobe, ensuring the subprocess is
         terminated on timeout or cancellation.
@@ -123,15 +123,15 @@ class QualityMonitor:
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=QUALITY_MONITOR_TIMEOUT + 3)
 
             if process.returncode != 0:
-                Log.debug(Label.QUALITY, f"ffprobe for {source_log} in {channel_log} failed with code {process.returncode}: {stderr.decode()}".replace(stream_url, "{{stream_url}}").strip())
+                Log.debug(Label.QUALITY, f"{video_name}: ffprobe failed with code {process.returncode} - {stderr.decode()}".replace(stream_url, "{{stream_url}}").strip())
                 return
             info = json.loads(stdout)
 
         except asyncio.TimeoutError:
-            Log.debug(Label.QUALITY, f"ffprobe for {source_log} in {channel_log} timed out.")
+            Log.debug(Label.QUALITY, f"{video_name}: ffprobe timed out.")
             return
         except Exception as e:
-            Log.error(Label.QUALITY, f"Failed to parse ffprobe output for {source_log} in {channel_log}: {e}")
+            Log.error(Label.QUALITY, f"{video_name}: Failed to parse ffprobe output - {e}")
             return
         finally:
             async def bg_cleanup() -> None:
@@ -142,16 +142,16 @@ class QualityMonitor:
                             if process.stdout:
                                 process.stdout._transport.close()  # type: ignore[reportAttributeAccessIssue]
                             await asyncio.wait_for(process.wait(), timeout=FFMPEG_TERMINATE_TIMEOUT)
-                            Log.debug(Label.QUALITY, f"ffprobe process for {source_log} in {channel_log} terminated successfully.")
+                            Log.debug(Label.QUALITY, f"{video_name}: ffprobe process terminated successfully.")
                         except asyncio.TimeoutError:
-                            Log.warn(Label.QUALITY, f"Killing unresponsive ffprobe process for {source_log} in {channel_log}.")
+                            Log.warn(Label.QUALITY, f"{video_name}: Killing unresponsive ffprobe process.")
                             process.kill()
                         except Exception as e:
-                            Log.error(Label.QUALITY, f"Error terminating ffprobe process for {source_log} in {channel_log}: {e}")
+                            Log.error(Label.QUALITY, f"{video_name}: Error terminating ffprobe process - {e}")
                             process.kill()
                     run_bg(provider_slots.release())
                 except BaseException as e:
-                    Log.critical(Label.QUALITY, f"Error during stopping ffprobe process for {source_log} in {channel_log}: {e}")
+                    Log.critical(Label.QUALITY, f"{video_name}: Error during stopping ffprobe process - {e}")
                     raise
             run_bg(bg_cleanup())  # Prevent asyncio.CancelledError from interrupting cleanup
 
@@ -164,13 +164,13 @@ class QualityMonitor:
 
         packets = info.get('packets', [])
         if not packets:
-            Log.debug(Label.QUALITY, f"No packets found in ffprobe output for {source_log} in {channel_log}.")
+            Log.debug(Label.QUALITY, f"{video_name}: No packets found in ffprobe output.")
             return
 
         sizes, times = zip(*((float(pkt['size']), float(pkt['pts_time'])) for pkt in packets))
         duration_s = max(times) - min(times)
         if duration_s <= 0:
-            Log.debug(Label.QUALITY, f"Invalid duration {duration_s} for {source_log} in {channel_log}.")
+            Log.debug(Label.QUALITY, f"{video_name}: Invalid duration {duration_s}.")
             return
         
         total_bytes = sum(sizes)
@@ -178,7 +178,7 @@ class QualityMonitor:
 
         return ProbeSuccess({"status": "online", "width": width, "height": height, "bitrate": bitrate, "framerate": framerate})
 
-    async def _run_single_probe(self, provider_alias: ProviderAlias, stream_url: StreamURL, source_id: SourceId, channel_log: str, source_log: str) -> tuple[SourceId, ProbeInfo, str]:
+    async def _run_single_probe(self, provider_alias: ProviderAlias, stream_url: StreamURL, source_id: SourceId, video_name: VideoName) -> tuple[SourceId, ProbeInfo, str]:
         """
         Probes a single stream, persistently trying to acquire a slot, and ensures
         all resources are cleaned up upon completion, failure, or cancellation.
@@ -188,62 +188,62 @@ class QualityMonitor:
             while True:
                 if self.handler.get_pending_stream_count() > 0:
                     if not paused:
-                        Log.debug(Label.QUALITY, f"Pausing probe for {source_log} in {channel_log} for pending user streams...")
+                        Log.debug(Label.QUALITY, f"{video_name}: Pausing probe for pending user streams...")
                         paused = True
                     await asyncio.sleep(BACKGROUND_SLOT_WAIT_INTERVAL)
                     continue
                 if paused:
-                    Log.debug(Label.QUALITY, f"Resuming probe for {source_log} in {channel_log} after pending user streams.")
+                    Log.debug(Label.QUALITY, f"{video_name}: Resuming probe after pending user streams.")
                     paused = False
 
                 provider_slots = await self.handler.get_provider_slots(provider_alias)
                 if not provider_slots:
-                    msg = f"Provider slot manager for {provider_alias} not found, cannot run probe for {source_log} in {channel_log}."
+                    msg = f"{video_name}: Provider slot manager for {provider_alias} not found, cannot run probe."
                     Log.error(Label.QUALITY, msg)
                     raise RuntimeError(msg)
                 if provider_slots.get_total_slots() <= 0:
-                    msg = f"Provider {provider_alias} is configured with 0 slots, cannot run probe for {source_log} in {channel_log}."
+                    msg = f"{video_name}: Provider {provider_alias} is configured with 0 slots, cannot run probe."
                     Log.warn(Label.QUALITY, msg)
                     raise ValueError(msg)
                 if not await provider_slots.try_acquire():
                     await asyncio.sleep(BACKGROUND_SLOT_WAIT_INTERVAL)
                     continue
 
-                task = asyncio.create_task(self._get_stream_info(stream_url, provider_slots, channel_log, source_log))
+                task = asyncio.create_task(self._get_stream_info(stream_url, provider_slots, video_name))
                 try:
                     provider_slots.add_background_task(task)
                     stream_info = await task
                 except asyncio.CancelledError:
-                    Log.debug(Label.QUALITY, f"ffprobe task for {source_log} in {channel_log} was cancelled.")
+                    Log.debug(Label.QUALITY, f"{video_name}: ffprobe task was cancelled.")
                     if provider_slots.pop_cancelled_task(task):
                         continue  # Retry since we cancelled for a user stream
                     raise
                 if not stream_info:
-                    return source_id, {"status": "offline", "reason": "No stream info available"}, source_log
-                return source_id, stream_info, source_log
+                    return source_id, {"status": "offline", "reason": "No stream info available"}, video_name
+                return source_id, stream_info, video_name
 
         except asyncio.CancelledError:
-            Log.info(Label.QUALITY, f"Probe task for {source_log} in {channel_log} was cancelled by slot manager.")
+            Log.info(Label.QUALITY, f"{video_name}: Probe task was cancelled by slot manager.")
             raise
         except Exception as e:
-            Log.error(Label.QUALITY, f"Unexpected error during probe for {source_log} in {channel_log}: {e}")
-            return source_id, {"status": "offline", "reason": f"Probe failed: {e}"}, source_log
+            Log.error(Label.QUALITY, f"{video_name}: Unexpected error during probe: {e}")
+            return source_id, {"status": "offline", "reason": f"Probe failed: {e}"}, video_name
     
     async def analyze_mapped_sources(self, input_lc_id: LogicalChannelId | None = None) -> None:
         """Finds and probes all mapped sources concurrently."""
-        valid_mappings: list[tuple[DateTimeISO, LogicalChannelId, list[SourceId], str]] = []
+        valid_mappings: list[tuple[DateTimeISO, LogicalChannelId, list[SourceId], StreamName]] = []
         if input_lc_id:
             logical_channel = await self.handler.get_logical_channel_by_id(input_lc_id)
             if not logical_channel:
                 Log.error(Label.QUALITY, f"Logical Channel ID {input_lc_id} not found.")
                 return
-            channel_log = f"'{logical_channel['logical_channel_title']}' ({logical_channel['channel_num']})"
-            Log.info(Label.QUALITY, f"Starting stream quality analysis for {channel_log}.")
+            stream_name = create_stream_name(logical_channel["logical_channel_title"], logical_channel["channel_num"])
+            Log.info(Label.QUALITY, f"{stream_name}: Starting stream quality analysis.")
             mappings = await self.handler.get_mappings_for_logical_channel(input_lc_id)
             if not mappings:
-                Log.error(Label.QUALITY, f"No mapped sources found for {channel_log}.")
+                Log.error(Label.QUALITY, f"{stream_name}: No mapped sources found.")
                 return
-            valid_mappings.append((DateTimeISO("0001-01-01"), input_lc_id, [source_id for source_id in mappings], channel_log))
+            valid_mappings.append((DateTimeISO("0001-01-01"), input_lc_id, [source_id for source_id in mappings], stream_name))
         else:
             Log.info(Label.QUALITY, "Starting stream quality analysis cycle.")
             all_mappings = await self.handler.copy_channel_mappings_data()
@@ -261,47 +261,46 @@ class QualityMonitor:
                 if not logical_channel:
                     Log.error(Label.QUALITY, f"Logical Channel ID {logical_channel_id} not found in mappings.")
                     continue
-                channel_log = f"'{logical_channel['logical_channel_title']}' ({logical_channel['channel_num']})"
+                stream_name = create_stream_name(logical_channel["logical_channel_title"], logical_channel["channel_num"])
                 if not mappings:
-                    Log.debug(Label.QUALITY, f"No valid sources found for {channel_log}.")
+                    Log.debug(Label.QUALITY, f"{stream_name}: No valid sources found.")
                     continue
                 min_updated_at = min([quality_cache.get(source_id, {}).get("updated_at", "0001-01-01") for source_id in mappings])
                 at_max_history = all(len(quality_cache.get(source_id, {}).get("statuses", [])) >= MAX_HISTORY_PER_SOURCE for source_id in mappings)
                 delta = timedelta(days=MIN_DAYS_AT_MAX_HISTORY) if at_max_history else timedelta(days=MIN_DAYS_AT_NON_MAX_HISTORY)
                 if datetime.fromisoformat(min_updated_at) > now - delta:
                     continue
-                valid_mappings.append((min_updated_at, logical_channel_id, [source_id for source_id in mappings], channel_log))
+                valid_mappings.append((min_updated_at, logical_channel_id, [source_id for source_id in mappings], stream_name))
             if not valid_mappings:
                 Log.info(Label.QUALITY, "No sources are due for quality probing.")
                 return
             valid_mappings.sort(key=lambda x: x[0])
 
-        for _, logical_channel_id, source_ids, channel_log in valid_mappings:
+        for _, logical_channel_id, source_ids, stream_name in valid_mappings:
             tasks: list[Coroutine[Any, Any, tuple[SourceId, ProbeInfo, str]]] = []
             for source_id in source_ids:
                 discovered_source = await self.handler.get_discovered_source(source_id)
                 if not discovered_source:
-                    Log.debug(Label.QUALITY, f"{channel_log} source {source_id} not found in discovered sources.")
+                    Log.debug(Label.QUALITY, f"{stream_name} [{source_id}]: Not found in discovered sources.")
                     continue
-                source_log = f"'{discovered_source['display_title'] or discovered_source['tvg_name']}' ({source_id})"
+                video_name = create_video_name(stream_name, discovered_source['display_title'] or discovered_source['tvg_name'], source_id)
                 provider_slots = await self.handler.get_provider_slots(discovered_source["provider_alias"])
                 if not provider_slots:
-                    Log.error(Label.QUALITY, f"Provider slots for {discovered_source['provider_alias']} not found while probing {source_log} in {channel_log}.")
+                    Log.error(Label.QUALITY, f"{video_name}: Provider slots for {discovered_source['provider_alias']} not found while probing.")
                     continue
                 if provider_slots.get_total_slots() <= 0:
-                    Log.warn(Label.QUALITY, f"Provider {provider_slots.get_alias()} is configured with 0 slots, skipping probing for {source_log} in {channel_log}.")
+                    Log.warn(Label.QUALITY, f"{video_name}: Provider {provider_slots.get_alias()} is configured with 0 slots, skipping probing.")
                     continue
                 tasks.append(
                     self._run_single_probe(
                         discovered_source["provider_alias"],
                         discovered_source["stream_url"], 
                         source_id,
-                        channel_log,
-                        source_log,
+                        video_name,
                     )
                 )
             if not tasks:
-                Log.debug(Label.QUALITY, f"No valid sources found to probe for {channel_log}.")
+                Log.debug(Label.QUALITY, f"{stream_name} No valid sources found to probe.")
                 continue
 
             raw_results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -309,20 +308,20 @@ class QualityMonitor:
             for raw_result in raw_results:
                 if isinstance(raw_result, BaseException):
                     if not isinstance(raw_result, asyncio.CancelledError) and not isinstance(raw_result, Exception):
-                        Log.error(Label.QUALITY, f"Error probing source for {channel_log}: {raw_result}")
+                        Log.error(Label.QUALITY, f"{stream_name}: Error probing source - {raw_result}")
                     continue
                 stream_infos.append(raw_result)
 
             async with self._mutex:
                 quality_cache = await self.config.get_quality_cache()
                 if quality_cache is None:
-                    Log.critical(Label.QUALITY, f"Quality cache was removed/corrupted after startup, stopping analysis at {channel_log}.")
+                    Log.critical(Label.QUALITY, f"{stream_name}: Quality cache was removed/corrupted after startup, stopping analysis.")
                     return
                 modified_cache = QualityCacheDataImpl({})
-                for source_id, probe_info, source_log in stream_infos:
+                for source_id, probe_info, video_name in stream_infos:
                     if source_id not in quality_cache:
                         if not await self.handler.get_discovered_source(source_id):
-                            Log.warn(Label.QUALITY, f"{source_log} in {channel_log} not found in discovered sources, skipping.")
+                            Log.warn(Label.QUALITY, f"{video_name}: Not found in discovered sources, skipping.")
                             continue  # Dead mapping that was removed after the start of this analysis
                         quality_cache[source_id] = QualityInfoImpl({
                             "updated_at": DateTimeISO(datetime.now().isoformat()), "statuses": [], "widths": [],
@@ -337,8 +336,12 @@ class QualityMonitor:
                         source_entry["heights"].append(probe_info["height"])
                         source_entry["bitrates"].append(probe_info["bitrate"])
                         source_entry["framerates"].append(probe_info["framerate"])
+                        if input_lc_id:
+                            Log.info(Label.QUALITY, f"{video_name}: Online - {probe_info['width']}x{probe_info['height']} @ {probe_info['framerate']:.2f}fps, {probe_info['bitrate'] / 1_000_000:.2f}mbps")
                     else:
                         source_entry["statuses"].append("offline")
+                        if input_lc_id:
+                            Log.info(Label.QUALITY, f"{video_name}: Offline")
 
                     if len(source_entry["statuses"]) > MAX_HISTORY_PER_SOURCE:
                         source_entry["statuses"] = source_entry["statuses"][-MAX_HISTORY_PER_SOURCE:]
@@ -348,11 +351,11 @@ class QualityMonitor:
                         source_entry["framerates"] = source_entry["framerates"][-MAX_HISTORY_PER_SOURCE:]
                     modified_cache[source_id] = source_entry
                 if not await self.config.save_quality_cache(quality_cache):
-                    Log.critical(Label.QUALITY, f"Failed to save quality cache, stopping analysis at {channel_log}.")
+                    Log.critical(Label.QUALITY, f"{stream_name}: Failed to save quality cache, stopping analysis.")
                     return
                 self._build_quality_scores(modified_cache)
         if input_lc_id:
-            Log.info(Label.QUALITY, f"Completed analysis for {len(valid_mappings[0][2])} mappings(s) in {valid_mappings[0][3]}.")
+            Log.info(Label.QUALITY, f"{valid_mappings[0][3]}: Completed analysis for {len(valid_mappings[0][2])} mappings(s).")
 
     def _build_quality_scores(self, quality_cache: QualityCacheData) -> None:
         """Calculates quality scores and updates the internal state."""

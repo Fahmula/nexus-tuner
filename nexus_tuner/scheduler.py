@@ -95,7 +95,6 @@ class Scheduler:
         """Asynchronous factory for creating and initializing a Scheduler instance."""
         instance = cls(config, handler, quality_monitor)
         instance._scheduler_task = asyncio.create_task(instance._run())
-        Log.info(Label.STARTUP, "Task Scheduler started.")
         return instance
 
     def shutdown(self) -> None:

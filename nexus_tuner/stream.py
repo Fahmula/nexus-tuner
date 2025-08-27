@@ -8,7 +8,7 @@ from typing import Any, Coroutine, Final, Iterable, NoReturn, Self, cast
 from nexus_tuner.config import Config
 from nexus_tuner.handler import ChannelHandler
 from nexus_tuner.utils import (CREATE_STREAM_DEADLINE, FFMPEG_TERMINATE_TIMEOUT, NEW_DEADLINE_NON_BEST, FFmpegProcessInfo, FFmpegProcessInfoMutable, FFmpegProcessInfos, FFmpegProcessInfosMutable,
-                                Label, Log, LogicalChannelId, LogicalChannelTitle, ProviderAlias, SegmentNum, VideoKey, VideoName, VideoType, get_segment_number, run_bg)
+                                Label, Log, LogicalChannelId, PreviewId, ProviderAlias, SegmentNum, VideoKey, VideoName, VideoType, get_segment_number, run_bg)
 
 
 # --- Constants ---
@@ -37,7 +37,7 @@ class StreamManager:
         self.config: Config = config
         self.handler: ChannelHandler = handler
         self.ffmpeg_processes: FFmpegProcessInfos = FFmpegProcessInfos({})
-        self.hls_latest_segments: dict[LogicalChannelId, tuple[SegmentNum, datetime]] = {}
+        self.hls_latest_segments: dict[LogicalChannelId | PreviewId, tuple[SegmentNum, datetime]] = {}
         self.stream_process_lock: asyncio.Lock = asyncio.Lock()
         self.cleanup_task: asyncio.Task[NoReturn]
 
@@ -46,7 +46,6 @@ class StreamManager:
         """Asynchronous factory for creating and initializing a StreamManager instance."""
         instance = cls(config, handler)
         instance.cleanup_task = asyncio.create_task(instance._video_cleanup_loop())
-        Log.info(Label.STARTUP, "Started Video FFmpeg cleanup task.")
         return instance
 
     async def get_ffmpeg_process_info(self, video_key: VideoKey) -> FFmpegProcessInfo | None:
@@ -54,17 +53,17 @@ class StreamManager:
         async with self.stream_process_lock:
             return self.ffmpeg_processes.get(video_key)
 
-    async def set_ffmpeg_process_long_term(self, video_key: VideoKey, long_term: bool) -> None:
+    async def set_ffmpeg_process_long_term(self, video_key: VideoKey, video_name: VideoName, long_term: bool) -> None:
         """Sets if an FFmpeg process is long term for a given Video key asynchronously."""
         async with self.stream_process_lock:
             if video_key in self.ffmpeg_processes:
-                Log.debug(Label.STREAM, f"Setting long term status to {long_term} for {video_key}.", self.ffmpeg_processes[video_key]['video_type'])
+                Log.debug(Label.STREAM, f"{video_name}: Setting long term status to {long_term}.", self.ffmpeg_processes[video_key]['video_type'])
                 cast(FFmpegProcessInfoMutable, self.ffmpeg_processes[video_key])['is_long_term'] = long_term
                 cast(FFmpegProcessInfoMutable, self.ffmpeg_processes[video_key])['last_access'] = datetime.now()  # Prevent immediate pruning
             else:
-                Log.debug(Label.STREAM, f"Cannot set long term status for {video_key} to {long_term}: process not found.")
+                Log.debug(Label.STREAM, f"{video_name}: Cannot set long term status to {long_term}: process not found.")
 
-    async def get_ffmpeg_processes_from_logical_id(self, logical_channel_id: LogicalChannelId, *, video_type: VideoType, long_term_only: bool) -> FFmpegProcessInfosMutable:
+    async def get_ffmpeg_processes_from_logical_id(self, logical_channel_id: LogicalChannelId | PreviewId, *, video_type: VideoType, long_term_only: bool) -> FFmpegProcessInfosMutable:
         """
         Returns a dictionary of all FFmpeg processes associated with the given logical channel ID and video type asynchronously.
         """
@@ -79,7 +78,7 @@ class StreamManager:
                 if data['logical_channel_id'] == logical_channel_id and data['video_type'] == video_type
             })
 
-    async def record_video_access(self, logical_channel_id: LogicalChannelId, video_type: VideoType, *, segment_filename: str | None = None) -> None:
+    async def record_video_access(self, logical_channel_id: LogicalChannelId | PreviewId, video_type: VideoType, *, segment_filename: str | None = None) -> None:
         """Updates the last access time for the stream associated with the given logical channel ID and video type."""
         processes = await self.get_ffmpeg_processes_from_logical_id(logical_channel_id, video_type=video_type, long_term_only=False)
         async with self.stream_process_lock:
@@ -115,7 +114,7 @@ class StreamManager:
                     return
                 return channel_hls_dir / segment_filename
 
-    async def get_hls_latest_segment(self, logical_channel_id: LogicalChannelId) -> tuple[int, datetime] | None:
+    async def get_hls_latest_segment(self, logical_channel_id: LogicalChannelId | PreviewId) -> tuple[int, datetime] | None:
         """Returns the latest segment number and its timestamp for the given logical channel ID asynchronously."""
         async with self.stream_process_lock:
             return self.hls_latest_segments.get(logical_channel_id)
@@ -124,11 +123,11 @@ class StreamManager:
         """Background task loop to find and stop inactive or dead streams."""
         while True:
             await asyncio.sleep(CLEANUP_POLL_INTERVAL)
-            inactive_ids: set[tuple[VideoKey, LogicalChannelTitle]] = set()
+            inactive_ids: set[VideoKey] = set()
             async with self.stream_process_lock:
                 segment_lc_ids_to_cleanup = [(lc_id, data) for lc_id, data in self.hls_latest_segments.items() if data[1] < datetime.now() - timedelta(seconds=self.config.latest_segment_timeout)]
                 for lc_id, data in segment_lc_ids_to_cleanup:
-                    Log.debug(Label.STREAM, f"Cleanup: Removing latest HLS segment number cache ({data[0]}) for logical channel ID '{lc_id}'.", VideoType.HLS)
+                    Log.debug(Label.STREAM, f"Cleaning up latest HLS segment number cache ({data[0]}) for logical channel ID '{lc_id}'.", VideoType.HLS)
                     self.hls_latest_segments.pop(lc_id, None)    
                 
                 providers_to_kill = self.handler.reset_kill_provider_streams()
@@ -136,31 +135,28 @@ class StreamManager:
                 current_processes = list(self.ffmpeg_processes.items())
 
                 if providers_to_kill:
-                    Log.warn(Label.STREAM, f"Cleanup: Killing streams from providers: {', '.join(providers_to_kill)}")
+                    Log.warn(Label.STREAM, f"Killing streams from providers: {', '.join(providers_to_kill)}")
                     provider_keys_to_kill = [video_key for video_key, data in current_processes if data['provider_alias'] in providers_to_kill]
                     for video_key in provider_keys_to_kill:
                         data = cast(FFmpegProcessInfosMutable, self.ffmpeg_processes).pop(video_key)
-                        run_bg(self._stop_ffmpeg_process(video_key, data['logical_channel_title'], data_to_cleanup=data))  # Prevents process from being cancelled
+                        run_bg(self._stop_ffmpeg_process(video_key, data_to_cleanup=data))  # Prevents process from being cancelled
 
                 now = datetime.now()
                 for video_key, data in current_processes:
                     timeout = self.config.segment_prune_timeout if data['is_preview'] else self.config.ffmpeg_inactivity_timeout
                     if data['process'].returncode is not None:
-                        logical_channel_title = data['logical_channel_title']
-                        Log.info(Label.STREAM, f"Cleanup: Found dead process for '{logical_channel_title}' (PID: {data['process'].pid}).")
-                        inactive_ids.add((video_key, logical_channel_title))
+                        Log.info(Label.STREAM, f"{data['video_name']}: Cleaning up dead process (PID: {data['process'].pid}).")
+                        inactive_ids.add(video_key)
                     elif data['is_long_term']:
                         if not data['is_mpegts_active'] and now - data['last_access'] > timedelta(seconds=timeout):
-                            logical_channel_title = data['logical_channel_title']
-                            Log.info(Label.STREAM, f"Cleanup: '{logical_channel_title}' timed out due to inactivity after {timeout}s (PID: {data['process'].pid}).")
-                            inactive_ids.add((video_key, logical_channel_title))
+                            Log.info(Label.STREAM, f"{data['video_name']}: Timed out due to inactivity after {timeout}s (PID: {data['process'].pid}).")
+                            inactive_ids.add(video_key)
                     else:
                         if now - data['last_access'] > timedelta(seconds=CREATE_STREAM_DEADLINE + NEW_DEADLINE_NON_BEST + 5):
-                            logical_channel_title = data['logical_channel_title']
-                            Log.info(Label.STREAM, f"Cleanup: '{logical_channel_title}' is not long-term and hasn't been cleaned up (PID: {data['process'].pid}).")
-                            inactive_ids.add((video_key, logical_channel_title))
+                            Log.info(Label.STREAM, f"{data['video_name']}: Not long-term and hasn't been cleaned up (PID: {data['process'].pid}).")
+                            inactive_ids.add(video_key)
             
-            tasks = [self.stop_ffmpeg_process(video_key, name) for video_key, name in inactive_ids]
+            tasks = [self.stop_ffmpeg_process(video_key) for video_key in inactive_ids]
             if tasks:
                 await asyncio.gather(*tasks)
 
@@ -169,20 +165,20 @@ class StreamManager:
         async with self.stream_process_lock:
             now = datetime.now()
             inactive_ids = [
-                (video_key, data['logical_channel_title']) for video_key, data in self.ffmpeg_processes.items()
+                (video_key, data['video_name']) for video_key, data in self.ffmpeg_processes.items()
                 if alias == data['provider_alias'] and data['is_long_term'] and not data['is_mpegts_active'] and now - data['last_access'] > timedelta(seconds=self.config.segment_prune_timeout)
             ]
         
         tasks: list[Coroutine[Any, Any, None]] = []
-        for video_key, logical_channel_title in inactive_ids:
-            Log.info(Label.STREAM, f"Pruning inactive {alias} stream '{logical_channel_title}' [{video_key}].")
-            tasks.append(self.stop_ffmpeg_process(video_key, logical_channel_title))
+        for video_key, video_name in inactive_ids:
+            Log.info(Label.STREAM, f"Pruning inactive {alias} stream '{video_name}' [{video_key}].")
+            tasks.append(self.stop_ffmpeg_process(video_key))
         if tasks:
             await asyncio.gather(*tasks)
 
-    async def stop_ffmpeg_process(self, video_key: VideoKey, name: LogicalChannelTitle | VideoName) -> None:
+    async def stop_ffmpeg_process(self, video_key: VideoKey) -> None:
         """Stops an FFmpeg process and cleans up resources asynchronously."""
-        task = run_bg(self._stop_ffmpeg_process(video_key, name, data_to_cleanup=None))
+        task = run_bg(self._stop_ffmpeg_process(video_key, data_to_cleanup=None))
         try:
             return await asyncio.shield(task)
         except asyncio.CancelledError:
@@ -194,7 +190,7 @@ class StreamManager:
         video_keys = (await self.get_ffmpeg_processes_from_logical_id(logical_channel_id, video_type=video_type, long_term_only=False)).keys()
         await self.stop_ffmpeg_processes(video_keys)
 
-    async def _stop_ffmpeg_process(self, video_key: VideoKey, name: str, *, data_to_cleanup: FFmpegProcessInfo | None) -> None:
+    async def _stop_ffmpeg_process(self, video_key: VideoKey, *, data_to_cleanup: FFmpegProcessInfo | None) -> None:
         """
         MUST BE CALLED WITH run_bg() TO PREVENT CANCELLATION.
         Stops a single FFmpeg process and cleans its resources asynchronously.
@@ -205,10 +201,12 @@ class StreamManager:
                 if (data_to_cleanup := cast(FFmpegProcessInfosMutable, self.ffmpeg_processes).pop(video_key, None)) is None:
                     return
             should_release_slot = True
-            Log.debug(Label.STREAM, f"{name} [{video_key}]: Stopping FFmpeg process.", data_to_cleanup['video_type'])
+            video_name = data_to_cleanup['video_name']
+            Log.debug(Label.STREAM, f"{video_name}: Stopping FFmpeg process.", data_to_cleanup['video_type'])
         else:
             should_release_slot = False
-            Log.debug(Label.STREAM, f"{name} [{video_key}]: Stopping FFmpeg process with provided data.", data_to_cleanup['video_type'])
+            video_name = data_to_cleanup['video_name']
+            Log.debug(Label.STREAM, f"{video_name}: Stopping FFmpeg process with provided data.", data_to_cleanup['video_type'])
 
         video_type: VideoType = data_to_cleanup['video_type']
         process: asyncio.subprocess.Process = data_to_cleanup['process']
@@ -221,60 +219,55 @@ class StreamManager:
                 try:
                     process.terminate()
                     if process.stdout:
-                        Log.debug(Label.STREAM, f"{name} [{video_key}]: Closing FFmpeg process stdout stream.", video_type)
+                        Log.debug(Label.STREAM, f"{video_name}: Closing FFmpeg process stdout stream.", video_type)
                         process.stdout._transport.close()  # type: ignore[reportAttributeAccessIssue]
                     await asyncio.wait_for(process.wait(), timeout=FFMPEG_TERMINATE_TIMEOUT)
-                    Log.debug(Label.STREAM, f"{name} [{video_key}]: FFmpeg process terminated successfully.", video_type)
+                    Log.debug(Label.STREAM, f"{video_name}: FFmpeg process terminated successfully.", video_type)
                 except asyncio.TimeoutError:
-                    Log.warn(Label.STREAM, f"{name} [{video_key}]: Killing unresponsive FFmpeg process.", video_type)
+                    Log.warn(Label.STREAM, f"{video_name}: Killing unresponsive FFmpeg process.", video_type)
                     process.kill()
                 except Exception as e:
-                    Log.error(Label.STREAM, f"{name} [{video_key}]: Error terminating FFmpeg process: {e}", video_type)
+                    Log.error(Label.STREAM, f"{video_name}: Error terminating FFmpeg process: {e}", video_type)
                     process.kill()
             except BaseException as e:
-                Log.critical(Label.STREAM, f"{name} [{video_key}]: Error while stopping FFmpeg process: {e}", video_type)
+                Log.critical(Label.STREAM, f"{video_name}: Error while stopping FFmpeg process: {e}", video_type)
                 raise
         else:
-            Log.debug(Label.STREAM, f"{name} [{video_key}]: FFmpeg process already terminated with code {process.returncode}.", video_type)
+            Log.debug(Label.STREAM, f"{video_name}: FFmpeg process already terminated with code {process.returncode}.", video_type)
         
         try:
             await log_file.close()
         except Exception as e:
-            Log.error(Label.STREAM, f"{name} [{video_key}]: Error closing FFmpeg log file: {e}", video_type)
+            Log.error(Label.STREAM, f"{video_name}: Error closing FFmpeg log file: {e}", video_type)
 
         provider_slots = await self.handler.get_provider_slots(alias)
         if provider_slots:
             if should_release_slot:
-                Log.debug(Label.STREAM, f"{name} [{video_key}]: Releasing slot for provider '{alias}'.", video_type)
+                Log.debug(Label.STREAM, f"{video_name}: Releasing slot for provider '{alias}'.", video_type)
                 new_active_count = await provider_slots.release()
             else:
-                Log.debug(Label.STREAM, f"{name} [{video_key}]: Not releasing slot for provider '{alias}' as it should have been already released.", video_type)
+                Log.debug(Label.STREAM, f"{video_name}: Not releasing slot for provider '{alias}' as it should have been already released.", video_type)
                 new_active_count = f"0/{provider_slots.get_total_slots()}"
         else:
-            Log.error(Label.STREAM, f"{name} [{video_key}]: No slots found for provider '{alias}'.", video_type)
+            Log.error(Label.STREAM, f"{video_name}: No slots found for provider '{alias}'.", video_type)
             new_active_count = "N/A"
 
         try:
             if hls_dir and await aiofiles.os.path.exists(hls_dir):
                 await aioshutil.rmtree(hls_dir)
         except Exception as e:
-            Log.error(Label.STREAM, f"{name} [{video_key}]: Failed to clean HLS directory {hls_dir}: {e}", video_type)
+            Log.error(Label.STREAM, f"{video_name}: Failed to clean HLS directory {hls_dir}: {e}", video_type)
 
-        Log.info(Label.STREAM, f"{name} [{video_key}]: Successfully stopped and cleaned up all resources {{{alias}:{new_active_count}}}", video_type)
+        Log.info(Label.STREAM, f"{video_name}: Successfully stopped and cleaned up all resources {{{alias}:{new_active_count}}}", video_type)
 
-    async def stop_ffmpeg_processes(self, video_keys: Iterable[VideoKey] | None = None, video_names: dict[VideoKey, VideoName] | None = None) -> None:
+    async def stop_ffmpeg_processes(self, video_keys: Iterable[VideoKey] | None = None) -> None:
         """Stops all (or a specified list of) active FFmpeg processes and cleans up resources asynchronously."""
-        if video_names is None:
-            video_names = {}
         tasks: list[Coroutine[Any, Any, None]]
         async with self.stream_process_lock:
             if video_keys is None:
                 Log.info(Label.STREAM, "Stopping all active FFmpeg processes...")
-                tasks = [self.stop_ffmpeg_process(video_key, video_names.get(video_key) or data["logical_channel_title"])
-                         for video_key, data in self.ffmpeg_processes.items()]
+                tasks = [self.stop_ffmpeg_process(video_key) for video_key in self.ffmpeg_processes]
             else:
-                tasks = [self.stop_ffmpeg_process(video_key, video_names.get(video_key) or data["logical_channel_title"])
-                         for video_key, data in self.ffmpeg_processes.items() if video_key in video_keys]
-                
+                tasks = [self.stop_ffmpeg_process(video_key) for video_key in self.ffmpeg_processes if video_key in video_keys]
         if tasks:
             await asyncio.gather(*tasks)

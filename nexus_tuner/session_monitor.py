@@ -43,7 +43,6 @@ class GhostSessionMonitor:
     async def create(cls, config: Config, handler: ChannelHandler, stream_manager: StreamManager) -> Self | None:
         """Asynchronous factory for creating and initializing a GhostSessionMonitor instance."""
         if not config.emby_url and not config.jellyfin_url:
-            Log.info(Label.STARTUP, "No Emby/Jellyfin URL configured. Ghost Session Monitor is disabled.")
             return
         Log.info(Label.STARTUP, "Emby/Jellyfin URL found. Ghost Session Monitor is enabled.")
         instance = cls(config, handler, stream_manager)
@@ -114,13 +113,13 @@ class GhostSessionMonitor:
                 if data['logical_channel_id'] in legitimately_active_lc_ids:
                     continue
                 video_type = data['video_type']
-                Log.warn(Label.SESSION, f"Found ghost session for '{data['logical_channel_title']}' [{video_key}].", video_type)
+                Log.warn(Label.SESSION, f"{data['video_name']}: Found ghost session.", video_type)
                 if video_type == VideoType.MPEGTS:
                     mpegts_video_keys.append(video_key)
                 elif video_type == VideoType.HLS:
                     hls_video_keys.append(video_key)
                 else:
-                    Log.error(Label.SESSION, f"Unknown video type '{video_type}' for stream '{video_key}', cannot terminate.", video_type)
+                    Log.error(Label.SESSION, f"{data['video_name']}: Unknown video type '{video_type}', cannot terminate.", video_type)
         if not mpegts_video_keys and not hls_video_keys:
             return
 

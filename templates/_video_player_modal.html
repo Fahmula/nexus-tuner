@@ -9,7 +9,7 @@
 </div>
 
 <div id="stream-control" class="d-none">
-    <button id="stop-stream-btn" hx-post="/hls/{{ logical_channel_id }}/stop"
+    <button id="stop-stream-btn" hx-post="/hls/{{ preview_id }}/stop"
         hx-trigger="click" hx-swap="none">Stop Stream</button>
 </div>
 
@@ -19,7 +19,7 @@
         const video = document.getElementById('preview-video-player');
         const statusDiv = document.getElementById('player-status');
         const src = '{{ playlist_url }}';
-        const logicalChannelId = '{{ logical_channel_id }}';
+        const previewId = '{{ preview_id }}';
         const stopStreamBtn = document.getElementById('stop-stream-btn');
         let hls = null;
 
@@ -115,7 +115,7 @@
             video.pause();
             video.removeAttribute('src');
             video.load();
-            console.log("Stopping stream for logical channel:", logicalChannelId);
+            console.log("Stopping stream for preview:", previewId);
             stopStreamBtn.click();
         }
         window.destroyPreviewPlayer = destroyPreviewPlayer;

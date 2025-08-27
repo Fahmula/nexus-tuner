@@ -6,7 +6,7 @@ from quart import Response
 
 from nexus_tuner.config import Config
 from nexus_tuner.stream import StreamManager
-from nexus_tuner.utils import MPEGTS_PACKET_SIZE, FFmpegProcessInfoMutable, Label, Log, MPEGTSProcessInfo, ReaderId, VideoKey, VideoType, run_bg
+from nexus_tuner.utils import MPEGTS_PACKET_SIZE, FFmpegProcessInfoMutable, Label, Log, MPEGTSProcessInfo, ReaderId, VideoKey, VideoName, VideoType, run_bg
 
 BUFFER_CLEANUP_INTERVAL: Final[int] = 10
 BUFFER_SIZE_LIMIT: Final[int] = 100 * 1024 * 1024
@@ -16,17 +16,18 @@ MPEGTS_CHUNK_SIZE: Final[int] = MPEGTS_PACKET_SIZE * 21
 class MPEGTSStream:
     """A class to manage MPEGTS streams, handling reading and buffering of data."""
     __slots__ = (
-        'config', 'stream_manager', 'video_key', 'recreate_stream',
+        'config', 'stream_manager', 'video_key', 'video_name', 'recreate_stream',
         '_buffer', '_event', '_reader_positions', '_cancelled',
         '_writer', '_cleaner',
     )
 
     streams: dict[VideoKey, Self] = {}
     
-    def __init__(self, config: Config, stream_manager: StreamManager, video_key: VideoKey, recreate_stream: Callable[[], Awaitable[Response | VideoKey]]) -> None:
+    def __init__(self, config: Config, stream_manager: StreamManager, video_key: VideoKey, video_name: VideoName, recreate_stream: Callable[[], Awaitable[Response | VideoKey]]) -> None:
         self.config: Config = config
         self.stream_manager: StreamManager = stream_manager
         self.video_key: VideoKey = video_key
+        self.video_name: VideoName = video_name
         self.recreate_stream: Callable[[], Awaitable[Response | VideoKey]] = recreate_stream
         self._buffer: list[bytes] = []
         self._event: asyncio.Event = asyncio.Event()
@@ -36,62 +37,62 @@ class MPEGTSStream:
         self._cleaner: asyncio.Task[NoReturn]
 
     async def _initialize(self) -> None:
-        """Initialize the MPEGTS stream by setting up the buffer and starting the writer task."""
+        """Initialize the stream by setting up the buffer and starting the writer task."""
         process_info = cast(MPEGTSProcessInfo | None, await self.stream_manager.get_ffmpeg_process_info(self.video_key))
         if not process_info:
-            raise ValueError(f"Internal error: MPEGTS FFmpeg process not found for '{self.video_key}'.")
+            raise ValueError(f"{self.video_name}: Internal error: MPEGTS FFmpeg process not found with '{self.video_key}'.")
         self._writer = asyncio.create_task(self._fill_buffer(process_info))
         self._cleaner = asyncio.create_task(self._cleanup())
 
     @classmethod
-    async def register(cls, config: Config, stream_manager: StreamManager, video_key: VideoKey, recreate_stream: Callable[[], Awaitable[Response | VideoKey]]) -> tuple[Self, ReaderId]:
-        """Create a new MPEGTS stream or return an existing one."""
+    async def register(cls, config: Config, stream_manager: StreamManager, video_key: VideoKey, video_name: VideoName, recreate_stream: Callable[[], Awaitable[Response | VideoKey]]) -> tuple[Self, ReaderId]:
+        """Create a new stream or return an existing one."""
         if video_key not in cls.streams:  # If stream is cancelled, still choose it to prevent dual ownership
-            Log.debug(Label.STREAM, f"Creating MPEGTS stream handler for '{video_key}'", VideoType.MPEGTS)
-            instance = cls(config, stream_manager, video_key, recreate_stream)
+            instance = cls(config, stream_manager, video_key, video_name, recreate_stream)
             cls.streams[video_key] = instance
+            Log.debug(Label.STREAM, f"{instance.video_name}: Created stream handler", VideoType.MPEGTS)
             try:
                 await instance._initialize()
             except BaseException:
                 cls.streams.pop(video_key, None)
                 raise
         else:
-            Log.debug(Label.STREAM, f"Reusing existing MPEGTS stream handler for '{video_key}'", VideoType.MPEGTS)
             instance = cls.streams[video_key]
+            Log.debug(Label.STREAM, f"{instance.video_name}: Reusing existing stream handler", VideoType.MPEGTS)
         return instance, instance._register()
 
     def _register(self) -> ReaderId:
-        """Register a new reader for the MPEGTS stream and return its ID."""
+        """Register a new reader for the stream and return its ID."""
         reader_id = ReaderId(max(self._reader_positions.keys(), default=0) + 1)
         self._reader_positions[reader_id] = 0
-        Log.debug(Label.STREAM, f"Registering Client #{reader_id} for MPEGTS stream '{self.video_key}': {len(self._reader_positions)} readers total.", VideoType.MPEGTS)
+        Log.debug(Label.STREAM, f"{self.video_name}: Registering Client #{reader_id}: {len(self._reader_positions)} readers total.", VideoType.MPEGTS)
         return reader_id
 
     def unregister(self, reader_id: ReaderId) -> None:
-        """Unregister a reader from the MPEGTS stream, will stop the stream if no readers are left."""
+        """Unregister a reader from the stream, will stop the stream if no readers are left."""
         del self._reader_positions[reader_id]
-        Log.debug(Label.STREAM, f"Unregistering Client #{reader_id} from MPEGTS stream for '{self.video_key}': {len(self._reader_positions)} readers left.", VideoType.MPEGTS)
+        Log.debug(Label.STREAM, f"{self.video_name}: Unregistering Client #{reader_id}: {len(self._reader_positions)} readers left.", VideoType.MPEGTS)
         if not len(self._reader_positions):
             self.shutdown()
 
     async def read(self, reader_id: ReaderId) -> bytes:
-        """Read a chunk of data from the MPEGTS stream for the given reader ID, blocking until data is available.
+        """Read a chunk of data from the stream for the given reader ID, blocking until data is available.
         Raises:
             asyncio.CancelledError: If the stream is unrecoverable.
         """
         if self._reader_positions[reader_id] >= len(self._buffer):
             await self._event.wait()
         if self._cancelled:
-            raise asyncio.CancelledError("MPEGTS stream has been shutdown.")
+            raise asyncio.CancelledError("stream has been shutdown.")
         buf = self._buffer[self._reader_positions[reader_id]]
         self._reader_positions[reader_id] += 1
         return buf
 
     async def _fill_buffer(self, process_info: MPEGTSProcessInfo) -> NoReturn:
-        """Continuously read data from the MPEGTS stream and fill the buffer, notifying readers when new data is available."""
+        """Continuously read data from the stream and fill the buffer, notifying readers when new data is available."""
         try:
             while True:
-                Log.debug(Label.STREAM, f"Marking MPEGTS stream for '{process_info['logical_channel_title']}' with key '{self.video_key}' as active.", VideoType.MPEGTS)
+                Log.debug(Label.STREAM, f"{self.video_name}: Marking as active.", VideoType.MPEGTS)
                 cast(FFmpegProcessInfoMutable, process_info)["is_mpegts_active"] = True
                 stdout: asyncio.StreamReader = cast(asyncio.StreamReader, process_info["process"].stdout)
                 try:
@@ -107,31 +108,32 @@ class MPEGTSStream:
                 except Exception as e:
                     if self._cancelled:
                         raise asyncio.CancelledError()
-                    Log.error(Label.STREAM, f"Error reading from MPEGTS stream for '{process_info['logical_channel_title']}' with key '{self.video_key}': {e}", VideoType.MPEGTS)
-                    await self.stream_manager.stop_ffmpeg_process(self.video_key, process_info["logical_channel_title"])
+                    Log.error(Label.STREAM, f"{self.video_name}: Error reading from stream: {e}", VideoType.MPEGTS)
+                    await self.stream_manager.stop_ffmpeg_process(self.video_key)
                     res = await self.recreate_stream()
                     if isinstance(res, Response):
-                        Log.error(Label.STREAM, f"Failed to recreate MPEGTS stream for '{process_info['logical_channel_title']}' with key '{self.video_key}': {res.status}", VideoType.MPEGTS)
+                        Log.error(Label.STREAM, f"{self.video_name}: Failed to recreate stream: {res.status}", VideoType.MPEGTS)
                         raise
                     self.streams.pop(self.video_key, None)
                     self.video_key = res
                     self.streams[self.video_key] = self
                     process_info_res = cast(MPEGTSProcessInfo | None, await self.stream_manager.get_ffmpeg_process_info(self.video_key))
                     if not process_info_res:
-                        Log.error(Label.STREAM, f"Internal error: MPEGTS FFmpeg process not found for logical channel '{process_info['logical_channel_title']}' with key '{self.video_key}' after recreating stream.", VideoType.MPEGTS)
+                        Log.error(Label.STREAM, f"Internal error: FFmpeg process not found with key '{self.video_key}' after recreating stream.", VideoType.MPEGTS)
                         raise
                     process_info = process_info_res
+                    self.video_name = process_info['video_name']
         except asyncio.CancelledError:
             raise
         except BaseException as e:
-            Log.error(Label.STREAM, f"Unexpected error in MPEGTS stream for '{self.video_key}': {e}", VideoType.MPEGTS)
+            Log.error(Label.STREAM, f"{self.video_name}: Unexpected error: {e}", VideoType.MPEGTS)
             raise
         finally:  # Don't stop early incase the user reconnects, let the timeout handle it
             async def bg_cleanup() -> None:
-                Log.debug(Label.STREAM, f"Shutting down MPEGTS stream for '{self.video_key}'...", VideoType.MPEGTS)
+                Log.debug(Label.STREAM, f"{self.video_name}: Shutting down stream handler...", VideoType.MPEGTS)
                 self.shutdown()
                 async with self.stream_manager.stream_process_lock:
-                    Log.debug(Label.STREAM, f"Marking MPEGTS stream for '{process_info['logical_channel_title']}' with key '{self.video_key}' as inactive.", VideoType.MPEGTS)
+                    Log.debug(Label.STREAM, f"{self.video_name}: Marking as inactive.", VideoType.MPEGTS)
                     cast(FFmpegProcessInfoMutable, process_info)["last_access"] = datetime.now() - timedelta(seconds=self.config.segment_prune_timeout)  # Elligible for pruning immediately
                     cast(FFmpegProcessInfoMutable, process_info)["is_mpegts_active"] = False
                     self.streams.pop(self.video_key, None)  # Make this atomic with is_mpegts_active
@@ -148,7 +150,7 @@ class MPEGTSStream:
                 self._reader_positions[reader_id] -= min_index
             if len(self._buffer) > max_entries:
                 dropped = len(self._buffer) - max_entries
-                Log.debug(Label.STREAM, f"Cleaning up MPEGTS buffer for '{self.video_key}': {len(self._buffer)} entries, dropping {dropped} entries.", VideoType.MPEGTS)
+                Log.debug(Label.STREAM, f"{self.video_name}: Cleaning up buffer, {len(self._buffer)} entries, dropping {dropped} entries.", VideoType.MPEGTS)
                 self._buffer = self._buffer[-max_entries:]
                 for reader_id in self._reader_positions:
                     new_pos = max(0, self._reader_positions[reader_id] - dropped)
@@ -156,7 +158,7 @@ class MPEGTSStream:
                     self._reader_positions[reader_id] = new_pos
 
     def shutdown(self) -> None:
-        """Cancel the MPEGTS stream, cleaning up resources and stopping the writer task."""
+        """Cancel the stream, cleaning up resources and stopping the writer task."""
         self._cancelled = True  # Let the stdout reader finish gracefully incase we will reconnect
         self._cleaner.cancel()
         self._event.set()  # Ensure any waiting readers are woken up

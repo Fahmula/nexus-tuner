@@ -44,7 +44,7 @@ if NEXUS_TUNER_PORT < 1 or NEXUS_TUNER_PORT > 65535:
 CREATE_STREAM_DEADLINE: Final[int] = 25           # The maximum time that clients will wait for a stream to be created
 NEW_DEADLINE_NON_BEST: Final[int] = 1             # The number of seconds after a stream is healthy before giving up waiting on others, the best remaining source deadline is immediate
 CREATE_STREAM_POLL_INTERVAL: Final[float] = 0.01  # Polling interval for stream creation
-MPEGTS_PACKET_SIZE: Final[int] = 188              # Size of a single MPEG-TS packet in bytes
+MPEGTS_PACKET_SIZE: Final[int] = 188              # Size of a single MPEGTS packet in bytes
 DEFAULT_PRIORITY: Final[int] = 5                  # Default priority for sources
 FFMPEG_TERMINATE_TIMEOUT: Final[int] = 5          # Timeout for terminating FFmpeg processes
 URL_REGEX: Final[re.Pattern[str]] = re.compile(
@@ -73,9 +73,11 @@ MainM3UPlaylist = NewType("MainM3UPlaylist", str)
 LogicalChannelId = NewType("LogicalChannelId", str)
 LogicalChannelTitle = NewType("LogicalChannelTitle", str)
 SourceId = NewType("SourceId", str)
+PreviewId = NewType("PreviewId", str)
 StreamURL = NewType("StreamURL", str)
 StreamKey = NewType("StreamKey", str)
 VideoKey = NewType("VideoKey", str)
+StreamName = NewType("StreamName", str)
 VideoName = NewType("VideoName", str)
 Priority = NewType("Priority", int)
 
@@ -254,29 +256,27 @@ type JobsData = JobsDataImpl | _JobsDataReadOnly
 
 class MPEGTSProcessInfo(TypedDict):
     process: ReadOnly[asyncio.subprocess.Process]
+    provider_alias: ReadOnly[ProviderAlias]
+    logical_channel_id: ReadOnly[LogicalChannelId | PreviewId]
+    video_type: ReadOnly[Literal[VideoType.MPEGTS]]
+    video_name: ReadOnly[VideoName]
     is_long_term: ReadOnly[bool]
     is_preview: ReadOnly[bool]
-    video_type: ReadOnly[Literal[VideoType.MPEGTS]]
-    provider_alias: ReadOnly[ProviderAlias]
-    logical_channel_id: ReadOnly[LogicalChannelId]
-    source_id: ReadOnly[SourceId]
-    logical_channel_title: ReadOnly[LogicalChannelTitle]
-    channel_hls_dir: ReadOnly[None]
     last_access: ReadOnly[datetime]
     is_mpegts_active: ReadOnly[bool]
+    channel_hls_dir: ReadOnly[None]
     stderr_log_file_obj: ReadOnly[aiofiles.threadpool.text.AsyncTextIOWrapper]
 class HLSProcessInfo(TypedDict):
     process: ReadOnly[asyncio.subprocess.Process]
+    provider_alias: ReadOnly[ProviderAlias]
+    logical_channel_id: ReadOnly[LogicalChannelId | PreviewId]
+    video_type: ReadOnly[Literal[VideoType.HLS]]
+    video_name: ReadOnly[VideoName]
     is_long_term: ReadOnly[bool]
     is_preview: ReadOnly[bool]
-    video_type: ReadOnly[Literal[VideoType.HLS]]
-    provider_alias: ReadOnly[ProviderAlias]
-    logical_channel_id: ReadOnly[LogicalChannelId]
-    source_id: ReadOnly[SourceId]
-    logical_channel_title: ReadOnly[LogicalChannelTitle]
-    channel_hls_dir: ReadOnly[Path]
     last_access: ReadOnly[datetime]
     is_mpegts_active: ReadOnly[None]
+    channel_hls_dir: ReadOnly[Path]
     stderr_log_file_obj: ReadOnly[aiofiles.threadpool.text.AsyncTextIOWrapper]
 type FFmpegProcessInfo = MPEGTSProcessInfo | HLSProcessInfo
 FFmpegProcessInfos = NewType("FFmpegProcessInfos", Mapping[VideoKey, FFmpegProcessInfo])
@@ -426,7 +426,7 @@ def run_bg(coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
     task.add_done_callback(background_tasks.discard)
     return task
 
-def create_stream_key(video_type: VideoType, logical_channel_id: LogicalChannelId) -> StreamKey:
+def create_stream_key(video_type: VideoType, logical_channel_id: LogicalChannelId | PreviewId) -> StreamKey:
     """Generates a unique key for the stream."""
     return StreamKey(f"{video_type}_{logical_channel_id}")
 
@@ -436,9 +436,31 @@ def create_video_key(stream_key: StreamKey, source_id: SourceId) -> VideoKey:
     return VideoKey(f"{stream_key}_{source_id}")
 
 
-def create_video_name(logical_channel_title: LogicalChannelTitle, source_name: TVGDisplayTitle | TVGName, source_id: SourceId) -> VideoName:
+def create_stream_name(logical_channel_title: LogicalChannelTitle, channel_num: ChannelNum | None) -> StreamName:
     """Generates a unique name for the stream."""
-    return VideoName(f"{logical_channel_title} - {source_name} ({source_id})")
+    if channel_num:
+        return StreamName(f"{channel_num}|{logical_channel_title}")
+    return StreamName(logical_channel_title)
+
+
+def create_video_name(stream_name: StreamName, source_name: TVGDisplayTitle | TVGName, source_id: SourceId) -> VideoName:
+    """Generates a unique name for the video stream."""
+    return VideoName(f"{stream_name} - {source_name} ({source_id})")
+
+
+def create_preview_id(source_id: SourceId) -> PreviewId:
+    """Generates a unique ID for the preview stream."""
+    return PreviewId(f"preview_{source_id}")
+
+
+def get_source_id_from_preview(preview_id: PreviewId) -> SourceId:
+    """Extracts the source ID from the preview stream ID."""
+    return SourceId(preview_id.replace("preview_", ""))
+
+
+def is_preview_id(input_id: PreviewId | LogicalChannelId) -> bool:
+    """Checks if the given ID is a preview ID."""
+    return input_id.startswith("preview_")
 
 
 def get_segment_format() -> str:

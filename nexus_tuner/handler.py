@@ -13,7 +13,7 @@ from nexus_tuner.utils import (M3UURL, NEXUS_TUNER_USER_AGENT, ClientChannelInfo
                                 DiscoveredSource, DiscoveredSourceWithId, DiscoveredSourcesData, DiscoveredSourcesDataImpl, Log, LogicalChannelInfo, LogicalChannelInfoWithId, LogicalChannelTitle, LogicalChannelsDataImpl, Priority, ProviderInfo,
                                 ProviderStatuses, SourceInfo, SourceMappingInfoWithId, SourceId, StreamURL, TVGGroupTitle, Label, LogicalChannelId,
                                 LogicalChannelsData, M3USource, MainM3UPlaylist, MaxStreams, ProviderAlias, ProvidersData, ProvidersDataImpl,
-                                StreamKey, TVGDisplayTitle, TVGId, TVGLogo, TVGName, VideoType, run_bg)
+                                StreamKey, TVGDisplayTitle, TVGId, TVGLogo, TVGName, VideoType, create_stream_name, create_video_name, run_bg)
 
 if TYPE_CHECKING:
     from nexus_tuner.quality_monitor import QualityMonitor
@@ -174,10 +174,7 @@ class ChannelHandler:
             await self._build_client_channels(prev_discovered_sources)
             self.generate_main_client_m3u()
             
-            Log.info(self.label,
-                f"ChannelHandler ready. Discovered: {len(self._discovered_sources_data)}, "
-                f"Client-Facing: {len(self._client_channels)}"
-            )
+            Log.info(self.label, f"Discovered: {len(self._discovered_sources_data)}, Client-Facing: {len(self._client_channels)}")
         finally:
             self._mutex.release()
 
@@ -245,7 +242,7 @@ class ChannelHandler:
                         "provider_alias": provider_alias,
                         **m3u_source
                     }
-                Log.info(self.label, f"Discovered {len(m3u_sources)} sources from provider '{provider_alias}'.")
+                Log.debug(self.label, f"Discovered {len(m3u_sources)} sources from provider '{provider_alias}'.")
                 return discovered_sources
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             Log.error(self.label, f"Failed to fetch or parse provider '{provider_alias}': {e}")
@@ -256,7 +253,6 @@ class ChannelHandler:
 
     async def _parse_all_provider_m3us_and_populate_discovered_sources(self) -> None:
         """Uses asyncio.gather to fetch and parse all configured provider M3Us concurrently."""
-        Log.info(self.label, "Starting to parse all provider M3Us...")
         async with aiohttp.ClientSession() as session:
             tasks = [
                 self._fetch_and_parse_provider(session, alias, details["m3u_url"])
@@ -273,8 +269,6 @@ class ChannelHandler:
                     discovered_sources.update(res)
             self._discovered_sources_data = discovered_sources
 
-        Log.info(self.label, f"Finished parsing. Total discovered sources: {len(self._discovered_sources_data)}")
-
     async def _build_client_channels(self, prev_discovered_sources: DiscoveredSourcesData) -> None:
         """Builds the final list of channels exposed to clients."""
         name_url_map: dict[str, dict[ProviderAlias, list[tuple[SourceId, StreamURL]]]] = {}
@@ -289,6 +283,7 @@ class ChannelHandler:
 
         new_client_channels = ClientChannelInfosImpl({})
         for logical_channel_id, lc_def in self._logical_channels_data.items():
+            stream_name = create_stream_name(lc_def['logical_channel_title'], lc_def['channel_num'])
             processed_sources: list[SourceInfo] = []
             for source_id, source_mapping in self._channel_mappings_data.get(logical_channel_id, {}).items():
                 priority = source_mapping["priority"]
@@ -301,40 +296,39 @@ class ChannelHandler:
                         "stream_url": discovered_source["stream_url"],
                     })
                     continue
-                channel_log = f"'{lc_def["logical_channel_title"]}'{f' ({lc_def['channel_num']})' if 'channel_num' in lc_def else ''}"
                 prev_discovered_source = prev_discovered_sources.get(source_id)
                 if not prev_discovered_source:
-                    Log.warn(self.label, f"Mapped source 'Unknown Source' ({source_id}) for {channel_log} not found in discovered sources or previously discovered sources.")
+                    Log.warn(self.label, f"{stream_name} ({source_id}): Mapped source 'Unknown Source' not found in discovered sources or previously discovered sources.")
                     continue
-                source_log = f"'{prev_discovered_source['tvg_name']}' ({source_id})"
                 alias = prev_discovered_source["provider_alias"]
-                Log.warn(self.label, f"Mapped source {source_log} for {channel_log} from provider '{alias}' not found in discovered sources.")
+                video_name = create_video_name(stream_name, prev_discovered_source['tvg_name'], source_id)
+                Log.warn(self.label, f"{video_name}: Mapped source from provider '{alias}' not found in discovered sources.")
                 key = f"{prev_discovered_source['group_title']}|{prev_discovered_source['tvg_name']}"
                 if key not in name_url_map:
-                    Log.warn(self.label, f"Could not match previously discovered source {source_log} for {channel_log} from provider '{alias}' to any current matching tvg-group and tvg-name.")
+                    Log.warn(self.label, f"{video_name}: Could not match previously discovered source to any current matching tvg-group and tvg-name.")
                     continue
                 if not alias or alias not in name_url_map[key]:
-                    Log.warn(self.label, f"Could not match previously discovered source {source_log} for {channel_log} from provider '{alias}' to any current provider using matching tvg-group and tvg-name.")
+                    Log.warn(self.label, f"{video_name}: Could not match previously discovered source to any current provider using matching tvg-group and tvg-name.")
                     continue
                 id_urls = name_url_map[key][alias]
                 if len(id_urls) > 1:
-                    Log.warn(self.label, f"Multiple stream URLs found for previously discovered source {source_log} for {channel_log} from provider '{alias}', cannot update stream URL using matching tvg-group and tvg-name.")
+                    Log.warn(self.label, f"{video_name}: Multiple stream URLs found for previously discovered source, cannot update stream URL using matching tvg-group and tvg-name.")
                     continue
                 new_source_id = id_urls[0][0]
                 if not await self._update_source_id_for_mapping(logical_channel_id, source_id, new_source_id):
-                    Log.error(self.label, f"Failed to update {channel_log} source '{source_id}' to '{new_source_id}' for provider '{alias}' after successfully matching it to a new source using tvg-group and tvg-name.")
+                    Log.error(self.label, f"{video_name}: Failed to update to '{new_source_id}' after successfully matching it to a new source using tvg-group and tvg-name.")
                     continue
                 if self.quality_monitor:
                     run_bg(self.quality_monitor.update_source_id(source_id, new_source_id))  # run_bg to prevent deadlocks if quality monitor is waiting on a handler function
                 else:
-                    Log.warn(self.label, f"Quality monitor not yet initialized, cannot update source '{source_id}' to '{new_source_id}' from provider '{alias}' in {channel_log} in quality cache after successfully matching it to a new source using tvg-group and tvg-name.")
+                    Log.warn(self.label, f"{video_name}: Quality monitor not yet initialized, cannot update to '{new_source_id}' in quality cache after successfully matching it to a new source using tvg-group and tvg-name.")
                 processed_sources.append({
                     "source_id": new_source_id,
                     "priority": priority,
                     "provider_alias": alias,
                     "stream_url": id_urls[0][1],
                 })
-                Log.info(self.label, f"Updated {channel_log} source '{source_id}' to '{new_source_id}' using matching tvg-group and tvg-name from provider '{alias}'.")
+                Log.info(self.label, f"{video_name}: Updated to '{new_source_id}' using matching tvg-group and tvg-name.")
             if processed_sources:
                 new_client_channels[logical_channel_id] = {
                     "logical_channel_title": lc_def["logical_channel_title"] or LogicalChannelTitle(logical_channel_id),
@@ -345,9 +339,8 @@ class ChannelHandler:
                     "sources": processed_sources
                 }
             else:
-                Log.warn(self.label, f"No valid mapped sources for logical channel '{logical_channel_id}'. It will not be included in the client M3U.")
+                Log.warn(self.label, f"{stream_name}: No valid mapped sources, it will not be included in the client M3U.")
         self._client_channels = new_client_channels
-        Log.info(self.label, f"Built {len(self._client_channels)} client-facing channels.")
 
     async def get_num_providers(self) -> int:
         """Returns the number of configured providers."""
@@ -416,7 +409,6 @@ class ChannelHandler:
             m3u_lines.append(f"{self.config.nexus_url}/{VideoType.HLS}/{logical_channel_id}/playlist.m3u8")
         
         self._main_m3u_playlist = MainM3UPlaylist("\n".join(m3u_lines) + "\n")
-        Log.info(self.label, f"Generated main client M3U with {len(self._client_channels)} channels.")
 
     def get_sources_for_client_channel(self, logical_channel_id: LogicalChannelId) -> list[SourceInfo]:
         """Retrieves source stream URLs for a channel."""
