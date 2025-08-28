@@ -38,7 +38,7 @@ from nexus_tuner.quality_monitor import QualityMonitor
 from nexus_tuner.session_monitor import GhostSessionMonitor
 from nexus_tuner.stream import StreamManager
 from nexus_tuner.scheduler import Scheduler
-from nexus_tuner.utils import (Log, LogicalChannelFormDetails, PreviewId, VideoKey, background_tasks, CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL,
+from nexus_tuner.utils import (Log, LogicalChannelFormDetails, PreviewId, StreamEngine, VideoKey, background_tasks, CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL,
                                 DEFAULT_PRIORITY, M3UURL, NEXUS_TUNER_PORT, NEXUS_TUNER_VERSION, ChannelNum, DiscoveredSource,
                                 Label, LogicalChannelId, LogicalChannelInfo, LogicalChannelInfoWithId, LogicalChannelMetrics, LogicalChannelTitle, MaxStreams, 
                                 PercentDisplay, Priority, ProviderAlias, ProviderStatus, QualityScores, SourceInfo, SourceMappingInfoWithId, SourceMetrics,
@@ -119,14 +119,14 @@ async def shutdown() -> None:
     if "scheduler" in globals():
         scheduler.shutdown()
     if "stream_manager" in globals():
-        await stream_manager.stop_ffmpeg_processes()
+        await stream_manager.stop_processes()
     if "config" in globals():
         await config.clean_up_hls_segments()
     await asyncio.gather(*background_tasks, return_exceptions=True)
 
 
 async def calculate_channel_metrics(mapped_sources: list[SourceMappingInfoWithId], all_quality_scores: QualityScores) -> LogicalChannelMetrics:
-    """Calculates uptime metrics for a channel. (Sync, CPU-bound logic)."""
+    """Calculates uptime metrics for a channel."""
     uptime_scores: list[float] = []
     for mapped_source in mapped_sources[:HIGHEST_PRIORITY_SOURCES_NUM]:
         raw_uptime = all_quality_scores.get(mapped_source["source_id"], {}).get("uptime")
@@ -144,7 +144,7 @@ async def calculate_channel_metrics(mapped_sources: list[SourceMappingInfoWithId
     })
 
 def filter_sources(raw_query: str, discovered_source: DiscoveredSource) -> bool:
-    """Filters sources based on a query. (Sync - pure function)"""
+    """Filters sources based on a query."""
     tvg_name = discovered_source["tvg_name"].lower()
     display_title = discovered_source["display_title"].lower()
     for raw_q in raw_query.split(MULTI_SEARCH_QUERY_DELIMITER):
@@ -224,19 +224,20 @@ def inject_global_vars() -> Dict[str, datetime | str]:
 
 @app.route(f'/{VideoType.MPEGTS}/<string:logical_channel_id>')
 async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_response: bool = True) -> Response | VideoKey:
-    """Serves a channel stream using MPEGTS format asynchronously.
+    """Serves a channel stream using MPEGTS format.
     If stream_response is True, it returns a generator that the client connects to, otherwise it simply creates the stream
     and returns the video key for later use.
     """
     added_pending_stream = False
     loop = asyncio.get_running_loop()
     end_time = loop.time() + CREATE_STREAM_DEADLINE
-    stream_key = create_stream_key(VideoType.MPEGTS, logical_channel_id)
+    stream_engine = config.stream_engine
+    stream_key = create_stream_key(stream_engine, VideoType.MPEGTS, logical_channel_id)
     try:
         while not await handler.add_pending_stream(stream_key):
             if loop.time() > end_time:
                 msg = f"Exceeded timeout while waiting for earlier request for {stream_key} to complete."
-                Log.error(Label.SERVER, msg, VideoType.MPEGTS)
+                Log.error(Label.SERVER, msg, (VideoType.MPEGTS, stream_engine))
                 abort(503, msg)
             await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
         added_pending_stream = True
@@ -244,51 +245,51 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
         logical_channel = await handler.get_logical_channel_by_id(logical_channel_id)
         if not logical_channel:
             msg = f"Logical channel {logical_channel_id} not found for MPEGTS."
-            Log.error(Label.SERVER, msg, VideoType.MPEGTS)
+            Log.error(Label.SERVER, msg, (VideoType.MPEGTS, stream_engine))
             abort(404, msg)
         logical_channel_title = logical_channel['logical_channel_title']
         channel_num = logical_channel['channel_num']
 
-        lc_id_processes = await stream_manager.get_ffmpeg_processes_from_logical_id(logical_channel_id, video_type=VideoType.MPEGTS, long_term_only=True)
+        lc_id_processes = await stream_manager.get_processes_from_logical_id(logical_channel_id, video_type=VideoType.MPEGTS, stream_engine=stream_engine, long_term_only=True)
         if len(lc_id_processes):
             video_key, p_info = lc_id_processes.popitem()
             video_name = p_info['video_name']
             if p_info['is_mpegts_active']:
-                Log.info(Label.SERVER, f"{video_name}: Client connecting to shared stream.", VideoType.MPEGTS)
+                Log.info(Label.SERVER, f"{video_name}: Client connecting to shared stream.", (VideoType.MPEGTS, stream_engine))
             else:
-                Log.info(Label.SERVER, f"{video_name}: Client reconnected to stream.", VideoType.MPEGTS)
+                Log.info(Label.SERVER, f"{video_name}: Client reconnected to stream.", (VideoType.MPEGTS, stream_engine))
         else:
-            create_stream_task = await CreateStream.create(config, handler, stream_manager, quality_monitor, logical_channel_id, logical_channel_title, channel_num, VideoType.MPEGTS)
-            res = await create_stream_task.result()
+            create_stream_obj = await CreateStream.create(config, handler, stream_manager, quality_monitor, logical_channel_id, logical_channel_title, channel_num, VideoType.MPEGTS, stream_engine)
+            res = await create_stream_obj.result()
             match res[0]:
                 case True:
                     video_key, video_name = res[1:]
                 case False:
                     code, msg = res[1:]
-                    Log.error(Label.SERVER, msg, VideoType.MPEGTS)
+                    Log.error(Label.SERVER, msg, (VideoType.MPEGTS, stream_engine))
                     abort(code, msg)
 
         if not stream_response:
-            Log.info(Label.SERVER, f"{video_name}: Recreated stream.", VideoType.MPEGTS)
+            Log.info(Label.SERVER, f"{video_name}: Recreated stream.", (VideoType.MPEGTS, stream_engine))
             return video_key
 
         async def stream_generator() -> AsyncGenerator[bytes, None]:
             async def recreate_stream() -> Response | VideoKey:
                 return await serve_mpegts_stream(logical_channel_id, stream_response=False)
             try:
-                mpegts_stream, reader_id = await MPEGTSStream.register(config, stream_manager, video_key, video_name, recreate_stream)
+                mpegts_stream, reader_id = await MPEGTSStream.register(config, stream_manager, video_key, video_name, stream_engine, recreate_stream)
             except Exception as e:
                 msg = f"{video_name}: Failed to register stream - {e}"
-                Log.error(Label.SERVER, msg, VideoType.MPEGTS)
+                Log.error(Label.SERVER, msg, (VideoType.MPEGTS, stream_engine))
                 abort(500, msg)
 
             try:
                 while True:
                     yield await mpegts_stream.read(reader_id)
             except asyncio.CancelledError as e:
-                Log.info(Label.SERVER, f"{video_name}: Client #{reader_id} disconnected from stream.", VideoType.MPEGTS)
+                Log.info(Label.SERVER, f"{video_name}: Client #{reader_id} disconnected from stream.", (VideoType.MPEGTS, None))
             except BaseException as e:
-                Log.error(Label.SERVER, f"{video_name}: Client #{reader_id} unexpected error in stream - {e}", VideoType.MPEGTS)
+                Log.error(Label.SERVER, f"{video_name}: Client #{reader_id} unexpected error in stream - {e}", (VideoType.MPEGTS, None))
                 raise
             finally:
                 mpegts_stream.unregister(reader_id)
@@ -304,19 +305,19 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
             await handler.remove_pending_stream(stream_key)
 
 
-@app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/playlist.m3u8')
-async def serve_hls_playlist(logical_channel_id: LogicalChannelId | PreviewId, logical_channel_title: LogicalChannelTitle | None = None, sources: list[SourceInfo] | None = None) -> Response:
-    """Serves the HLS playlist for a channel asynchronously."""
-    run_bg(stream_manager.record_video_access(logical_channel_id, VideoType.HLS))
+@app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/<string:stream_engine>/playlist.m3u8')
+async def serve_hls_playlist(logical_channel_id: LogicalChannelId | PreviewId, stream_engine: StreamEngine, logical_channel_title: LogicalChannelTitle | None = None, sources: list[SourceInfo] | None = None) -> Response:
+    """Serves the HLS playlist for a channel."""
+    run_bg(stream_manager.record_video_access(logical_channel_id, VideoType.HLS, stream_engine))
     added_pending_stream = False
     loop = asyncio.get_running_loop()
     end_time = loop.time() + CREATE_STREAM_DEADLINE
-    stream_key = create_stream_key(VideoType.HLS, logical_channel_id)
+    stream_key = create_stream_key(stream_engine, VideoType.HLS, logical_channel_id)
     try:
         while not await handler.add_pending_stream(stream_key):
             if loop.time() > end_time:
                 msg = f"Exceeded timeout while waiting for earlier request for {stream_key} to complete."
-                Log.error(Label.SERVER, msg, VideoType.HLS)
+                Log.error(Label.SERVER, msg, (VideoType.HLS, stream_engine))
                 abort(503, msg)
             await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
         added_pending_stream = True
@@ -325,44 +326,44 @@ async def serve_hls_playlist(logical_channel_id: LogicalChannelId | PreviewId, l
             logical_channel = await handler.get_logical_channel_by_id(cast(LogicalChannelId, logical_channel_id))
             if not logical_channel:
                 msg = f"Logical channel {logical_channel_id} not found for HLS."
-                Log.error(Label.SERVER, msg, VideoType.HLS)
+                Log.error(Label.SERVER, msg, (VideoType.HLS, stream_engine))
                 abort(404, msg)
             logical_channel_title = logical_channel['logical_channel_title']
             channel_num = logical_channel['channel_num']
         else:
             channel_num = None
 
-        lc_id_processes = await stream_manager.get_ffmpeg_processes_from_logical_id(logical_channel_id, video_type=VideoType.HLS, long_term_only=True)
+        lc_id_processes = await stream_manager.get_processes_from_logical_id(logical_channel_id, video_type=VideoType.HLS, stream_engine=stream_engine, long_term_only=True)
         if len(lc_id_processes):
             video_key, p_info = lc_id_processes.popitem()
             video_name = p_info['video_name']
         else:
-            create_stream_task = await CreateStream.create(config, handler, stream_manager, quality_monitor, logical_channel_id, logical_channel_title, channel_num, VideoType.HLS, sources)
-            res = await create_stream_task.result()
+            create_stream_obj = await CreateStream.create(config, handler, stream_manager, quality_monitor, logical_channel_id, logical_channel_title, channel_num, VideoType.HLS, stream_engine, sources)
+            res = await create_stream_obj.result()
             match res[0]:
                 case True:
                     video_key, video_name = res[1:]
                 case False:
                     code, msg = res[1:]
-                    Log.error(Label.SERVER, msg, VideoType.HLS)
+                    Log.error(Label.SERVER, msg, (VideoType.HLS, stream_engine))
                     abort(code, msg)
 
         playlist_path = await stream_manager.get_hls_playlist_path(video_key)
         if not playlist_path:
             msg = f"{video_name}: Internal error: HLS playlist path not found."
-            Log.error(Label.SERVER, msg, VideoType.HLS)
+            Log.error(Label.SERVER, msg, (VideoType.HLS, stream_engine))
             abort(500, msg)
 
-        end_time = loop.time() + config.ffmpeg_start_timeout
+        end_time = loop.time() + config.process_start_timeout
         while loop.time() < end_time:
             to_cleanup = False
             async with stream_manager.stream_process_lock:
-                if video_key not in stream_manager.ffmpeg_processes or stream_manager.ffmpeg_processes[video_key]['process'].returncode is not None:
+                if video_key not in stream_manager.processes or stream_manager.processes[video_key]['process'].returncode is not None:
                     to_cleanup = True
             if to_cleanup:
-                msg = f"{video_name}: HLS FFmpeg process terminated unexpectedly."
-                Log.error(Label.SERVER, msg, VideoType.HLS)
-                await stream_manager.stop_ffmpeg_process(video_key)
+                msg = f"{video_name}: HLS process terminated unexpectedly."
+                Log.error(Label.SERVER, msg, (VideoType.HLS, stream_engine))
+                await stream_manager.stop_process(video_key)
                 abort(503, msg)
 
             if await aiofiles.os.path.exists(playlist_path) and (await aiofiles.os.stat(playlist_path)).st_size > 0:
@@ -374,29 +375,29 @@ async def serve_hls_playlist(logical_channel_id: LogicalChannelId | PreviewId, l
                     return response
                 except Exception as e:
                     msg = f"{video_name}: Error serving HLS playlist {playlist_path}: {e}"
-                    Log.error(Label.SERVER, msg, VideoType.HLS)
+                    Log.error(Label.SERVER, msg, (VideoType.HLS, stream_engine))
                     abort(500, msg)
             await asyncio.sleep(PLAYLIST_POLL_INTERVAL)
 
-        msg = f"{video_name}: HLS playlist was not available after {config.ffmpeg_start_timeout} seconds."
-        Log.error(Label.SERVER, msg, VideoType.HLS)
+        msg = f"{video_name}: HLS playlist was not available after {config.process_start_timeout} seconds."
+        Log.error(Label.SERVER, msg, (VideoType.HLS, stream_engine))
         abort(408, msg)
     finally:
         if added_pending_stream:
             await handler.remove_pending_stream(stream_key)
 
 
-@app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/<path:segment_filename>')
-async def serve_hls_segment(logical_channel_id: LogicalChannelId, segment_filename: str) -> Response:
-    """Serves an HLS video segment (.ts file) asynchronously."""
-    run_bg(stream_manager.record_video_access(logical_channel_id, VideoType.HLS, segment_filename=segment_filename))
+@app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/<string:stream_engine>/<path:segment_filename>')
+async def serve_hls_segment(logical_channel_id: LogicalChannelId, stream_engine: StreamEngine, segment_filename: str) -> Response:
+    """Serves an HLS video segment (.ts file)."""
+    run_bg(stream_manager.record_video_access(logical_channel_id, VideoType.HLS, stream_engine, segment_filename=segment_filename))
     if not segment_filename.endswith(".ts") or ".." in segment_filename:
-        Log.error(Label.SERVER, f"Invalid segment filename for channel '{logical_channel_id}': {segment_filename}", VideoType.HLS)
+        Log.error(Label.SERVER, f"Invalid segment filename for channel '{logical_channel_id}': {segment_filename}", (VideoType.HLS, None))
         abort(400, f"Invalid segment filename for channel '{logical_channel_id}': {segment_filename}")
     
-    segment_path = await stream_manager.get_hls_segment_path(logical_channel_id, VideoType.HLS, segment_filename)
+    segment_path = await stream_manager.get_hls_segment_path(logical_channel_id, VideoType.HLS, stream_engine, segment_filename)
     if not segment_path or not await aiofiles.os.path.isfile(segment_path):
-        Log.error(Label.SERVER, f"HLS segment not found for channel '{logical_channel_id}' with filename '{segment_filename}'.", VideoType.HLS)
+        Log.error(Label.SERVER, f"HLS segment not found for channel '{logical_channel_id}' with filename '{segment_filename}'.", (VideoType.HLS, None))
         abort(404, f"HLS segment not found for channel '{logical_channel_id}'")
 
     response = await send_from_directory(str(segment_path.parent), segment_path.name, mimetype="video/mp2t")
@@ -416,19 +417,20 @@ async def ui_player_for_source(source_id: SourceId) -> str:
         abort(404, msg)
     source_name = discovered_source["display_title"] or discovered_source["tvg_name"] or "Preview"
     preview_id = create_preview_id(source_id)
-    playlist_url = url_for('serve_hls_preview', preview_id=preview_id)
-    return await render_template("_video_player_modal.html", playlist_url=playlist_url, preview_id=preview_id, source_id=source_id, source_name=source_name)
+    stream_engine = config.stream_engine
+    playlist_url = url_for('serve_hls_preview', preview_id=preview_id, stream_engine=stream_engine)
+    return await render_template("_video_player_modal.html", playlist_url=playlist_url, preview_id=preview_id, stream_engine=stream_engine, source_id=source_id, source_name=source_name)
 
 
-@app.route(f'/{VideoType.HLS}/<string:preview_id>/preview.m3u8')
-async def serve_hls_preview(preview_id: PreviewId) -> Response:
-    """Serves a preview HLS playlist for a channel asynchronously."""
+@app.route(f'/{VideoType.HLS}/<string:preview_id>/<string:stream_engine>/preview.m3u8')
+async def serve_hls_preview(preview_id: PreviewId, stream_engine: StreamEngine) -> Response:
+    """Serves a preview HLS playlist for a channel."""
     source_id = get_source_id_from_preview(preview_id)
     discovered_source = await handler.get_discovered_source(source_id)
     
     if not discovered_source:
         msg = f"Preview requested for non-existent source ID {source_id}."
-        Log.error(Label.SERVER, msg, VideoType.HLS)
+        Log.error(Label.SERVER, msg, (VideoType.HLS, None))
         abort(404, msg)
 
     sources: list[SourceInfo] = [{
@@ -438,13 +440,13 @@ async def serve_hls_preview(preview_id: PreviewId) -> Response:
         'stream_url': discovered_source['stream_url']
     }]
 
-    return await serve_hls_playlist(preview_id, logical_channel_title=LogicalChannelTitle('Preview'), sources=sources)
+    return await serve_hls_playlist(preview_id, stream_engine, logical_channel_title=LogicalChannelTitle('Preview'), sources=sources)
 
 
-@app.route("/<string:video_type>/<string:logical_channel_id>/stop", methods=["POST"])
-async def stop_stream(video_type: VideoType, logical_channel_id: LogicalChannelId) -> Response:
+@app.route("/<string:video_type>/<string:logical_channel_id>/<string:stream_engine>/stop", methods=["POST"])
+async def stop_stream(video_type: VideoType, logical_channel_id: LogicalChannelId, stream_engine: StreamEngine) -> Response:
     """Stops the stream for a logical channel."""
-    await stream_manager.stop_ffmpeg_processes_with_logical_channel_id(logical_channel_id, video_type)
+    await stream_manager.stop_processes_with_logical_channel_id(logical_channel_id, video_type, stream_engine)
     return Response(status=204)
 
 
@@ -622,7 +624,7 @@ async def ui_logical_channel_delete(logical_channel_id: LogicalChannelId) -> Res
 @app.route("/ui/logical-channels/form/", methods=["GET", "POST"])
 @app.route("/ui/logical-channels/form/<string:logical_channel_id>", methods=["GET", "POST"])
 async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = None) -> Response | WerkzeugResponse | str:
-    """Handles adding/editing a logical channel and its mappings asynchronously."""
+    """Handles adding/editing a logical channel and its mappings."""
     if request.method == "POST":
         form_data = cast(ImmutableMultiDict[str, str], await request.form)  # type: ignore
 
@@ -822,7 +824,7 @@ async def ui_channel_suggest() -> str:
 
 @app.route("/ui/logical-channels/analyze-mappings/<string:logical_channel_id>", methods=["POST"])
 async def ui_analyze_mappings(logical_channel_id: LogicalChannelId) -> Response:
-    """Analyzes the mappings for a logical channel asynchronously."""
+    """Analyzes the mappings for a logical channel."""
     channel = await handler.get_logical_channel_by_id(logical_channel_id)
     if not channel:
         msg = f"Logical Channel with ID '{logical_channel_id}' not found for analysis."
@@ -854,7 +856,7 @@ async def ui_analyze_mappings(logical_channel_id: LogicalChannelId) -> Response:
 
 @app.route("/ui/logical-channels/remove-dead-mappings/<string:logical_channel_id>", methods=["DELETE"])
 async def ui_remove_dead_mappings(logical_channel_id: LogicalChannelId) -> Response:
-    """Removes dead mappings from logical channels asynchronously."""
+    """Removes dead mappings from logical channels."""
     channel = await handler.get_logical_channel_by_id(logical_channel_id)
     if not channel:
         msg = f"Logical Channel with ID '{logical_channel_id}' not found for dead mapping removal."
@@ -1026,7 +1028,7 @@ async def serve_screenshot(filename: str) -> Response:
 
 @app.route("/reload", methods=["POST"])
 async def reload_configuration() -> Response:
-    """Triggers a full async reload of all configurations and channel data."""
+    """Triggers a full reload of all configurations and channel data."""
     form_data = cast(ImmutableMultiDict[str, str], await request.form)  # type: ignore
     update_providers = form_data.get("update_providers", "false").lower() == "true"
     force_discover_sources = form_data.get("force_discover_sources", "false").lower() == "true"
@@ -1051,7 +1053,7 @@ async def reload_configuration() -> Response:
 
 @app.route("/backup", methods=["POST"])
 async def backup_configuration() -> Response:
-    """Triggers an async backup of the current configuration files."""
+    """Triggers an backup of the current configuration files."""
     try:
         backup_path = await config.backup_config(scheduled=False)
         if backup_path:

@@ -6,7 +6,7 @@ from typing import Coroutine, Final, Any, Self
 from nexus_tuner.config import Config
 from nexus_tuner.handler import ChannelHandler
 from nexus_tuner.slots import ProviderSlots
-from nexus_tuner.utils import (FFMPEG_TERMINATE_TIMEOUT, NEXUS_TUNER_USER_AGENT, Bitrate, BitrateScore, DateTimeISO, Framerate, FramerateScore, Height,
+from nexus_tuner.utils import (PROCESS_TERMINATE_TIMEOUT, NEXUS_TUNER_USER_AGENT, Bitrate, BitrateScore, DateTimeISO, Framerate, FramerateScore, Height,
                                 Label, Log, LogicalChannelId, Percent, ProbeInfo, ProbeSuccess, ProviderAlias, QualityInfoImpl, QualityScores,
                                 QualityScoresImpl, ResolutionScore, QualityCacheData, QualityCacheDataImpl, SourceId, StreamName,
                                 StreamURL, TotalScore, UptimeScore, VideoName, Width, create_stream_name, create_video_name, run_bg)
@@ -141,7 +141,7 @@ class QualityMonitor:
                             process.terminate()
                             if process.stdout:
                                 process.stdout._transport.close()  # type: ignore[reportAttributeAccessIssue]
-                            await asyncio.wait_for(process.wait(), timeout=FFMPEG_TERMINATE_TIMEOUT)
+                            await asyncio.wait_for(process.wait(), timeout=PROCESS_TERMINATE_TIMEOUT)
                             Log.debug(Label.QUALITY, f"{video_name}: ffprobe process terminated successfully.")
                         except asyncio.TimeoutError:
                             Log.warn(Label.QUALITY, f"{video_name}: Killing unresponsive ffprobe process.")

@@ -76,7 +76,7 @@ class Scheduler:
             await self.config.backup_config(scheduled=True)
 
         async def scheduled_cleanup() -> None:
-            await self.config.cleanup_ffmpeg_logs_by_age()
+            await self.config.cleanup_process_logs_by_age()
             await self.config.cleanup_backups()
 
         async def scheduled_discover() -> None:

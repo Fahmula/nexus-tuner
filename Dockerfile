@@ -80,8 +80,9 @@ RUN apt install --no-install-recommends -y iputils-ping curl
 # FFmpeg binaries and libraries
 COPY --from=builder-image /root/bin/ /usr/bin/
 RUN apt install --no-install-recommends -y libass9 libmp3lame0 libvorbis0a \
-    libvorbisenc2 libvpx9 libdav1d7 libopus0 libx264-164 libx265-199 librist4 \
-    && apt clean && rm -rf /var/lib/apt/lists/*
+    libvorbisenc2 libvpx9 libdav1d7 libopus0 libx264-164 libx265-199 librist4
+    
+RUN apt install --no-install-recommends -y vlc && apt clean && rm -rf /var/lib/apt/lists/*
 
 RUN userdel -r ubuntu
 RUN useradd app

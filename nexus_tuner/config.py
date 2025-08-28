@@ -12,7 +12,7 @@ import aiofiles.os
 import aioshutil
 
 from nexus_tuner.utils import (CONFIG_DIR, NEXUS_TUNER_PORT, NEXUS_TUNER_VERSION, ChannelListDataImpl, ChannelMappingsData, ChannelMappingsDataImpl, DiscoveredSourcesData, DiscoveredSourcesDataImpl, JobName, JobsData, JobsDataImpl,
-                               Label, Log, LogicalChannelsData, LogicalChannelsDataImpl, ProvidersData, ProvidersDataImpl, QualityCacheData, QualityCacheDataImpl, VideoKey, is_valid_url)
+                               Label, Log, LogicalChannelsData, LogicalChannelsDataImpl, ProvidersData, ProvidersDataImpl, QualityCacheData, QualityCacheDataImpl, StreamEngine, VideoKey, is_valid_url)
 
 
 NOT_ALPHANUM_REGEX: Final[re.Pattern[str]] = re.compile(r'[^a-zA-Z0-9_-]')
@@ -26,19 +26,19 @@ class Config:
     accessing and persisting data to JSON files in a non-blocking, safe manner.
     """
     __slots__ = (
-        'nexus_url', 'logs_dir', 'log_backup_count', 'ffmpeg_logs_retention_seconds',
+        'nexus_url', 'logs_dir', 'log_backup_count', 'process_logs_retention_seconds',
         'providers_name', 'providers_path',
         'discovered_sources_name', 'discovered_sources_path',
         'logical_channels_name', 'logical_channels_path',
         'channel_mappings_name', 'channel_mappings_path',
         'channel_list_name', 'channel_list_path', 'channel_list_default_path',
         'quality_cache_name', 'quality_cache_path',
-        'jobs_name', 'jobs_path',
+        'jobs_name', 'jobs_path', 'vlc_path', 'stream_engine',
         'backups_base_path', 'backups_scheduled_path', 'backups_manual_path', 'backup_count',
         'hls_base_segment_dir', 'hls_segment_duration', 'segment_prune_timeout', 'latest_segment_timeout', 'hls_playlist_length',
-        'ffmpeg_start_timeout', 'ffmpeg_inactivity_timeout', 'ffmpeg_path', 'ffprobe_path', 'ffmpeg_logs_dir',
+        'process_start_timeout', 'process_inactivity_timeout', 'ffmpeg_path', 'ffprobe_path', 'process_logs_dir',
         'emby_url', 'emby_api_key', 'jellyfin_url', 'jellyfin_api_key', 'ghost_check_interval',
-        'file_lock', '_cleaning_up_ffmpeg_logs',
+        'file_lock', '_cleaning_up_process_logs',
     )
     
     def __init__(self) -> None:
@@ -48,7 +48,10 @@ class Config:
         NOTE: This constructor is now lightweight and performs no I/O.
         All file system operations are deferred to the async `_initialize` method,
         which is called by the `create` factory method.
-        """        
+        """
+
+        # --- Connectivity ---
+
         nexus_url: str | None = os.getenv("NEXUS_URL")
         if not nexus_url:
             raise ValueError("NEXUS_URL environment variable is not set.")
@@ -57,6 +60,8 @@ class Config:
         if url_port is not None:
             raise ValueError("NEXUS_URL should not contain a port, set the NEXUS_PORT environment variable instead.")
         self.nexus_url: Final[str] = f"{nexus_url}:{NEXUS_TUNER_PORT}"
+
+        # --- Stream Engines ---
 
         ffmpeg_path: str | None = os.getenv("NEXUS_FFMPEG_PATH")
         if not ffmpeg_path:
@@ -72,16 +77,34 @@ class Config:
         if not os.access(self.ffprobe_path, os.X_OK):
             raise ValueError(f"NEXUS_FFMPEG_PATH '{self.ffprobe_path}' is not executable. Please check permissions.")
 
+        vlc_path: str | None = os.getenv("NEXUS_VLC_PATH")
+        self.vlc_path: Path | None = None
+        if vlc_path:
+            self.vlc_path = Path(vlc_path.strip())
+            if not os.path.isfile(self.vlc_path):
+                raise ValueError(f"NEXUS_VLC_PATH '{self.vlc_path}' does not point to a valid file.")
+            if not os.access(self.vlc_path, os.X_OK):
+                raise ValueError(f"NEXUS_VLC_PATH '{self.vlc_path}' is not executable. Please check permissions.")
+
+        stream_engine = os.getenv("NEXUS_STREAM_ENGINE")
+        if stream_engine not in StreamEngine:
+            raise ValueError(f"NEXUS_STREAM_ENGINE '{stream_engine}' is not a valid StreamEngine: {", ".join(StreamEngine)}")
+        self.stream_engine: Final[StreamEngine] = StreamEngine(stream_engine)
+        if self.stream_engine == StreamEngine.VLC and not self.vlc_path:
+            raise ValueError("NEXUS_STREAM_ENGINE is set to VLC but NEXUS_VLC_PATH is not set.")
+
         # --- Logging ---
+
         self.logs_dir: Final[Path] = CONFIG_DIR / "logs"
         self.log_backup_count: Final[int] = int(os.getenv("NEXUS_LOG_BACKUP_COUNT", 7))
         if self.log_backup_count < 0:
             raise ValueError("NEXUS_LOG_BACKUP_COUNT must be a non-negative integer.")
-        self.ffmpeg_logs_retention_seconds: Final[int] = int(os.getenv("NEXUS_FFMPEG_LOGS_RETENTION_SECONDS", 86400))
-        if self.ffmpeg_logs_retention_seconds < 0:
-            raise ValueError("NEXUS_FFMPEG_LOGS_RETENTION_SECONDS must be a non-negative integer.")
+        self.process_logs_retention_seconds: Final[int] = int(os.getenv("NEXUS_PROCESS_LOGS_RETENTION_SECONDS", 86400))
+        if self.process_logs_retention_seconds < 0:
+            raise ValueError("NEXUS_PROCESS_LOGS_RETENTION_SECONDS must be a non-negative integer.")
 
         # --- JSON Data Paths ---
+
         self.providers_name: Final[str] = "providers.json"
         self.providers_path: Final[Path] = CONFIG_DIR / self.providers_name
         
@@ -105,6 +128,7 @@ class Config:
         self.jobs_path: Final[Path] = CONFIG_DIR / self.jobs_name
 
         # --- Backup Config ---
+
         self.backups_base_path: Final[Path] = CONFIG_DIR / "backups"
         self.backups_scheduled_path: Final[Path] = self.backups_base_path / "scheduled"
         self.backups_manual_path: Final[Path] = self.backups_base_path / "manual"
@@ -113,20 +137,23 @@ class Config:
             raise ValueError("NEXUS_BACKUP_COUNT must be a non-negative integer.")
 
         # --- HLS Segment Directory ---
+
         self.hls_base_segment_dir: Final[Path] = CONFIG_DIR / "hls_segments"
         
-        # --- FFmpeg & HLS Configs ---
+        # --- Process & HLS Configs ---
+
         self.hls_segment_duration: Final[int] = 1
         self.segment_prune_timeout: Final[float] = 3
         self.latest_segment_timeout: Final[float] = 60
         self.hls_playlist_length: Final[int] = 30
-        self.ffmpeg_start_timeout: Final[float] = 5
-        self.ffmpeg_inactivity_timeout: Final[int] = int(os.getenv("NEXUS_FFMPEG_INACTIVITY_TIMEOUT", 900))
-        if self.ffmpeg_inactivity_timeout < 0:
-            raise ValueError("NEXUS_FFMPEG_INACTIVITY_TIMEOUT must be a non-negative integer.")
-        self.ffmpeg_logs_dir: Final[Path] = self.logs_dir / "ffmpeg_logs"
+        self.process_start_timeout: Final[float] = 5
+        self.process_inactivity_timeout: Final[int] = int(os.getenv("NEXUS_PROCESS_INACTIVITY_TIMEOUT", 900))
+        if self.process_inactivity_timeout < 0:
+            raise ValueError("NEXUS_PROCESS_INACTIVITY_TIMEOUT must be a non-negative integer.")
+        self.process_logs_dir: Final[Path] = self.logs_dir / "process_logs"
 
         # --- Media Server Monitoring Configs ---
+
         self.emby_url: Final[str | None] = os.getenv("NEXUS_EMBY_URL")
         self.emby_api_key: Final[str | None] = os.getenv("NEXUS_EMBY_API_KEY")
         self.jellyfin_url: Final[str | None] = os.getenv("NEXUS_JELLYFIN_URL")
@@ -136,7 +163,7 @@ class Config:
             raise ValueError("NEXUS_GHOST_SESSION_CHECK_INTERVAL must be a positive integer.")
 
         self.file_lock: Final[asyncio.Lock] = asyncio.Lock()
-        self._cleaning_up_ffmpeg_logs: bool = False
+        self._cleaning_up_process_logs: bool = False
 
     @classmethod
     async def create(cls) -> Self:
@@ -185,54 +212,48 @@ class Config:
         Log.debug(Label.STARTUP, f"Cleaning HLS directory: {self.hls_base_segment_dir}")
         await aioshutil.rmtree(self.hls_base_segment_dir, ignore_errors=True)
         await aiofiles.os.makedirs(self.hls_base_segment_dir, exist_ok=True)
-        await aiofiles.os.makedirs(self.ffmpeg_logs_dir, exist_ok=True)
+        await aiofiles.os.makedirs(self.process_logs_dir, exist_ok=True)
 
     async def clean_up_hls_segments(self) -> None:
-        """Cleans up old HLS segment files in the configured directory asynchronously."""
+        """Cleans up old HLS segment files in the configured directory."""
         Log.info(Label.STREAM, f"Cleaning up HLS segments in {self.hls_base_segment_dir}")
         await aioshutil.rmtree(self.hls_base_segment_dir, ignore_errors=True)
 
     def get_fs_safe_alphanum(self, name: str) -> str:
-        """
-        Converts a string to a filesystem-safe alphanumeric format.
-        This is a pure function with no I/O, so it remains synchronous.
-        """
+        """Converts a string to a filesystem-safe alphanumeric format."""
         return re.sub(NOT_ALPHANUM_REGEX, '_', name)
 
-    def get_ffmpeg_log_path(self, video_key: VideoKey) -> Path:
-        """
-        Generates a safe file path for an FFmpeg log file.
-        This is a pure function with no I/O, so it remains synchronous.
-        """
-        log_filename = f"ffmpeg_{self.get_fs_safe_alphanum(f'{video_key}_{time.time()}')}.log" 
-        return self.ffmpeg_logs_dir / log_filename
+    def get_process_log_path(self, video_key: VideoKey) -> Path:
+        """Generates a safe file path for a process log file."""
+        log_filename = f"{self.get_fs_safe_alphanum(f'{video_key}_{time.time()}')}.log" 
+        return self.process_logs_dir / log_filename
     
-    async def cleanup_ffmpeg_logs_by_age(self) -> None:
+    async def cleanup_process_logs_by_age(self) -> None:
         """
-        Deletes FFmpeg log files older than a configured number of seconds asynchronously.
+        Deletes process log files older than a configured number of seconds.
         """
-        if self._cleaning_up_ffmpeg_logs:
+        if self._cleaning_up_process_logs:
             return
         try:
-            self._cleaning_up_ffmpeg_logs = True
-            if not await aiofiles.os.path.exists(self.ffmpeg_logs_dir):
-                Log.debug(Label.STREAM, f"No FFmpeg logs directory at {self.ffmpeg_logs_dir}. Skipping cleanup.")
+            self._cleaning_up_process_logs = True
+            if not await aiofiles.os.path.exists(self.process_logs_dir):
+                Log.debug(Label.STREAM, f"No process logs directory at {self.process_logs_dir}. Skipping cleanup.")
                 return
 
-            cutoff_time = time.time() - self.ffmpeg_logs_retention_seconds
+            cutoff_time = time.time() - self.process_logs_retention_seconds
             files_cleaned_up = False
             
             try:
-                log_files = await aiofiles.os.listdir(self.ffmpeg_logs_dir)
+                log_files = await aiofiles.os.listdir(self.process_logs_dir)
             except OSError as e:
-                Log.error(Label.STREAM, f"Error listing files in {self.ffmpeg_logs_dir}: {e}")
+                Log.error(Label.STREAM, f"Error listing files in {self.process_logs_dir}: {e}")
                 return
 
             for filename in log_files:
-                if not filename.startswith("ffmpeg_") or not filename.endswith(".log"):
+                if not filename.endswith(".log"):
                     continue
                 
-                log_file = self.ffmpeg_logs_dir / filename
+                log_file = self.process_logs_dir / filename
                 try:
                     stat_result = await aiofiles.os.stat(log_file)
                     if stat_result.st_mtime < cutoff_time:
@@ -242,9 +263,9 @@ class Config:
                     Log.error(Label.STREAM, f"Error deleting old log file {log_file}: {e}")
             
             if files_cleaned_up:
-                Log.debug(Label.STREAM, f"Cleaned up FFmpeg log files older than {self.ffmpeg_logs_retention_seconds} seconds.")
+                Log.debug(Label.STREAM, f"Cleaned up process log files older than {self.process_logs_retention_seconds} seconds.")
         finally:
-            self._cleaning_up_ffmpeg_logs = False
+            self._cleaning_up_process_logs = False
 
     async def _load_json_file(self, file_path: Path) -> Any:
         """Loads data from a JSON file."""
@@ -254,7 +275,7 @@ class Config:
 
     async def _save_json_file[K: str, V](self, file_path: Path, data: Mapping[K, V] | list[V] | tuple[V, ...]) -> bool:
         """
-        Saves data to a JSON file atomically and asynchronously.
+        Saves data to a JSON file atomically.
         """
         temp_file_path = file_path.with_suffix(file_path.suffix + '.tmp')
         try:
@@ -275,7 +296,7 @@ class Config:
             raise
 
     async def get_providers_config(self, *, label: Label | None = None) -> ProvidersDataImpl | None:
-        """Loads the providers configuration from providers.json asynchronously."""
+        """Loads the providers configuration from providers.json."""
         try:
             data: ProvidersDataImpl = await self._load_json_file(self.providers_path)
             if type(data) is not dict:
@@ -315,11 +336,11 @@ class Config:
             raise
 
     async def save_providers_config(self, data: ProvidersData) -> bool:
-        """Saves the providers configuration to providers.json asynchronously."""
+        """Saves the providers configuration to providers.json."""
         return await self._save_json_file(self.providers_path, data)
 
     async def get_discovered_sources_config(self, *, label: Label | None = None) -> DiscoveredSourcesDataImpl | None:
-        """Loads the discovered sources from discovered_sources.json asynchronously."""
+        """Loads the discovered sources from discovered_sources.json."""
         try:
             data: DiscoveredSourcesDataImpl = await self._load_json_file(self.discovered_sources_path)
             if type(data) is not dict:
@@ -348,11 +369,11 @@ class Config:
             raise
 
     async def save_discovered_sources_config(self, data: DiscoveredSourcesData) -> bool:
-        """Saves the discovered sources to discovered_sources.json asynchronously."""
+        """Saves the discovered sources to discovered_sources.json."""
         return await self._save_json_file(self.discovered_sources_path, data)
 
     async def get_logical_channels_config(self, *, label: Label | None = None) -> LogicalChannelsDataImpl | None:
-        """Loads the logical channels configuration from logical_channels.json asynchronously."""
+        """Loads the logical channels configuration from logical_channels.json."""
         try:
             data: LogicalChannelsDataImpl = await self._load_json_file(self.logical_channels_path)
             if type(data) is not dict:
@@ -381,11 +402,11 @@ class Config:
             raise
 
     async def save_logical_channels_config(self, data: LogicalChannelsData) -> bool:
-        """Saves the logical channels configuration to logical_channels.json asynchronously."""
+        """Saves the logical channels configuration to logical_channels.json."""
         return await self._save_json_file(self.logical_channels_path, data)
 
     async def get_channel_mappings_config(self, *, label: Label | None = None) -> ChannelMappingsDataImpl | None:
-        """Loads the channel mappings from channel_mappings.json asynchronously."""
+        """Loads the channel mappings from channel_mappings.json."""
         try:
             data: ChannelMappingsDataImpl = await self._load_json_file(self.channel_mappings_path)
             if type(data) is not dict:
@@ -416,11 +437,11 @@ class Config:
             raise
 
     async def save_channel_mappings_config(self, data: ChannelMappingsData) -> bool:
-        """Saves the channel mappings to channel_mappings.json asynchronously."""
+        """Saves the channel mappings to channel_mappings.json."""
         return await self._save_json_file(self.channel_mappings_path, data)
     
     async def get_channel_list_config(self, *, use_default: bool = False, label: Label | None = None) -> ChannelListDataImpl | None:
-        """Loads the predefined channel list from channel_list.json asynchronously."""
+        """Loads the predefined channel list from channel_list.json."""
         try:
             if use_default:
                 data: ChannelListDataImpl = await self._load_json_file(self.channel_list_default_path)
@@ -467,7 +488,7 @@ class Config:
             raise
 
     async def get_quality_cache(self, *, label: Label | None = None) -> QualityCacheDataImpl | None:
-        """Loads the quality cache from quality_cache.json asynchronously."""
+        """Loads the quality cache from quality_cache.json."""
         try:
             data: QualityCacheDataImpl = await self._load_json_file(self.quality_cache_path)
             if type(data) is not dict:
@@ -531,11 +552,11 @@ class Config:
             raise
 
     async def save_quality_cache(self, data: QualityCacheData) -> bool:
-        """Saves the quality cache to quality_cache.json asynchronously."""
+        """Saves the quality cache to quality_cache.json."""
         return await self._save_json_file(self.quality_cache_path, data)
 
     async def get_jobs_config(self, *, label: Label | None = None) -> JobsDataImpl | None:
-        """Loads the jobs configuration from jobs.json asynchronously."""
+        """Loads the jobs configuration from jobs.json."""
         try:
             data: JobsDataImpl = await self._load_json_file(self.jobs_path)
             if type(data) is not dict:
@@ -566,7 +587,7 @@ class Config:
             raise
 
     async def save_jobs_config(self, data: JobsData) -> bool:
-        """Saves the jobs configuration to jobs.json asynchronously."""
+        """Saves the jobs configuration to jobs.json."""
         return await self._save_json_file(self.jobs_path, data)
 
     async def backup_config(self, *, scheduled: bool) -> Path | None:

@@ -46,7 +46,7 @@ NEW_DEADLINE_NON_BEST: Final[int] = 1             # The number of seconds after 
 CREATE_STREAM_POLL_INTERVAL: Final[float] = 0.01  # Polling interval for stream creation
 MPEGTS_PACKET_SIZE: Final[int] = 188              # Size of a single MPEGTS packet in bytes
 DEFAULT_PRIORITY: Final[int] = 5                  # Default priority for sources
-FFMPEG_TERMINATE_TIMEOUT: Final[int] = 5          # Timeout for terminating FFmpeg processes
+PROCESS_TERMINATE_TIMEOUT: Final[int] = 5          # Timeout for terminating processes
 URL_REGEX: Final[re.Pattern[str]] = re.compile(
     r'^(?:http|ftp)s?://' # http:// or https://
     r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|' #domain...
@@ -103,6 +103,11 @@ TVGLogo = NewType("TVGLogo", str)
 
 ReaderId = NewType("ReaderId", int)
 SegmentNum = NewType("SegmentNum", int)
+
+
+class StreamEngine(StrEnum):
+    FFMPEG = "ffmpeg"
+    VLC = "vlc"
 
 
 class VideoType(StrEnum):
@@ -258,6 +263,7 @@ class MPEGTSProcessInfo(TypedDict):
     process: ReadOnly[asyncio.subprocess.Process]
     provider_alias: ReadOnly[ProviderAlias]
     logical_channel_id: ReadOnly[LogicalChannelId | PreviewId]
+    stream_engine: ReadOnly[StreamEngine]
     video_type: ReadOnly[Literal[VideoType.MPEGTS]]
     video_name: ReadOnly[VideoName]
     is_long_term: ReadOnly[bool]
@@ -270,6 +276,7 @@ class HLSProcessInfo(TypedDict):
     process: ReadOnly[asyncio.subprocess.Process]
     provider_alias: ReadOnly[ProviderAlias]
     logical_channel_id: ReadOnly[LogicalChannelId | PreviewId]
+    stream_engine: ReadOnly[StreamEngine]
     video_type: ReadOnly[Literal[VideoType.HLS]]
     video_name: ReadOnly[VideoName]
     is_long_term: ReadOnly[bool]
@@ -278,13 +285,13 @@ class HLSProcessInfo(TypedDict):
     is_mpegts_active: ReadOnly[None]
     channel_hls_dir: ReadOnly[Path]
     stderr_log_file_obj: ReadOnly[aiofiles.threadpool.text.AsyncTextIOWrapper]
-type FFmpegProcessInfo = MPEGTSProcessInfo | HLSProcessInfo
-FFmpegProcessInfos = NewType("FFmpegProcessInfos", Mapping[VideoKey, FFmpegProcessInfo])
-class FFmpegProcessInfoMutable(TypedDict):
+type ProcessInfo = MPEGTSProcessInfo | HLSProcessInfo
+ProcessInfos = NewType("ProcessInfos", Mapping[VideoKey, ProcessInfo])
+class ProcessInfoMutable(TypedDict):
     is_long_term: bool
     last_access: datetime
     is_mpegts_active: bool
-FFmpegProcessInfosMutable = NewType("FFmpegProcessInfosMutable", dict[VideoKey, FFmpegProcessInfo])
+ProcessInfosMutable = NewType("ProcessInfosMutable", dict[VideoKey, ProcessInfo])
 
 class ProbeSuccess(TypedDict):
     status: ReadOnly[Literal["online"]]
@@ -376,42 +383,57 @@ class Log:
         cls.initialized = True
 
     @classmethod
-    def debug(cls, label: Label, msg: str, video_type: VideoType | None = None) -> None:
+    def debug(cls, label: Label, msg: str, options: tuple[VideoType, StreamEngine | None] | None = None) -> None:
         """Logs a debug message with the specified label."""
-        if video_type:
-            cls._logger.debug(f"[{label}/{video_type}] {msg}")
+        if options:
+            if options[1]:
+                cls._logger.debug(f"[{label}/{options[0]}/{options[1]}] {msg}")
+            else:
+                cls._logger.debug(f"[{label}/{options[0]}] {msg}")
         else:
             cls._logger.debug(f"[{label}] {msg}")
 
     @classmethod
-    def info(cls, label: Label, msg: str, video_type: VideoType | None = None) -> None:
+    def info(cls, label: Label, msg: str, options: tuple[VideoType, StreamEngine | None] | None = None) -> None:
         """Logs an info message with the specified label."""
-        if video_type:
-            cls._logger.info(f"[{label}/{video_type}] {msg}")
+        if options:
+            if options[1]:
+                cls._logger.info(f"[{label}/{options[0]}/{options[1]}] {msg}")
+            else:
+                cls._logger.info(f"[{label}/{options[0]}] {msg}")
         else:
             cls._logger.info(f"[{label}] {msg}")
 
     @classmethod
-    def warn(cls, label: Label, msg: str, video_type: VideoType | None = None) -> None:
+    def warn(cls, label: Label, msg: str, options: tuple[VideoType, StreamEngine | None] | None = None) -> None:
         """Logs a warning message with the specified label."""
-        if video_type:
-            cls._logger.warning(f"[{label}/{video_type}] {msg}")
+        if options:
+            if options[1]:
+                cls._logger.warning(f"[{label}/{options[0]}/{options[1]}] {msg}")
+            else:
+                cls._logger.warning(f"[{label}/{options[0]}] {msg}")
         else:
             cls._logger.warning(f"[{label}] {msg}")
 
     @classmethod
-    def error(cls, label: Label, msg: str, video_type: VideoType | None = None) -> None:
+    def error(cls, label: Label, msg: str, options: tuple[VideoType, StreamEngine | None] | None = None) -> None:
         """Logs an error message with the specified label."""
-        if video_type:
-            cls._logger.error(f"[{label}/{video_type}] {msg}")
+        if options:
+            if options[1]:
+                cls._logger.error(f"[{label}/{options[0]}/{options[1]}] {msg}")
+            else:
+                cls._logger.error(f"[{label}/{options[0]}] {msg}")
         else:
             cls._logger.error(f"[{label}] {msg}")
 
     @classmethod
-    def critical(cls, label: Label, msg: str, video_type: VideoType | None = None) -> None:
+    def critical(cls, label: Label, msg: str, options: tuple[VideoType, StreamEngine | None] | None = None) -> None:
         """Logs a critical message with the specified label."""
-        if video_type:
-            cls._logger.critical(f"[{label}/{video_type}] {msg}")
+        if options:
+            if options[1]:
+                cls._logger.critical(f"[{label}/{options[0]}/{options[1]}] {msg}")
+            else:
+                cls._logger.critical(f"[{label}/{options[0]}] {msg}")
         else:
             cls._logger.critical(f"[{label}] {msg}")
 
@@ -426,9 +448,9 @@ def run_bg(coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
     task.add_done_callback(background_tasks.discard)
     return task
 
-def create_stream_key(video_type: VideoType, logical_channel_id: LogicalChannelId | PreviewId) -> StreamKey:
+def create_stream_key(stream_engine: StreamEngine, video_type: VideoType, logical_channel_id: LogicalChannelId | PreviewId) -> StreamKey:
     """Generates a unique key for the stream."""
-    return StreamKey(f"{video_type}_{logical_channel_id}")
+    return StreamKey(f"{stream_engine}_{video_type}_{logical_channel_id}")
 
 
 def create_video_key(stream_key: StreamKey, source_id: SourceId) -> VideoKey:
@@ -463,9 +485,14 @@ def is_preview_id(input_id: PreviewId | LogicalChannelId) -> bool:
     return input_id.startswith("preview_")
 
 
-def get_segment_format() -> str:
-    """Returns the format string for HLS segment files."""
-    return "segment_%05d.ts"
+def get_playlist_path(channel_hls_dir: Path) -> Path:
+    """Generates the playlist path for a given channel and stream engine."""
+    return channel_hls_dir / "playlist.m3u8"
+
+
+def get_segment_path(channel_hls_dir: Path, seg_format: str) -> Path:
+    """Returns the segment path for HLS segment files."""
+    return channel_hls_dir / seg_format
 
 
 def get_segment_number(segment_filename: str) -> SegmentNum:

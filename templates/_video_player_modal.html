@@ -9,7 +9,7 @@
 </div>
 
 <div id="stream-control" class="d-none">
-    <button id="stop-stream-btn" hx-post="/hls/{{ preview_id }}/stop"
+    <button id="stop-stream-btn" hx-post="/hls/{{ preview_id }}/{{ stream_engine }}/stop"
         hx-trigger="click" hx-swap="none">Stop Stream</button>
 </div>
 

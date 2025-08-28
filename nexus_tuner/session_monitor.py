@@ -18,7 +18,7 @@ class GhostSessionMonitor:
     A background task that monitors media servers (Emby/Jellyfin) to find and
     terminate "ghost" streams using asyncio.
     
-    A ghost stream is an FFmpeg process that is running on the server but has no
+    A ghost stream is an process that is running on the server but has no
     corresponding active viewing session on any configured media server.
     """
     __slots__ = (
@@ -50,7 +50,7 @@ class GhostSessionMonitor:
         return instance
 
     async def _fetch_sessions_from_server(self, session: aiohttp.ClientSession, base_url: str | None, api_key: str | None, server_type: str) -> list[Any]:
-        """Fetches active session data from a single media server asynchronously."""
+        """Fetches active session data from a single media server."""
         if not base_url or not api_key:
             return []
         
@@ -92,7 +92,7 @@ class GhostSessionMonitor:
         return active_lc_ids
 
     async def _check_for_ghost_sessions(self) -> None:
-        """The main logic loop to find and terminate ghost streams asynchronously."""
+        """The main logic loop to find and terminate ghost streams."""
         self.lc_title_to_lc_id_map = {channel_data["logical_channel_title"]: lc_id
                     for lc_id, channel_data in (await self.handler.copy_client_channels()).items()}
 
@@ -105,7 +105,7 @@ class GhostSessionMonitor:
         mpegts_video_keys: list[VideoKey] = []
         hls_video_keys: list[VideoKey] = []
         async with self.stream_manager.stream_process_lock:
-            for video_key, data in self.stream_manager.ffmpeg_processes.items():
+            for video_key, data in self.stream_manager.processes.items():
                 if data['is_preview']:
                     continue
                 if not data['is_long_term']:
@@ -113,20 +113,21 @@ class GhostSessionMonitor:
                 if data['logical_channel_id'] in legitimately_active_lc_ids:
                     continue
                 video_type = data['video_type']
-                Log.warn(Label.SESSION, f"{data['video_name']}: Found ghost session.", video_type)
+                stream_engine = data['stream_engine']
+                Log.warn(Label.SESSION, f"{data['video_name']}: Found ghost session.", (video_type, stream_engine))
                 if video_type == VideoType.MPEGTS:
                     mpegts_video_keys.append(video_key)
                 elif video_type == VideoType.HLS:
                     hls_video_keys.append(video_key)
                 else:
-                    Log.error(Label.SESSION, f"{data['video_name']}: Unknown video type '{video_type}', cannot terminate.", video_type)
+                    Log.error(Label.SESSION, f"{data['video_name']}: Unknown video type '{video_type}', cannot terminate.", (video_type, stream_engine))
         if not mpegts_video_keys and not hls_video_keys:
             return
 
         for video_key in mpegts_video_keys:
             if video_key in MPEGTSStream.streams:
                 MPEGTSStream.streams[video_key].shutdown()
-        await self.stream_manager.stop_ffmpeg_processes(hls_video_keys)
+        await self.stream_manager.stop_processes(hls_video_keys)
 
     async def _run(self) -> NoReturn:
         """The main execution loop for the monitor task."""

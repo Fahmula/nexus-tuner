@@ -82,7 +82,7 @@ class ChannelHandler:
 
     async def _load_and_process_configurations(self, *, update_providers: bool, force_discover_sources: bool) -> None:
         """
-        Loads all data from JSON files and rebuilds the in-memory channel structures asynchronously.
+        Loads all data from JSON files and rebuilds the in-memory channel structures.
         """
         logged_waiting = False
         await self._mutex.acquire()
@@ -224,12 +224,12 @@ class ChannelHandler:
         return m3u_sources
 
     def _generate_source_id(self, provider_alias: ProviderAlias, stream_url: StreamURL) -> SourceId:
-        """Creates a stable, unique ID for a source stream. (Sync - pure function)"""
+        """Creates a stable, unique ID for a source stream."""
         id_material = f"{provider_alias}:{stream_url}"
         return SourceId(f"{provider_alias}:{hashlib.md5(id_material.encode('utf-8')).hexdigest()}")
     
     async def _fetch_and_parse_provider(self, session: aiohttp.ClientSession, provider_alias: ProviderAlias, m3u_url: M3UURL) -> DiscoveredSourcesData:
-        """Fetches and parses a single provider's M3U asynchronously."""
+        """Fetches and parses a single provider's M3U."""
         try:
             discovered_sources = DiscoveredSourcesDataImpl({})
             async with session.get(m3u_url, timeout=PROVIDER_FETCH_TIMEOUT, headers={'User-Agent': NEXUS_TUNER_USER_AGENT}) as response:
@@ -386,7 +386,7 @@ class ChannelHandler:
             self._pending_streams.remove(stream_key)
 
     def generate_main_client_m3u(self) -> None:
-        """Generates the main M3U content to be served to clients. (Sync - CPU-bound)"""
+        """Generates the main M3U content to be served to clients."""
         m3u_lines = ["#EXTM3U x-tvg-url=\"\""]
         if not self.config.nexus_url:
             Log.error(self.label, "NEXUS_URL not set. Client M3U URLs will be incorrect.")
@@ -406,7 +406,7 @@ class ChannelHandler:
             extinf_parts.append(f'group-title="{client_channel['group_title']}"')
             
             m3u_lines.append(f"#EXTINF:-1 {' '.join(extinf_parts)},{name}")
-            m3u_lines.append(f"{self.config.nexus_url}/{VideoType.HLS}/{logical_channel_id}/playlist.m3u8")
+            m3u_lines.append(f"{self.config.nexus_url}/{VideoType.HLS}/{logical_channel_id}/{self.config.stream_engine}/playlist.m3u8")
         
         self._main_m3u_playlist = MainM3UPlaylist("\n".join(m3u_lines) + "\n")
 
@@ -415,7 +415,7 @@ class ChannelHandler:
         return self._client_channels.get(logical_channel_id, {}).get("sources", [])
 
     def _update_providers_slots(self) -> None:
-        """Initializes or updates provider slots based on config asynchronously."""
+        """Initializes or updates provider slots based on config."""
         providers_to_delete: set[ProviderAlias] = set()
         for alias, curr_details in self._slots.items():
             if alias not in self._providers_data:
@@ -454,11 +454,11 @@ class ChannelHandler:
             Log.info(self.label, f"Initialized slots for provider '{alias}' with capacity {max_streams}")
         
     async def reload_handler_config(self, *, update_providers: bool = False, force_discover_sources: bool = False) -> None:
-        """Public method to trigger a full async reload of the handler's configuration."""
+        """Public method to trigger a full reload of the handler's configuration."""
         await self._load_and_process_configurations(update_providers=update_providers, force_discover_sources=force_discover_sources)
 
     async def get_provider_stream_status(self) -> ProviderStatuses:
-        """Calculates current stream usage for each provider asynchronously."""
+        """Calculates current stream usage for each provider."""
         async with self._mutex:
             return ProviderStatuses({alias: {
                 "alias": alias,
@@ -470,7 +470,7 @@ class ChannelHandler:
     # --- UI Interaction Methods ---
     
     async def add_provider(self, alias: ProviderAlias, m3u_url: M3UURL, max_streams: MaxStreams) -> bool:
-        """Adds a new provider to the configuration asynchronously."""
+        """Adds a new provider to the configuration."""
         if not alias: raise ValueError("Provider alias cannot be empty.")
         if not m3u_url: raise ValueError("Provider URL cannot be empty.")
         if max_streams < 0: raise ValueError("Max concurrent streams must be at least 0.")
@@ -492,7 +492,7 @@ class ChannelHandler:
             return True
 
     async def update_provider(self, alias: ProviderAlias, m3u_url: M3UURL, max_streams: MaxStreams) -> bool:
-        """Updates an existing provider's configuration asynchronously."""
+        """Updates an existing provider's configuration."""
         if not m3u_url: raise ValueError("Provider URL cannot be empty.")
         if max_streams < 0: raise ValueError("Max concurrent streams must be at least 0.")
 
@@ -513,7 +513,7 @@ class ChannelHandler:
             return True
 
     async def delete_provider(self, alias: ProviderAlias) -> bool:
-        """Deletes a provider from the configuration asynchronously."""
+        """Deletes a provider from the configuration."""
         async with self._mutex:
             if alias not in self._providers_data:
                 raise ValueError(f"Provider with alias '{alias}' not found.")
@@ -566,7 +566,7 @@ class ChannelHandler:
                 return LogicalChannelInfoWithId({**lc_info, "logical_channel_id": logical_channel_id})
 
     def _generate_next_logical_channel_id(self) -> LogicalChannelId:
-        """Generates the next available ID. (Sync - CPU-bound)"""
+        """Generates the next available ID."""
         existing_id_strings = self._logical_channels_data.keys()
         if not existing_id_strings: return INITIAL_LOGICAL_CHANNEL_ID
         numeric_ids = [int(id_str) for id_str in existing_id_strings]

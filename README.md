@@ -13,9 +13,9 @@
 > * **`Automatic Quality Monitoring:`** `NexusTuner` continuously monitors the health of each source along with its resolution, bitrate, and framerate. No more endless tinkering to find the best source, just select them all and `NexusTuner` automatically chooses the highest quality and most reliable stream from your configured sources when a channel is requested.
 > * **`Fast & Reliable Streams:`** When a channel is requested, `NexusTuner` starts multiple mapped sources in parallel (respecting each provider's limit). It then quickly selects the best healthy stream based on priority and quality, leading to faster, more reliable, and more consistent channel startup times. Additionally, it will automatically switch to another source if the current one fails, ensuring uninterrupted viewing.
 > * **`Dead Source Detection:`** Once configured, your channel lineup remains stable and consistent to your media clients, even if you completely change Providers or remove all source mappings. Additionally, `NexusTuner` automatically detects dead mapped sources (e.g. stream url changed) and intelligently tries to remap them based on their tvg data. If it's not possible, channels with dead sources will be logged and marked in the UI with a convenient button to remove them. In any case, you will never need to remap a channel in your media clients unless you've deleted the logical channel itself.
-> * **`On-the-Fly Remux:`** All streams are processed via FFmpeg to produce an HLS or MPEGTS format, maximizing compatibility across a wide range of media client devices and applications. Each stream type also supports sharing the same FFmpeg process for multiple simultaneous connections automatically, reducing resource usage and provider slot usage.
+> * **`On-the-Fly Remux:`** All streams are processed via FFmpeg/VLC to produce an HLS or MPEGTS format, maximizing compatibility across a wide range of media client devices and applications. Each stream type also supports sharing the same process for multiple simultaneous connections automatically, reducing resource usage and provider slot usage.
 > * **HDHomeRun Server:** `NexusTuner` can act as an HDHomeRun server, allowing you to use your IPTV channels with compatible media clients that support HDHomeRun such as Plex, Emby, Jellyfin, and more.
-> * **Ghost Session Cleanup:** Integrates with Emby and Jellyfin to detect and terminate "ghost" streams, FFmpeg processes that are still running after a media client has disconnected improperly, freeing up valuable provider slots.
+> * **Ghost Session Cleanup:** Integrates with Emby and Jellyfin to detect and terminate "ghost" streams, processes that are still running after a media client has disconnected improperly, freeing up valuable provider slots.
 
 
 ## Dashboard
@@ -55,8 +55,8 @@ venv\Scripts\pip install -r requirements.txt  # Windows
 ```
 
 > [!IMPORTANT]
-> You'll need to install FFmpeg separately on your system, you'll be able to configure the path to
-> FFmpeg in the `.env` file later. ffprobe will be inferred from the FFmpeg path.
+> You'll need to install FFmpeg (and optionally VLC) separately on your system, you'll be able to
+> configure the paths in the `.env` file later. ffprobe will be inferred from the FFmpeg path.
 
 ### Configuring `NexusTuner`
 
@@ -83,24 +83,26 @@ Non-docker users will also need to set two more options:
 
 3. **`NEXUS_CONFIG_DIR`**: The directory where `NexusTuner` will store its configuration files.
 4. **`NEXUS_FFMPEG_PATH`**: The path to the FFmpeg executable on your system.
+5. **`NEXUS_VLC_PATH`**: The path to the VLC executable on your system (optional).
 
 Here are all the available environment variables:
 
-| Variable                              | Description                                                                                             | Example                               |
-| :------------------------------------ | :------------------------------------------------------------------------------------------------------ | :------------------------------------ |
-| **`NEXUS_CONFIG_DIR`** (Required)     | The directory where `NexusTuner` will store its configuration files.                                    | `/path/to/config/folder/nexus-tuner`  |
-| **`NEXUS_FFMPEG_PATH`** (Required)    | The path to the FFmpeg executable on your system. Used for processing streams.                          | `/usr/bin/ffmpeg`                     |
-| **`NEXUS_URL`** (Required)            | The full URL of your `NexusTuner` instance, without the port. Used for UI and building playlist URLs.   | `http://192.168.1.100`                |
-| `NEXUS_PORT`                          | The internal port the application listens on.                                                           | `4040`                                |
-| `NEXUS_FFMPEG_INACTIVITY_TIMEOUT`     | Seconds of inactivity before a stream is stopped. Inactive streams will be pruned earlier when needed.  | `900`                                 |
-| `NEXUS_FFMPEG_LOGS_RETENTION_SECONDS` | How long to keep FFmpeg logs in seconds.                                                                | `86400`                               |
-| `NEXUS_LOG_BACKUP_COUNT`              | Number of days of log backups to keep.                                                                  | `7`                                   |
-| `NEXUS_BACKUP_COUNT`                  | Number of days of config backups to keep. Each backup is `<1MB` in size.                                | `30`                                  |
-| `NEXUS_GHOST_SESSION_CHECK_INTERVAL`  | Interval in seconds to check Jellyfin/Emby servers for ghost sessions.                                  | `60`                                  |
-| `NEXUS_EMBY_URL`                      | (Optional) URL for your Emby server to enable ghost session cleanup.                                    | `http://emby.local:8096`              |
-| `NEXUS_EMBY_API_KEY`                  | (Optional) API key for your Emby server.                                                                | `your_emby_api_key`                   |
-| `NEXUS_JELLYFIN_URL`                  | (Optional) URL for your Jellyfin server to enable ghost session cleanup.                                | `http://jellyfin.local:8096`          |
-| `NEXUS_JELLYFIN_API_KEY`              | (Optional) API key for your Jellyfin server.                                                            | `your_jellyfin_api_key`               |
+| Variable                               | Description                                                                                             | Example                               |
+| :------------------------------------- | :------------------------------------------------------------------------------------------------------ | :------------------------------------ |
+| **`NEXUS_CONFIG_DIR`** (Required)      | The directory where `NexusTuner` will store its configuration files.                                    | `/path/to/config/folder/nexus-tuner`  |
+| **`NEXUS_URL`** (Required)             | The full URL of your `NexusTuner` instance, without the port. Used for UI and building playlist URLs.   | `http://192.168.1.100`                |
+| **`NEXUS_FFMPEG_PATH`** (Required)     | The path to the FFmpeg executable on your system. Used for processing streams.                          | `/usr/bin/ffmpeg`                     |
+| `NEXUS_VLC_PATH`                       | The path to the VLC executable on your system. Used for processing streams.                             | `/usr/bin/vlc`                        |
+| `NEXUS_PORT`                           | The internal port the application listens on.                                                           | `4040`                                |
+| `NEXUS_PROCESS_INACTIVITY_TIMEOUT`     | Seconds of inactivity before a stream is stopped. Inactive streams will be pruned earlier when needed.  | `900`                                 |
+| `NEXUS_PROCESS_LOGS_RETENTION_SECONDS` | How long to keep process logs in seconds.                                                               | `86400`                               |
+| `NEXUS_LOG_BACKUP_COUNT`               | Number of days of log backups to keep.                                                                  | `7`                                   |
+| `NEXUS_BACKUP_COUNT`                   | Number of days of config backups to keep. Each backup is `<1MB` in size.                                | `30`                                  |
+| `NEXUS_GHOST_SESSION_CHECK_INTERVAL`   | Interval in seconds to check Jellyfin/Emby servers for ghost sessions.                                  | `60`                                  |
+| `NEXUS_EMBY_URL`                       | (Optional) URL for your Emby server to enable ghost session cleanup.                                    | `http://emby.local:8096`              |
+| `NEXUS_EMBY_API_KEY`                   | (Optional) API key for your Emby server.                                                                | `your_emby_api_key`                   |
+| `NEXUS_JELLYFIN_URL`                   | (Optional) URL for your Jellyfin server to enable ghost session cleanup.                                | `http://jellyfin.local:8096`          |
+| `NEXUS_JELLYFIN_API_KEY`               | (Optional) API key for your Jellyfin server.                                                            | `your_jellyfin_api_key`               |
 
 ### Run `NexusTuner`
 
