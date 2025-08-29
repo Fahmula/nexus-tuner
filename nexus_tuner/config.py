@@ -498,7 +498,8 @@ class Config:
                     raise ValueError(f'"{key1}": expected str, got {type(key1)}')
                 if type(val1) is not dict:
                     raise ValueError(f'"{key1}" val: expected dict, got {type(val1)}')
-                for key2 in ("statuses", "widths", "heights", "bitrates", "framerates", "updated_at"):
+                val1.setdefault("runtimes", [])
+                for key2 in ("statuses", "widths", "heights", "bitrates", "framerates", "runtimes", "updated_at"):
                     if key2 not in val1:
                         raise ValueError(f'"{key1}" - missing required key "{key2}"')
                     val2 = val1[key2]
@@ -532,6 +533,12 @@ class Config:
                         for index, item in enumerate(val2):
                             if type(item) is not float or item < 0:
                                 raise ValueError(f'"{key1}" - "framerates" item {index}: expected non-negative float, got {item}')
+                    elif key2 == "runtimes":
+                        if type(val2) is not list:
+                            raise ValueError(f'"{key1}" - "runtimes": expected list, got {type(val2)}')
+                        for index, item in enumerate(val2):
+                            if type(item) is not float or item < 0:
+                                raise ValueError(f'"{key1}" - "runtimes" item {index}: expected non-negative float, got {item}')
                     elif key2 == "updated_at":
                         try:
                             if type(val2) is not str:

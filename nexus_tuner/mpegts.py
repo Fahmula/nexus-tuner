@@ -110,6 +110,9 @@ class MPEGTSStream:
                     if self._cancelled:
                         raise asyncio.CancelledError()
                     Log.error(Label.STREAM, f"{self.video_name}: Error reading from stream: {e}", (VideoType.MPEGTS, self.stream_engine))
+                    if not process_info["errored_at"]:
+                        cast(ProcessInfoMutable, process_info)["errored_at"] = datetime.now()
+                        Log.debug(Label.STREAM, f"{self.video_name}: Updated error timestamp.", (VideoType.MPEGTS, self.stream_engine))
                     await self.stream_manager.stop_process(self.video_key)
                     res = await self.recreate_stream()
                     if isinstance(res, Response):

@@ -8,7 +8,7 @@ from nexus_tuner.handler import ChannelHandler
 from nexus_tuner.slots import ProviderSlots
 from nexus_tuner.utils import (PROCESS_TERMINATE_TIMEOUT, NEXUS_TUNER_USER_AGENT, Bitrate, BitrateScore, DateTimeISO, Framerate, FramerateScore, Height,
                                 Label, Log, LogicalChannelId, Percent, ProbeInfo, ProbeSuccess, ProviderAlias, QualityInfoImpl, QualityScores,
-                                QualityScoresImpl, ResolutionScore, QualityCacheData, QualityCacheDataImpl, SourceId, StreamName,
+                                QualityScoresImpl, ResolutionScore, QualityCacheData, QualityCacheDataImpl, Runtime, RuntimeScore, SourceId, StreamName,
                                 StreamURL, TotalScore, UptimeScore, VideoName, Width, create_stream_name, create_video_name, run_bg)
 
 # --- Constants ---
@@ -16,10 +16,12 @@ RESOLUTION_WEIGHT: Final[int] = 50
 BITRATE_WEIGHT: Final[int] = 30
 FRAMERATE_WEIGHT: Final[int] = 20
 UPTIME_WEIGHT: Final[int] = 0
+RUNTIME_WEIGHT: Final[int] = 0
 
 RESOLUTION_NORM: Final[int] = 2160
 BITRATE_NORM: Final[int] = 12_000_000
 FRAMERATE_NORM: Final[int] = 60
+RUNTIME_NORM: Final[int] = 60 * 60 * 12
 
 BACKGROUND_SLOT_WAIT_INTERVAL: Final[int] = 1
 QUALITY_MONITOR_TIMEOUT: Final[int] = 5
@@ -50,6 +52,31 @@ class QualityMonitor:
         """Returns the current quality scores for all sources."""
         async with self._mutex:
             return QualityScoresImpl({**self._quality_scores})
+
+    async def reload_quality_scores(self) -> None:
+        """Reloads the quality scores from the configuration."""
+        async with self._mutex:
+            quality_cache = await self.config.get_quality_cache()
+            if not quality_cache:
+                Log.critical(Label.QUALITY, "Quality cache is missing or corrupted, cannot reload quality scores.")
+                return
+            self._build_quality_scores(quality_cache)
+
+    def create_default_entry(self, quality_cache: QualityCacheDataImpl, source_id: SourceId) -> None:
+        """Creates a default quality entry for a source."""
+        quality_cache[source_id] = QualityInfoImpl({
+            "updated_at": DateTimeISO(datetime.now().isoformat()), "statuses": [], "widths": [],
+            "heights": [], "bitrates": [], "framerates": [], "runtimes": []
+        })
+
+    def trim_entry(self, source_entry: QualityInfoImpl) -> None:
+        """Trims the history of a quality entry to the maximum allowed length."""
+        source_entry["statuses"] = source_entry["statuses"][-MAX_HISTORY_PER_SOURCE:]
+        source_entry["widths"] = source_entry["widths"][-MAX_HISTORY_PER_SOURCE:]
+        source_entry["heights"] = source_entry["heights"][-MAX_HISTORY_PER_SOURCE:]
+        source_entry["bitrates"] = source_entry["bitrates"][-MAX_HISTORY_PER_SOURCE:]
+        source_entry["framerates"] = source_entry["framerates"][-MAX_HISTORY_PER_SOURCE:]
+        source_entry["runtimes"] = source_entry["runtimes"][-MAX_HISTORY_PER_SOURCE:]
 
     async def remove_source(self, source_id: SourceId) -> bool:
         """Removes a source from the quality scores and cache."""
@@ -323,10 +350,7 @@ class QualityMonitor:
                         if not await self.handler.get_discovered_source(source_id):
                             Log.warn(Label.QUALITY, f"{video_name}: Not found in discovered sources, skipping.")
                             continue  # Dead mapping that was removed after the start of this analysis
-                        quality_cache[source_id] = QualityInfoImpl({
-                            "updated_at": DateTimeISO(datetime.now().isoformat()), "statuses": [], "widths": [],
-                            "heights": [], "bitrates": [], "framerates": []
-                        })
+                        self.create_default_entry(quality_cache, source_id)
                     source_entry = quality_cache[source_id]
 
                     source_entry["updated_at"] = DateTimeISO(datetime.now().isoformat())
@@ -341,14 +365,9 @@ class QualityMonitor:
                     else:
                         source_entry["statuses"].append("offline")
                         if input_lc_id:
-                            Log.info(Label.QUALITY, f"{video_name}: Offline")
+                            Log.warn(Label.QUALITY, f"{video_name}: Offline")
 
-                    if len(source_entry["statuses"]) > MAX_HISTORY_PER_SOURCE:
-                        source_entry["statuses"] = source_entry["statuses"][-MAX_HISTORY_PER_SOURCE:]
-                        source_entry["widths"] = source_entry["widths"][-MAX_HISTORY_PER_SOURCE:]
-                        source_entry["heights"] = source_entry["heights"][-MAX_HISTORY_PER_SOURCE:]
-                        source_entry["bitrates"] = source_entry["bitrates"][-MAX_HISTORY_PER_SOURCE:]
-                        source_entry["framerates"] = source_entry["framerates"][-MAX_HISTORY_PER_SOURCE:]
+                    self.trim_entry(source_entry)
                     modified_cache[source_id] = source_entry
                 if not await self.config.save_quality_cache(quality_cache):
                     Log.critical(Label.QUALITY, f"{stream_name}: Failed to save quality cache, stopping analysis.")
@@ -357,26 +376,55 @@ class QualityMonitor:
         if input_lc_id:
             Log.info(Label.QUALITY, f"{valid_mappings[0][3]}: Completed analysis for {len(valid_mappings[0][2])} mappings(s).")
 
+    async def append_runtime(self, source_id: SourceId, started_at: datetime, errored_at: datetime) -> None:
+        """Appends runtime information for a source."""
+        runtime = Runtime((errored_at - started_at).total_seconds())
+        async with self._mutex:
+            quality_cache = await self.config.get_quality_cache()
+            if quality_cache is None:
+                Log.critical(Label.QUALITY, f"{source_id}: Failed to get quality cache for new runtime of {runtime} seconds.")
+                return
+            if source_id not in quality_cache:
+                if not await self.handler.get_discovered_source(source_id):
+                    Log.warn(Label.QUALITY, f"{source_id}: Not found in discovered sources when adding new runtime of {runtime} seconds.")
+                    return
+                self.create_default_entry(quality_cache, source_id)
+            source_entry = quality_cache[source_id]
+            source_entry["runtimes"].append(runtime)
+            self.trim_entry(source_entry)
+            if not await self.config.save_quality_cache(quality_cache):
+                Log.critical(Label.QUALITY, f"{source_id}: Failed to save quality cache when adding new runtime of {runtime} seconds.")
+                return
+            self._build_quality_scores(QualityCacheDataImpl({source_id: source_entry}))
+            Log.debug(Label.QUALITY, f"{source_id}: Added new runtime of {runtime} seconds.")
+
     def _build_quality_scores(self, quality_cache: QualityCacheData) -> None:
         """Calculates quality scores and updates the internal state."""
-        for source_id, cache_entry in quality_cache.items():
-            avg_width = Width(sum(cache_entry["widths"]) / len(cache_entry["widths"]) if cache_entry["widths"] else 0)
-            avg_height = Height(sum(cache_entry["heights"]) / len(cache_entry["heights"]) if cache_entry["heights"] else 0)
-            avg_bitrate = Bitrate(sum(cache_entry["bitrates"]) / len(cache_entry["bitrates"]) if cache_entry["bitrates"] else 0)
-            avg_framerate = Framerate(sum(cache_entry["framerates"]) / len(cache_entry["framerates"]) if cache_entry["framerates"] else 0)
-            uptime = Percent(sum(1 for s in cache_entry["statuses"] if s == "online") / len(cache_entry["statuses"]) if cache_entry["statuses"] else 0)
+        new_quality_scores = QualityScoresImpl({**self._quality_scores})
+        for source_id, source_entry in quality_cache.items():
+            avg_width = Width(sum(source_entry["widths"]) / len(source_entry["widths"]) if source_entry["widths"] else 0)
+            avg_height = Height(sum(source_entry["heights"]) / len(source_entry["heights"]) if source_entry["heights"] else 0)
+            avg_bitrate = Bitrate(sum(source_entry["bitrates"]) / len(source_entry["bitrates"]) if source_entry["bitrates"] else 0)
+            avg_framerate = Framerate(sum(source_entry["framerates"]) / len(source_entry["framerates"]) if source_entry["framerates"] else 0)
+            uptime = Percent(sum(1 for s in source_entry["statuses"] if s == "online") / len(source_entry["statuses"]) if source_entry["statuses"] else 0)
             
-            height_score = ResolutionScore(RESOLUTION_WEIGHT * min(avg_height / float(RESOLUTION_NORM), 1.0))
-            bitrate_score = BitrateScore(BITRATE_WEIGHT * min(avg_bitrate / float(BITRATE_NORM), 1.0))
-            framerate_score = FramerateScore(FRAMERATE_WEIGHT * min(avg_framerate / float(FRAMERATE_NORM), 1.0))
+            height_score = ResolutionScore(RESOLUTION_WEIGHT * min(avg_height / RESOLUTION_NORM, 1.0))
+            bitrate_score = BitrateScore(BITRATE_WEIGHT * min(avg_bitrate / BITRATE_NORM, 1.0))
+            framerate_score = FramerateScore(FRAMERATE_WEIGHT * min(avg_framerate / FRAMERATE_NORM, 1.0))
             uptime_score = UptimeScore(UPTIME_WEIGHT * uptime)
 
-            new_quality_scores = QualityScoresImpl({**self._quality_scores})
+            if len(source_entry["runtimes"]):
+                avg_runtime = Runtime(sum(source_entry["runtimes"]) / len(source_entry["runtimes"]))
+                runtime_score = RuntimeScore(RUNTIME_WEIGHT * min(avg_runtime / RUNTIME_NORM, 1.0))
+            else:
+                avg_runtime = Runtime(0)
+                runtime_score = RuntimeScore(RUNTIME_WEIGHT)  # Default to max so all streams eventually get a score
+
             new_quality_scores[source_id] = {
                 "width": avg_width, "height": avg_height, "bitrate": avg_bitrate,
-                "framerate": avg_framerate, "uptime": uptime, "resolution_score": height_score,
-                "bitrate_score": bitrate_score, "framerate_score": framerate_score,
-                "uptime_score": uptime_score,
-                "total_score": TotalScore(height_score + bitrate_score + framerate_score + uptime_score),
+                "framerate": avg_framerate, "runtime": avg_runtime, "uptime": uptime,
+                "resolution_score": height_score, "bitrate_score": bitrate_score,
+                "framerate_score": framerate_score, "uptime_score": uptime_score, "runtime_score": runtime_score,
+                "total_score": TotalScore(height_score + bitrate_score + framerate_score + uptime_score + runtime_score),
             }
-            self._quality_scores = new_quality_scores
+        self._quality_scores = new_quality_scores

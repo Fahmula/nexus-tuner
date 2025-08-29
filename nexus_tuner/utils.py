@@ -60,6 +60,8 @@ URL_REGEX: Final[re.Pattern[str]] = re.compile(
 
 
 DateTimeISO = NewType("DateTimeISO", str)
+DurationStr = NewType("DurationStr", str)
+RelativeTimeStr = NewType("RelativeTimeStr", str)
 Percent = NewType("Percent", float)
 PercentDisplay = NewType("PercentDisplay", float)
 
@@ -89,10 +91,12 @@ Width = NewType("Width", float)
 Height = NewType("Height", float)
 Bitrate = NewType("Bitrate", float)
 Framerate = NewType("Framerate", float)
+Runtime = NewType("Runtime", float)
 ResolutionScore = NewType("ResolutionScore", float)
 BitrateScore = NewType("BitrateScore", float)
 FramerateScore = NewType("FramerateScore", float)
 UptimeScore = NewType("UptimeScore", float)
+RuntimeScore = NewType("RuntimeScore", float)
 TotalScore = NewType("TotalScore", float)
 
 TVGName = NewType("TVGName", str)
@@ -177,6 +181,7 @@ class LogicalChannelInfoWithId(LogicalChannelInfo):
 class LogicalChannelMetrics(TypedDict):
     health_score: ReadOnly[PercentDisplay | None]
     lowest_uptime: ReadOnly[PercentDisplay | None]
+    lowest_runtime: ReadOnly[Runtime | None]
     enabled_mappings: ReadOnly[int]
     discovered_mappings: ReadOnly[int]
 
@@ -194,6 +199,7 @@ class SourceMappingInfoWithId(SourceMappingInfo):
 class SourceMetrics(TypedDict):
     priority: ReadOnly[Priority]
     uptime: ReadOnly[PercentDisplay | None]
+    runtime: ReadOnly[Runtime | None]
 
 class SourceInfo(TypedDict):
     source_id: ReadOnly[SourceId]
@@ -213,6 +219,7 @@ class QualityInfo(TypedDict):
     heights: ReadOnly[tuple[Height, ...]]
     bitrates: ReadOnly[tuple[Bitrate, ...]]
     framerates: ReadOnly[tuple[Framerate, ...]]
+    runtimes: ReadOnly[tuple[Runtime, ...]]
     updated_at: ReadOnly[DateTimeISO]
 class QualityInfoImpl(TypedDict):
     statuses: list[Literal["online", "offline"]]
@@ -220,6 +227,7 @@ class QualityInfoImpl(TypedDict):
     heights: list[Height]
     bitrates: list[Bitrate]
     framerates: list[Framerate]
+    runtimes: list[Runtime]
     updated_at: DateTimeISO
 QualityCacheDataImpl = NewType("QualityCacheDataImpl", dict[SourceId, QualityInfoImpl])
 _QualityCacheDataReadOnly = NewType("_QualityCacheDataReadOnly", Mapping[SourceId, QualityInfo])
@@ -231,10 +239,12 @@ class QualityScore(TypedDict):
     bitrate: ReadOnly[Bitrate]
     framerate: ReadOnly[Framerate]
     uptime: ReadOnly[Percent]
+    runtime: ReadOnly[Runtime]
     resolution_score: ReadOnly[ResolutionScore]
     bitrate_score: ReadOnly[BitrateScore]
     framerate_score: ReadOnly[FramerateScore]
     uptime_score: ReadOnly[UptimeScore]
+    runtime_score: ReadOnly[RuntimeScore]
     total_score: ReadOnly[TotalScore]
 QualityScoresImpl = NewType("QualityScoresImpl", dict[SourceId, QualityScore])
 _QualityScoresReadOnly = NewType("_QualityScoresReadOnly", Mapping[SourceId, QualityScore])
@@ -263,11 +273,14 @@ class MPEGTSProcessInfo(TypedDict):
     process: ReadOnly[asyncio.subprocess.Process]
     provider_alias: ReadOnly[ProviderAlias]
     logical_channel_id: ReadOnly[LogicalChannelId | PreviewId]
+    source_id: ReadOnly[SourceId]
     stream_engine: ReadOnly[StreamEngine]
     video_type: ReadOnly[Literal[VideoType.MPEGTS]]
     video_name: ReadOnly[VideoName]
     is_long_term: ReadOnly[bool]
     is_preview: ReadOnly[bool]
+    started_at: ReadOnly[datetime]
+    errored_at: ReadOnly[datetime | None]
     last_access: ReadOnly[datetime]
     is_mpegts_active: ReadOnly[bool]
     channel_hls_dir: ReadOnly[None]
@@ -276,11 +289,14 @@ class HLSProcessInfo(TypedDict):
     process: ReadOnly[asyncio.subprocess.Process]
     provider_alias: ReadOnly[ProviderAlias]
     logical_channel_id: ReadOnly[LogicalChannelId | PreviewId]
+    source_id: ReadOnly[SourceId]
     stream_engine: ReadOnly[StreamEngine]
     video_type: ReadOnly[Literal[VideoType.HLS]]
     video_name: ReadOnly[VideoName]
     is_long_term: ReadOnly[bool]
     is_preview: ReadOnly[bool]
+    started_at: ReadOnly[datetime]
+    errored_at: ReadOnly[datetime | None]
     last_access: ReadOnly[datetime]
     is_mpegts_active: ReadOnly[None]
     channel_hls_dir: ReadOnly[Path]
@@ -289,6 +305,7 @@ type ProcessInfo = MPEGTSProcessInfo | HLSProcessInfo
 ProcessInfos = NewType("ProcessInfos", Mapping[VideoKey, ProcessInfo])
 class ProcessInfoMutable(TypedDict):
     is_long_term: bool
+    errored_at: datetime | None
     last_access: datetime
     is_mpegts_active: bool
 ProcessInfosMutable = NewType("ProcessInfosMutable", dict[VideoKey, ProcessInfo])
@@ -505,7 +522,7 @@ def is_valid_url(url: str) -> bool:
     return bool(URL_REGEX.match(url))
 
 
-def relative_time(dt: datetime, reference_time: datetime | None = None) -> str:
+def relative_time(dt: datetime, reference_time: datetime | None = None) -> RelativeTimeStr:
     """Formats a datetime as a relative time string (e.g. '5m ago' or 'in 2h')."""
     reference_time = reference_time or datetime.now()
     delta = dt - reference_time if dt > reference_time else reference_time - dt
@@ -524,17 +541,37 @@ def relative_time(dt: datetime, reference_time: datetime | None = None) -> str:
         unit = "d"
         value = round(seconds / 86400)
     if dt < reference_time:
-        return f"{value}{unit} ago"
+        return RelativeTimeStr(f"{value}{unit} ago")
     else:
-        return f"in {value}{unit}"
+        return RelativeTimeStr(f"in {value}{unit}")
+
+
+def duration_to_str(duration: float) -> DurationStr:
+    """Converts a duration in seconds to a string representation."""
+    cur = round(duration)
+    if cur <= 0:
+        return DurationStr("0s")
+    if cur >= 3600:
+        hours, cur = divmod(cur, 3600)
+    else:
+        hours = 0
+    if cur >= 60:
+        minutes, cur = divmod(cur, 60)
+    else:
+        minutes = 0
+    hours_str = f"{hours}h" if hours else ""
+    minutes_str = f"{minutes}m" if minutes else ""
+    seconds_str = f"{cur}s" if cur else ""
+    return DurationStr(f"{hours_str}{minutes_str}{seconds_str}")
 
 
 def sort_sources(sources: list[SourceInfo] | list[SourceMappingInfoWithId], quality_scores: QualityScores, *, reverse: bool) -> dict[SourceId, Priority]:
     """Sorts sources based on priority and quality."""
-    prev_score: tuple[Priority, float, float, SourceId] | None = None
+    prev_score: tuple[Priority, float, float, float, SourceId] | None = None
     curr_priority: Priority = Priority(-1)
-    source_scores: list[tuple[Priority, float, float, SourceId]] = sorted((source["priority"],
+    source_scores: list[tuple[Priority, float, float, float, SourceId]] = sorted((source["priority"],
                              -quality_scores.get(source["source_id"], {}).get("total_score", 0),
+                             -quality_scores.get(source["source_id"], {}).get("runtime", float("inf")),
                              -quality_scores.get(source["source_id"], {}).get("uptime", 0),
                              source["source_id"]) for source in sources)
     source_priorities: dict[SourceId, Priority] = {}
@@ -542,6 +579,6 @@ def sort_sources(sources: list[SourceInfo] | list[SourceMappingInfoWithId], qual
         if score != prev_score:
             prev_score = score
             curr_priority = Priority(curr_priority + 1)
-        source_priorities[score[3]] = curr_priority
+        source_priorities[score[4]] = curr_priority
     sources.sort(key=lambda x: source_priorities[x["source_id"]], reverse=reverse)
     return source_priorities

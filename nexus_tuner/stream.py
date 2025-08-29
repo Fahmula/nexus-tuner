@@ -7,6 +7,7 @@ from typing import Any, Coroutine, Final, Iterable, NoReturn, Self, cast
 
 from nexus_tuner.config import Config
 from nexus_tuner.handler import ChannelHandler
+from nexus_tuner.quality_monitor import QualityMonitor
 from nexus_tuner.utils import (CREATE_STREAM_DEADLINE, PROCESS_TERMINATE_TIMEOUT, NEW_DEADLINE_NON_BEST, ProcessInfo, ProcessInfoMutable, ProcessInfos, ProcessInfosMutable,
                                 Label, Log, LogicalChannelId, PreviewId, ProviderAlias, SegmentNum, StreamEngine, VideoKey, VideoName, VideoType, get_playlist_path, get_segment_number, run_bg)
 
@@ -26,25 +27,26 @@ class StreamManager:
     - Providing paths to HLS playlists and segments asynchronously.
     """
     __slots__ = (
-        'config', 'handler', 'processes', 'hls_latest_segments',
-        'stream_process_lock', 'cleanup_task',
+        'config', 'handler', 'processes', 'quality_monitor',
+        'hls_latest_segments', 'stream_process_lock', 'cleanup_task',
     )
     
-    def __init__(self, config: Config, handler: ChannelHandler) -> None:
+    def __init__(self, config: Config, handler: ChannelHandler, quality_monitor: QualityMonitor) -> None:
         """
         Initializes the StreamManager.
         """
         self.config: Config = config
         self.handler: ChannelHandler = handler
+        self.quality_monitor: QualityMonitor = quality_monitor
         self.processes: ProcessInfos = ProcessInfos({})
         self.hls_latest_segments: dict[LogicalChannelId | PreviewId, dict[StreamEngine, tuple[SegmentNum, datetime]]] = {}
         self.stream_process_lock: asyncio.Lock = asyncio.Lock()
         self.cleanup_task: asyncio.Task[NoReturn]
 
     @classmethod
-    async def create(cls, config: Config, handler: ChannelHandler) -> Self:
+    async def create(cls, config: Config, handler: ChannelHandler, quality_monitor: QualityMonitor) -> Self:
         """Asynchronous factory for creating and initializing a StreamManager instance."""
-        instance = cls(config, handler)
+        instance = cls(config, handler, quality_monitor)
         instance.cleanup_task = asyncio.create_task(instance._video_cleanup_loop())
         return instance
 
@@ -154,6 +156,9 @@ class StreamManager:
                     timeout = self.config.segment_prune_timeout if data['is_preview'] else self.config.process_inactivity_timeout
                     if data['process'].returncode is not None:
                         Log.info(Label.STREAM, f"{data['video_name']}: Cleaning up dead process (PID: {data['process'].pid}).")
+                        if not data['errored_at']:
+                            cast(ProcessInfoMutable, data)['errored_at'] = datetime.now()
+                            Log.debug(Label.STREAM, f"{data['video_name']}: Updated error timestamp.", (data['video_type'], data['stream_engine']))
                         inactive_ids.add(video_key)
                     elif data['is_long_term']:
                         if not data['is_mpegts_active'] and now - data['last_access'] > timedelta(seconds=timeout):
@@ -270,6 +275,8 @@ class StreamManager:
             Log.error(Label.STREAM, f"{video_name}: Failed to clean HLS directory {hls_dir}: {e}", (video_type, stream_engine))
 
         Log.info(Label.STREAM, f"{video_name}: Successfully stopped and cleaned up all resources {{{alias}:{new_active_count}}}", (video_type, stream_engine))
+        if data_to_cleanup['errored_at'] and data_to_cleanup['is_long_term'] and not data_to_cleanup['is_preview']:
+            run_bg(self.quality_monitor.append_runtime(data_to_cleanup['source_id'], data_to_cleanup['started_at'], data_to_cleanup['errored_at']))
 
     async def stop_processes(self, video_keys: Iterable[VideoKey] | None = None) -> None:
         """Stops all (or a specified list of) active processes and cleans up resources."""

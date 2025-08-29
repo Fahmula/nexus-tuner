@@ -26,14 +26,18 @@
     </p>
     <p class="mb-1">
         <i class="fas fa-heart-pulse text-success me-2" style="width: 1.25em;"></i>
-        <strong>Health (Overall Uptime):</strong> Calculates the total probability that the channel will be online using
-        the <span class="fst-italic text-primary-emphasis">Highest Priority Sources</span>.
+        <strong>Health (Overall Uptime):</strong> The total probability that the channel will be online using
+        the uptimes from the <span class="fst-italic text-primary-emphasis">Highest Priority Sources</span>.
     </p>
     <p class="mb-0">
-        <i class="fas fa-triangle-exclamation text-warning me-2" style="width: 1.25em;"></i>
-        <strong>Lowest Uptime:</strong> Shows the uptime of the single least reliable source from the <span
-            class="fst-italic text-primary-emphasis">Highest Priority Sources</span>. This helps identify the "weakest
-        link" in your channel's mappings.
+        <i class="fas fa-percent text-warning me-2" style="width: 1.25em;"></i>
+        <strong>Lowest Uptime (<abbr title="Lowest Uptime" aria-label="Lowest Uptime">LU</abbr>):</strong> The lowest uptime from the <span class="fst-italic text-primary-emphasis">Highest Priority Sources</span>.
+        Uptime is the percentage of time the source has been available when due for quality analysis.
+    </p>
+    <p class="mb-0">
+        <i class="fas fa-clock text-info me-2" style="width: 1.25em;"></i>
+        <strong>Lowest Runtime (<abbr title="Lowest Runtime" aria-label="Lowest Runtime">LR</abbr>):</strong> The lowest runtime from the <span class="fst-italic text-primary-emphasis">Highest Priority Sources</span>.
+        Runtime is the average duration the source has been played before encountering an issue.
     </p>
 </div>
 
@@ -46,9 +50,10 @@
                 <th class="text-center">Logo</th>
                 <th class="sortable" data-sort="channel-num">Ch. No. <i class="fas fa-sort"></i></th>
                 <th class="sortable" data-sort="display-name">Ch. Title <i class="fas fa-sort"></i></th>
-                <th class="text-center sortable" data-sort="sources">Sources <i class="fas fa-sort"></i></th>
-                <th class="text-center sortable" data-sort="health">Health <i class="fas fa-sort"></i></th>
-                <th class="text-center sortable" data-sort="lowest-uptime">Lowest Uptime <i class="fas fa-sort"></i></th>
+                <th class="text-center sortable" data-sort="sources" data-bs-toggle="tooltip" title="Mapped sources">Sources <i class="fas fa-sort"></i></th>
+                <th class="text-center sortable" data-sort="health" data-bs-toggle="tooltip" title="Overall Channel Uptime (with failover)">Health <i class="fas fa-sort"></i></th>
+                <th class="text-center sortable" data-sort="lowest-uptime" data-bs-toggle="tooltip" title="Lowest Uptime from the Highest Priority Sources">Lowest Uptime <i class="fas fa-sort"></i></th>
+                <th class="text-center sortable" data-sort="lowest-runtime" data-bs-toggle="tooltip" title="Lowest Runtime from the Highest Priority Sources">Lowest Runtime <i class="fas fa-sort"></i></th>
                 <th class="sortable" data-sort="group-title">Group <i class="fas fa-sort"></i></th>
                 <th class="sortable" data-sort="tvg-id">TVG ID <i class="fas fa-sort"></i></th>
                 <th class="sortable" data-sort="logical-id">Ch. ID <i class="fas fa-sort"></i></th>
@@ -95,34 +100,66 @@
                 <td class="text-center align-middle" data-sort-value="{{ channel_metrics.health_score|default(0) }}">
                     {% if channel_metrics.health_score is defined and channel_metrics.health_score is not none %}
                     {% set score = channel_metrics.health_score %}
-                    {% if score >= 75 %}<span class="badge bg-success" data-bs-toggle="tooltip"
+                    {% if score >= 75 %}
+                        <span class="badge bg-success" data-bs-toggle="tooltip"
                         title="Overall Channel Uptime (with failover)">{{ score }}%</span>
-                    {% elif score >= 50 %}<span class="badge bg-warning" data-bs-toggle="tooltip"
+                    {% elif score >= 50 %}
+                        <span class="badge bg-warning" data-bs-toggle="tooltip"
                         title="Overall Channel Uptime (with failover)">{{ score }}%</span>
-                    {% elif score >= 25 %}<span class="badge bg-orange" data-bs-toggle="tooltip"
+                    {% elif score >= 25 %}
+                        <span class="badge bg-orange" data-bs-toggle="tooltip"
                         title="Overall Channel Uptime (with failover)">{{ score }}%</span>
-                    {% else %}<span class="badge bg-danger" data-bs-toggle="tooltip"
+                    {% else %}
+                        <span class="badge bg-danger" data-bs-toggle="tooltip"
                         title="Overall Channel Uptime (with failover)">{{ score }}%</span>
                     {% endif %}
                     {% else %}
-                    <span class="badge bg-secondary">N/A</span>
+                        <span class="badge bg-secondary"  data-bs-toggle="tooltip"
+                        title="Overall Channel Uptime (with failover)">N/A</span>
                     {% endif %}
                 </td>
 
                 <td class="text-center align-middle" data-sort-value="{{ channel_metrics.lowest_uptime|default(0) }}">
                     {% if channel_metrics.lowest_uptime is defined and channel_metrics.lowest_uptime is not none %}
                     {% set score = channel_metrics.lowest_uptime %}
-                    {% if score >= 75 %}<span class="badge bg-success" data-bs-toggle="tooltip"
-                        title="Uptime of the least reliable mapped source">{{ score }}%</span>
-                    {% elif score >= 50 %}<span class="badge bg-warning" data-bs-toggle="tooltip"
-                        title="Uptime of the least reliable mapped source">{{ score }}%</span>
-                    {% elif score >= 25 %}<span class="badge bg-orange" data-bs-toggle="tooltip"
-                        title="Uptime of the least reliable mapped source">{{ score }}%</span>
-                    {% else %}<span class="badge bg-danger" data-bs-toggle="tooltip"
-                        title="Uptime of the least reliable mapped source">{{ score }}%</span>
+                    {% if score >= 75 %}
+                        <span class="badge bg-success" data-bs-toggle="tooltip"
+                        title="Lowest Uptime from the Highest Priority Sources">{{ score }}%</span>
+                    {% elif score >= 50 %}
+                        <span class="badge bg-warning" data-bs-toggle="tooltip"
+                        title="Lowest Uptime from the Highest Priority Sources">{{ score }}%</span>
+                    {% elif score >= 25 %}
+                        <span class="badge bg-orange" data-bs-toggle="tooltip"
+                        title="Lowest Uptime from the Highest Priority Sources">{{ score }}%</span>
+                    {% else %}
+                        <span class="badge bg-danger" data-bs-toggle="tooltip"
+                        title="Lowest Uptime from the Highest Priority Sources">{{ score }}%</span>
                     {% endif %}
                     {% else %}
-                    <span class="badge bg-secondary">N/A</span>
+                        <span class="badge bg-secondary" data-bs-toggle="tooltip"
+                        title="Lowest Uptime from the Highest Priority Sources">N/A</span>
+                    {% endif %}
+                </td>
+
+                <td class="text-center align-middle" data-sort-value="{{ channel_metrics.lowest_runtime|default(3155760000) }}">
+                    {% if channel_metrics.lowest_runtime is defined and channel_metrics.lowest_runtime is not none %}
+                    {% set runtime_str = channel_metrics.lowest_runtime|duration_to_str %}
+                    {% if channel_metrics.lowest_runtime >= 8 * 60 * 60 %}
+                        <span class="badge bg-success" data-bs-toggle="tooltip"
+                        title="Lowest Runtime from the Highest Priority Sources">{{ runtime_str }}</span>
+                    {% elif channel_metrics.lowest_runtime >= 4 * 60 * 60 %}
+                        <span class="badge bg-warning" data-bs-toggle="tooltip"
+                        title="Lowest Runtime from the Highest Priority Sources">{{ runtime_str }}</span>
+                    {% elif channel_metrics.lowest_runtime >= 1 * 60 * 60 %}
+                        <span class="badge bg-orange" data-bs-toggle="tooltip"
+                        title="Lowest Runtime from the Highest Priority Sources">{{ runtime_str }}</span>
+                    {% else %}
+                        <span class="badge bg-danger" data-bs-toggle="tooltip"
+                        title="Lowest Runtime from the Highest Priority Sources">{{ runtime_str }}</span>
+                    {% endif %}
+                    {% else %}
+                        <span class="badge bg-success" data-bs-toggle="tooltip"
+                        title="Lowest Runtime from the Highest Priority Sources">&infin;</span>
                     {% endif %}
                 </td>
 

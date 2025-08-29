@@ -400,20 +400,22 @@ class CreateStream:
                 if self.video_type == VideoType.MPEGTS:
                     process = await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.PIPE, stderr=cast(IO[Any], stderr_log_file))
                     async with self.stream_manager.stream_process_lock:
+                        started_at = datetime.now()
                         cast(ProcessInfosMutable, self.stream_manager.processes)[video_key] = {
                             'process': process, 'is_long_term': False, 'is_preview': is_preview, 'stream_engine': self.stream_engine,
-                            'video_type': VideoType.MPEGTS, 'video_name': video_name, 'provider_alias': provider_alias,
-                            'logical_channel_id': self.logical_channel_id, 'channel_hls_dir': None,
-                            'last_access': datetime.now(), 'is_mpegts_active': False, 'stderr_log_file_obj': stderr_log_file
+                            'video_type': VideoType.MPEGTS, 'video_name': video_name, 'provider_alias': provider_alias, 'source_id': source["source_id"],
+                            'logical_channel_id': self.logical_channel_id, 'channel_hls_dir': None, 'started_at': started_at, 'errored_at': None,
+                            'last_access': started_at, 'is_mpegts_active': False, 'stderr_log_file_obj': stderr_log_file
                         }
                 else:
                     process = await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.DEVNULL, stderr=cast(IO[Any], stderr_log_file))
                     async with self.stream_manager.stream_process_lock:
+                        started_at = datetime.now()
                         cast(ProcessInfosMutable, self.stream_manager.processes)[video_key] = {
                             'process': process, 'is_long_term': False, 'is_preview': is_preview, 'stream_engine': self.stream_engine,
-                            'video_type': VideoType.HLS, 'video_name': video_name, 'provider_alias': provider_alias,
-                            'logical_channel_id': self.logical_channel_id, 'channel_hls_dir': cast(Path, channel_hls_dir),
-                            'last_access': datetime.now(), 'is_mpegts_active': None, 'stderr_log_file_obj': stderr_log_file
+                            'video_type': VideoType.HLS, 'video_name': video_name, 'provider_alias': provider_alias, 'logical_channel_id': self.logical_channel_id,
+                            'source_id': source["source_id"], 'channel_hls_dir': cast(Path, channel_hls_dir), 'started_at': started_at, 'errored_at': None,
+                            'last_access': started_at, 'is_mpegts_active': None, 'stderr_log_file_obj': stderr_log_file
                         }
                 self._slots_acquired.remove(video_key)  # Slot is now owned by the process
                 self._active_video_keys.add(video_key)

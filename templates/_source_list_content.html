@@ -2,7 +2,7 @@
 <h6 class="card-subtitle my-2 text-muted">Manage Mappings</h6>
 <p class="small text-muted">
     Set priority for failover (0=highest, 5=default). Only change if you want to override
-    the quality scores for specific sources based on factors like uptime or latency
+    the quality scores for specific sources based on factors like uptime, runtime, or latency
     (enabled source order reflects actual stream order).
 </p>
 
@@ -10,11 +10,12 @@
     <table class="table table-sm table-hover">
         <thead class="table-light">
             <tr>
-                <th style="width: 5%;" class="text-center">Enable</th>
+                <th style="width: 5%;" class="text-center" data-bs-toggle="tooltip" title="Enable or disable this source mapping">Enable</th>
                 <th>Source</th>
-                <th style="width: 15%;" class="text-center">Uptime</th>
-                <th style="width: 15%;">Priority</th>
-                <th style="width: 10%;" class="text-end">Preview</th>
+                <th style="width: 5%;" class="text-center" data-bs-toggle="tooltip" title="Availability when due for quality analysis">Uptime</th>
+                <th style="width: 5%;" class="text-center" data-bs-toggle="tooltip" title="Average duration played before encountering an issue">Runtime</th>
+                <th style="width: 5%;" class="text-center" data-bs-toggle="tooltip" title="Adjust to override quality metrics">Priority</th>
+                <th style="width: 5%;" class="text-end" data-bs-toggle="tooltip" title="Preview the source stream">Preview</th>
             </tr>
         </thead>
 
@@ -38,18 +39,44 @@
                 </td>
                 <td class="text-center align-middle">
                     {% if source_metrics.uptime is defined and source_metrics.uptime is not none %}
-                    {% set uptime_val = source_metrics.uptime|int %}
-                    {% if uptime_val >= 75 %}
-                    <span class="badge bg-success">{{ uptime_val }}%</span>
-                    {% elif uptime_val >= 50 %}
-                    <span class="badge bg-warning">{{ uptime_val }}%</span>
-                    {% elif uptime_val >= 25 %}
-                    <span class="badge bg-orange">{{ uptime_val }}%</span>
+                        {% set uptime_val = source_metrics.uptime|int %}
+                        {% if uptime_val >= 75 %}
+                            <span class="badge bg-success" data-bs-toggle="tooltip"
+                            title="Availability when due for quality analysis">{{ uptime_val }}%</span>
+                        {% elif uptime_val >= 50 %}
+                            <span class="badge bg-warning" data-bs-toggle="tooltip"
+                            title="Availability when due for quality analysis">{{ uptime_val }}%</span>
+                        {% elif uptime_val >= 25 %}
+                            <span class="badge bg-orange" data-bs-toggle="tooltip"
+                            title="Availability when due for quality analysis">{{ uptime_val }}%</span>
+                        {% else %}
+                            <span class="badge bg-danger" data-bs-toggle="tooltip"
+                            title="Availability when due for quality analysis">{{ uptime_val }}%</span>
+                        {% endif %}
                     {% else %}
-                    <span class="badge bg-danger">{{ uptime_val }}%</span>
+                        <span class="badge bg-secondary" data-bs-toggle="tooltip"
+                        title="Availability when due for quality analysis">N/A</span>
                     {% endif %}
+                </td>
+                <td class="text-center align-middle">
+                    {% if source_metrics.runtime is defined and source_metrics.runtime is not none %}
+                        {% set runtime_str = source_metrics.runtime|duration_to_str %}
+                        {% if source_metrics.runtime >= 8 * 60 * 60 %}
+                            <span class="badge bg-success" data-bs-toggle="tooltip"
+                            title="Average duration played before encountering an issue">{{ runtime_str }}</span>
+                        {% elif source_metrics.runtime >= 4 * 60 * 60 %}
+                            <span class="badge bg-warning" data-bs-toggle="tooltip"
+                            title="Average duration played before encountering an issue">{{ runtime_str }}</span>
+                        {% elif source_metrics.runtime >= 1 * 60 * 60 %}
+                            <span class="badge bg-orange" data-bs-toggle="tooltip"
+                            title="Average duration played before encountering an issue">{{ runtime_str }}</span>
+                        {% else %}
+                            <span class="badge bg-danger" data-bs-toggle="tooltip"
+                            title="Average duration played before encountering an issue">{{ runtime_str }}</span>
+                        {% endif %}
                     {% else %}
-                    <span class="badge bg-secondary">N/A</span>
+                        <span class="badge bg-success" data-bs-toggle="tooltip"
+                        title="Average duration played before encountering an issue">&infin;</span>
                     {% endif %}
                 </td>
                 <td class="align-middle">
@@ -88,18 +115,44 @@
                 </td>
                 <td class="text-center align-middle">
                     {% if source_metrics.uptime is defined and source_metrics.uptime is not none %}
-                    {% set uptime_val = source_metrics.uptime|int %}
-                    {% if uptime_val >= 75 %}
-                    <span class="badge bg-success">{{ uptime_val }}%</span>
-                    {% elif uptime_val >= 50 %}
-                    <span class="badge bg-warning">{{ uptime_val }}%</span>
-                    {% elif uptime_val >= 25 %}
-                    <span class="badge bg-orange">{{ uptime_val }}%</span>
+                        {% set uptime_val = source_metrics.uptime|int %}
+                        {% if uptime_val >= 75 %}
+                            <span class="badge bg-success" data-bs-toggle="tooltip"
+                            title="Availability when due for quality analysis">{{ uptime_val }}%</span>
+                        {% elif uptime_val >= 50 %}
+                            <span class="badge bg-warning" data-bs-toggle="tooltip"
+                            title="Availability when due for quality analysis">{{ uptime_val }}%</span>
+                        {% elif uptime_val >= 25 %}
+                            <span class="badge bg-orange" data-bs-toggle="tooltip"
+                            title="Availability when due for quality analysis">{{ uptime_val }}%</span>
+                        {% else %}
+                            <span class="badge bg-danger" data-bs-toggle="tooltip"
+                            title="Availability when due for quality analysis">{{ uptime_val }}%</span>
+                        {% endif %}
                     {% else %}
-                    <span class="badge bg-danger">{{ uptime_val }}%</span>
+                        <span class="badge bg-secondary" data-bs-toggle="tooltip"
+                        title="Availability when due for quality analysis">N/A</span>
                     {% endif %}
+                </td>
+                <td class="text-center align-middle">
+                    {% if source_metrics.runtime is defined and source_metrics.runtime is not none %}
+                        {% set runtime_str = source_metrics.runtime|duration_to_str %}
+                        {% if source_metrics.runtime >= 8 * 60 * 60 %}
+                            <span class="badge bg-success" data-bs-toggle="tooltip"
+                            title="Average duration played before encountering an issue">{{ runtime_str }}</span>
+                        {% elif source_metrics.runtime >= 4 * 60 * 60 %}
+                            <span class="badge bg-warning" data-bs-toggle="tooltip"
+                            title="Average duration played before encountering an issue">{{ runtime_str }}</span>
+                        {% elif source_metrics.runtime >= 1 * 60 * 60 %}
+                            <span class="badge bg-orange" data-bs-toggle="tooltip"
+                            title="Average duration played before encountering an issue">{{ runtime_str }}</span>
+                        {% else %}
+                            <span class="badge bg-danger" data-bs-toggle="tooltip"
+                            title="Average duration played before encountering an issue">{{ runtime_str }}</span>
+                        {% endif %}
                     {% else %}
-                    <span class="badge bg-secondary">N/A</span>
+                        <span class="badge bg-success" data-bs-toggle="tooltip"
+                        title="Average duration played before encountering an issue">&infin;</span>
                     {% endif %}
                 </td>
                 <td class="align-middle">

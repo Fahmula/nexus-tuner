@@ -38,11 +38,11 @@ from nexus_tuner.quality_monitor import QualityMonitor
 from nexus_tuner.session_monitor import GhostSessionMonitor
 from nexus_tuner.stream import StreamManager
 from nexus_tuner.scheduler import Scheduler
-from nexus_tuner.utils import (Log, LogicalChannelFormDetails, PreviewId, StreamEngine, VideoKey, background_tasks, CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL,
+from nexus_tuner.utils import (Log, LogicalChannelFormDetails, Percent, PreviewId, ProcessInfoMutable, Runtime, StreamEngine, VideoKey, background_tasks, CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL,
                                 DEFAULT_PRIORITY, M3UURL, NEXUS_TUNER_PORT, NEXUS_TUNER_VERSION, ChannelNum, DiscoveredSource,
                                 Label, LogicalChannelId, LogicalChannelInfo, LogicalChannelInfoWithId, LogicalChannelMetrics, LogicalChannelTitle, MaxStreams, 
                                 PercentDisplay, Priority, ProviderAlias, ProviderStatus, QualityScores, SourceInfo, SourceMappingInfoWithId, SourceMetrics,
-                                SourceId, TVGGroupTitle, TVGId, TVGLogo, VideoType, create_preview_id, create_stream_key, create_stream_name, get_source_id_from_preview, is_valid_url, run_bg, sort_sources)
+                                SourceId, TVGGroupTitle, TVGId, TVGLogo, VideoType, create_preview_id, create_stream_key, create_stream_name, duration_to_str, get_source_id_from_preview, is_valid_url, run_bg, sort_sources)
 
 # --- Constants ---
 PLAYLIST_POLL_INTERVAL: Final[float] = 0.2         # Seconds to wait between checking for a new playlist
@@ -72,9 +72,9 @@ async def startup() -> None:
     try:
         config = await Config.create()
         handler = await ChannelHandler.create(config)
-        stream_manager = await StreamManager.create(config, handler)
-        ghost_monitor = await GhostSessionMonitor.create(config, handler, stream_manager)
         quality_monitor = await QualityMonitor.create(config, handler)
+        stream_manager = await StreamManager.create(config, handler, quality_monitor)
+        ghost_monitor = await GhostSessionMonitor.create(config, handler, stream_manager)
         handler.quality_monitor = quality_monitor
         scheduler = await Scheduler.create(config, handler, quality_monitor)
         Log.info(Label.SERVER, f"Started on {config.nexus_url}")
@@ -89,6 +89,8 @@ async def startup() -> None:
     prev_sigint_handler = signal.signal(signal.SIGINT, handle_signal)
     prev_sighup_handler = signal.signal(signal.SIGHUP, handle_signal)
     prev_sigquit_handler = signal.signal(signal.SIGQUIT, handle_signal)
+
+    app.jinja_env.filters["duration_to_str"] = duration_to_str  # type: ignore
 
 
 prev_sigterm_handler = signal.getsignal(signal.SIGTERM)
@@ -127,10 +129,16 @@ async def shutdown() -> None:
 
 async def calculate_channel_metrics(mapped_sources: list[SourceMappingInfoWithId], all_quality_scores: QualityScores) -> LogicalChannelMetrics:
     """Calculates uptime metrics for a channel."""
-    uptime_scores: list[float] = []
+    sort_sources(mapped_sources, all_quality_scores, reverse=False)
+    uptime_scores: list[Percent] = []
+    runtime_scores: list[Runtime] = []
     for mapped_source in mapped_sources[:HIGHEST_PRIORITY_SOURCES_NUM]:
-        raw_uptime = all_quality_scores.get(mapped_source["source_id"], {}).get("uptime")
-        if raw_uptime is not None: uptime_scores.append(raw_uptime)
+        quality_score = all_quality_scores.get(mapped_source["source_id"])
+        if not quality_score:
+            continue
+        uptime_scores.append(quality_score["uptime"])
+        if quality_score["runtime"]:
+            runtime_scores.append(quality_score["runtime"])
 
     discovered_mappings = 0
     for source in mapped_sources:
@@ -139,6 +147,7 @@ async def calculate_channel_metrics(mapped_sources: list[SourceMappingInfoWithId
     return LogicalChannelMetrics({
         "health_score": PercentDisplay(int((1 - math.prod([(1 - score) for score in uptime_scores])) * 100)) if uptime_scores else None,
         "lowest_uptime": PercentDisplay(int(min(uptime_scores) * 100)) if uptime_scores else None,
+        "lowest_runtime": min(runtime_scores) if runtime_scores else None,
         "enabled_mappings": len(mapped_sources),
         "discovered_mappings": discovered_mappings,
     })
@@ -157,7 +166,6 @@ def filter_sources(raw_query: str, discovered_source: DiscoveredSource) -> bool:
 async def calculate_logical_channel_form_details(*, logical_channel_id: LogicalChannelId | None, search_query: str | None, filter_query: str | None, current_page: int) -> LogicalChannelFormDetails:
     all_quality_scores = await quality_monitor.get_quality_scores()
     current_mappings = await handler.get_channel_mappings_for_ui(logical_channel_id) if logical_channel_id else []
-    sort_sources(current_mappings, all_quality_scores, reverse=False)
     channel_metrics = await calculate_channel_metrics(current_mappings, all_quality_scores)
 
     all_discovered_sources = await handler.get_discovered_sources_for_ui()
@@ -172,10 +180,12 @@ async def calculate_logical_channel_form_details(*, logical_channel_id: LogicalC
         if source_id in all_sources_map:
             source_details = all_sources_map[source_id].copy()
             mapped_sources.append(source_details)
-            raw_score = all_quality_scores.get(source_id, {}).get('uptime', None)
+            raw_uptime = all_quality_scores.get(source_id, {}).get('uptime')
+            raw_runtime = all_quality_scores.get(source_id, {}).get('runtime')
             all_source_metrics[source_id] = SourceMetrics({
                 "priority": mapping["priority"],
-                "uptime": PercentDisplay(int(raw_score * 100)) if raw_score is not None else None
+                "uptime": PercentDisplay(int(raw_uptime * 100)) if raw_uptime is not None else None,
+                "runtime": raw_runtime if raw_runtime else None
             })
     
     unmapped_sources: list[DiscoveredSource] = []
@@ -184,12 +194,14 @@ async def calculate_logical_channel_form_details(*, logical_channel_id: LogicalC
             if discovered_source['source_id'] not in all_mapped_source_ids and filter_sources(search_query, discovered_source):
                 unmapped_sources.append(discovered_source)
                 source_id = discovered_source['source_id']
-                raw_score = all_quality_scores.get(source_id, {}).get('uptime', None)
+                raw_uptime = all_quality_scores.get(source_id, {}).get('uptime')
+                raw_runtime = all_quality_scores.get(source_id, {}).get('runtime')
                 all_source_metrics[source_id] = SourceMetrics({
                     "priority": Priority(DEFAULT_PRIORITY),
-                    "uptime": PercentDisplay(int(raw_score * 100)) if raw_score is not None else None
+                    "uptime": PercentDisplay(int(raw_uptime * 100)) if raw_uptime is not None else None,
+                    "runtime": raw_runtime if raw_runtime else None
                 })
-    
+
     total_unmapped_sources = len(unmapped_sources)
     total_pages = math.ceil(total_unmapped_sources / NUM_SOURCES_PER_PAGE) if NUM_SOURCES_PER_PAGE > 0 else 1
     if current_page < 1:
@@ -358,10 +370,15 @@ async def serve_hls_playlist(logical_channel_id: LogicalChannelId | PreviewId, s
         while loop.time() < end_time:
             to_cleanup = False
             async with stream_manager.stream_process_lock:
-                if video_key not in stream_manager.processes or stream_manager.processes[video_key]['process'].returncode is not None:
+                if video_key not in stream_manager.processes:
                     to_cleanup = True
+                elif stream_manager.processes[video_key]['process'].returncode is not None:
+                    to_cleanup = True
+                    if not stream_manager.processes[video_key]["errored_at"]:
+                        cast(ProcessInfoMutable, stream_manager.processes[video_key])["errored_at"] = datetime.now()
+                        Log.debug(Label.STREAM, f"{video_name}: Updated error timestamp.", (VideoType.HLS, stream_engine))
             if to_cleanup:
-                msg = f"{video_name}: HLS process terminated unexpectedly."
+                msg = f"{video_name}: Process terminated unexpectedly."
                 Log.error(Label.SERVER, msg, (VideoType.HLS, stream_engine))
                 await stream_manager.stop_process(video_key)
                 abort(503, msg)
@@ -594,7 +611,6 @@ async def ui_logical_channels_list() -> str:
     all_channel_metrics: dict[LogicalChannelId, LogicalChannelMetrics] = {}
     for channel in channels:
         mapped_sources = await handler.get_channel_mappings_for_ui(channel['logical_channel_id'])
-        sort_sources(mapped_sources, all_quality_scores, reverse=False)
         all_channel_metrics[channel["logical_channel_id"]] = await calculate_channel_metrics(mapped_sources, all_quality_scores)
 
     return await render_template("ui_logical_channels.html", channels=channels, all_channel_metrics=all_channel_metrics)
@@ -1036,6 +1052,7 @@ async def reload_configuration() -> Response:
     Log.info(Label.SERVER, f"Received request to reload configuration via UI with params={{update_providers={update_providers}, force_discover_sources={force_discover_sources}}}")
     try:
         await handler.reload_handler_config(update_providers=update_providers, force_discover_sources=force_discover_sources)
+        await quality_monitor.reload_quality_scores()
         if force_discover_sources:
             await flash("Successfully reloaded configuration and refreshed discovered sources!", "success")
         else:

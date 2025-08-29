@@ -22,30 +22,59 @@
                     {% if channel_metrics.health_score is not none %}
                         {% set health_score = channel_metrics.health_score|int %}
                         {% if health_score >= 75 %}
-                            <span class="badge bg-success">Health: {{ health_score }}%</span>
+                            <span class="badge bg-success" data-bs-toggle="tooltip"
+                            title="Overall Channel Uptime (with failover)">Health: {{ health_score }}%</span>
                         {% elif health_score >= 50 %}
-                            <span class="badge bg-warning">Health:{{ health_score }}%</span>
+                            <span class="badge bg-warning" data-bs-toggle="tooltip"
+                            title="Overall Channel Uptime (with failover)">Health:{{ health_score }}%</span>
                         {% elif health_score >= 25 %}
-                            <span class="badge bg-orange">Health:{{ health_score }}%</span>
+                            <span class="badge bg-orange" data-bs-toggle="tooltip"
+                            title="Overall Channel Uptime (with failover)">Health:{{ health_score }}%</span>
                         {% else %}
-                            <span class="badge bg-danger">Health:{{ health_score }}%</span>
+                            <span class="badge bg-danger" data-bs-toggle="tooltip"
+                            title="Overall Channel Uptime (with failover)">Health:{{ health_score }}%</span>
                         {% endif %}
                     {% elif channel.logical_channel_id %}
-                        <span class="badge bg-secondary">Health: N/A</span>
+                        <span class="badge bg-secondary" data-bs-toggle="tooltip"
+                        title="Overall Channel Uptime (with failover)">Health: N/A</span>
                     {% endif %}
                     {% if channel_metrics.lowest_uptime is not none %}
                         {% set lowest_uptime = channel_metrics.lowest_uptime|int %}
                         {% if lowest_uptime >= 75 %}
-                            <span class="badge bg-success">Lowest Uptime: {{ lowest_uptime }}%</span>
+                            <span class="badge bg-success" data-bs-toggle="tooltip"
+                            title="Lowest Uptime from the Highest Priority Sources"><abbr title="Lowest Uptime" aria-label="Lowest Uptime">LU</abbr>: {{ lowest_uptime }}%</span>
                         {% elif lowest_uptime >= 50 %}
-                            <span class="badge bg-warning">Lowest Uptime: {{ lowest_uptime }}%</span>
+                            <span class="badge bg-warning" data-bs-toggle="tooltip"
+                            title="Lowest Uptime from the Highest Priority Sources"><abbr title="Lowest Uptime" aria-label="Lowest Uptime">LU</abbr>: {{ lowest_uptime }}%</span>
                         {% elif lowest_uptime >= 25 %}
-                            <span class="badge bg-orange">Lowest Uptime: {{ lowest_uptime }}%</span>
+                            <span class="badge bg-orange" data-bs-toggle="tooltip"
+                            title="Lowest Uptime from the Highest Priority Sources"><abbr title="Lowest Uptime" aria-label="Lowest Uptime">LU</abbr>: {{ lowest_uptime }}%</span>
                         {% else %}
-                            <span class="badge bg-danger">Lowest Uptime: {{ lowest_uptime }}%</span>
+                            <span class="badge bg-danger" data-bs-toggle="tooltip"
+                            title="Lowest Uptime from the Highest Priority Sources"><abbr title="Lowest Uptime" aria-label="Lowest Uptime">LU</abbr>: {{ lowest_uptime }}%</span>
                         {% endif %}
                     {% elif channel.logical_channel_id %}
-                        <span class="badge bg-secondary">Lowest Uptime: N/A</span>
+                        <span class="badge bg-secondary" data-bs-toggle="tooltip"
+                        title="Lowest Uptime from the Highest Priority Sources"><abbr title="Lowest Uptime" aria-label="Lowest Uptime">LU</abbr>: N/A</span>
+                    {% endif %}
+                    {% if channel_metrics.lowest_runtime is not none %}
+                        {% set lowest_runtime_str = channel_metrics.lowest_runtime|duration_to_str %}
+                        {% if channel_metrics.lowest_runtime >= 8 * 60 * 60 %}
+                            <span class="badge bg-success" data-bs-toggle="tooltip"
+                            title="Lowest Runtime from the Highest Priority Sources"><abbr title="Lowest Runtime" aria-label="Lowest Runtime">LR</abbr>: {{ lowest_runtime_str }}</span>
+                        {% elif channel_metrics.lowest_runtime >= 4 * 60 * 60 %}
+                            <span class="badge bg-warning" data-bs-toggle="tooltip"
+                            title="Lowest Runtime from the Highest Priority Sources"><abbr title="Lowest Runtime" aria-label="Lowest Runtime">LR</abbr>: {{ lowest_runtime_str }}</span>
+                        {% elif channel_metrics.lowest_runtime >= 1 * 60 * 60 %}
+                            <span class="badge bg-orange" data-bs-toggle="tooltip"
+                            title="Lowest Runtime from the Highest Priority Sources"><abbr title="Lowest Runtime" aria-label="Lowest Runtime">LR</abbr>: {{ lowest_runtime_str }}</span>
+                        {% else %}
+                            <span class="badge bg-danger" data-bs-toggle="tooltip"
+                            title="Lowest Runtime from the Highest Priority Sources"><abbr title="Lowest Runtime" aria-label="Lowest Runtime">LR</abbr>: {{ lowest_runtime_str }}</span>
+                        {% endif %}
+                    {% elif channel.logical_channel_id %}
+                        <span class="badge bg-success" data-bs-toggle="tooltip"
+                            title="Lowest Runtime from the Highest Priority Sources"><abbr title="Lowest Runtime" aria-label="Lowest Runtime">LR</abbr>: &infin;</span>
                     {% endif %}
                 </div>
                 <div class="card-body">
