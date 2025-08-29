@@ -16,7 +16,7 @@ from nexus_tuner.stream import StreamManager
 from nexus_tuner.utils import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL, PROCESS_TERMINATE_TIMEOUT,
                                 MPEGTS_PACKET_SIZE, NEW_DEADLINE_NON_BEST, NEXUS_TUNER_USER_AGENT, ChannelNum, ProcessInfosMutable, Label, Log,
                                 LogicalChannelId, LogicalChannelTitle, PreviewId, Priority, ProviderAlias, QualityScores, QualityScoresImpl, SourceInfo, SourceId, StreamEngine, StreamName, TVGDisplayTitle, TVGName, VideoKey, VideoName,
-                                VideoType, create_stream_key, create_stream_name, create_video_key, create_video_name, get_playlist_path, get_segment_path, is_preview_id, run_bg, sort_sources)
+                                VideoType, create_stream_key, create_stream_name, create_video_key, create_video_name, duration_to_str, get_playlist_path, get_segment_path, is_preview_id, run_bg, sort_sources)
 
 
 async def create_hls_ffmpeg_command(stream_manager: StreamManager, config: Config, input_url: str, video_key: VideoKey, logical_channel_id: LogicalChannelId | PreviewId, video_name: VideoName, stream_info: str) -> tuple[list[str], Path]:
@@ -241,7 +241,7 @@ class CreateStream:
         video_name = create_video_name(self.stream_name, self._source_names[new_source["source_id"]], new_source["source_id"])
         self._video_names[video_key] = video_name
         quality_score = self._quality_scores.get(new_source["source_id"])
-        score_msg = f"Score={quality_score['total_score']:.2f} | Uptime={quality_score['uptime']*100:.0f}%" if quality_score else "Score=Unknown | Uptime=Unknown"
+        score_msg = f"Score={quality_score['total_score']:.2f} | Uptime={quality_score['uptime']*100:.0f}% | Runtime={duration_to_str(quality_score['runtime']) if quality_score['runtime'] else '∞'}" if quality_score else "Score=Unknown | Uptime=Unknown | Runtime=Unknown"
         stream_info = f"[Priority={new_source['priority']} | {score_msg}]"
         Log.debug(Label.STREAM, f"{video_name} {stream_info}: Using source for stream creation...", (self.video_type, self.stream_engine))
         return new_source, video_key, video_name, stream_info
