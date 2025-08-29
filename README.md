@@ -25,7 +25,7 @@
 <img width="1920" height="1080" alt="NexusTuner Logical Channels" src="public/screenshots/logical-channels.png"/>
 
 ## Edit Logical Channel With Preview
-<img width="1920" height="1080" alt="NexusTuner Edit Logical Channel Preview" src="public/screenshots/logical-channels-edit-preview.png"/>
+<img width="1920" height="1080" alt="NexusTuner Edit Logical Channel Preview" src="public/screenshots/logical-channel-edit-preview.png"/>
 
 ## Dashboard Mobile
 <img width="1290" height="2587" alt="NexusTuner Dashboard Mobile" src="public/screenshots/dashboard-mobile.png"/>
