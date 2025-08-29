@@ -6,9 +6,9 @@ from typing import Coroutine, Final, Any, Self
 from nexus_tuner.config import Config
 from nexus_tuner.handler import ChannelHandler
 from nexus_tuner.slots import ProviderSlots
-from nexus_tuner.utils import (PROCESS_TERMINATE_TIMEOUT, NEXUS_TUNER_USER_AGENT, Bitrate, BitrateScore, DateTimeISO, Framerate, FramerateScore, Height,
+from nexus_tuner.utils import (FAILED_STOP_REASONS, PROCESS_TERMINATE_TIMEOUT, NEXUS_TUNER_USER_AGENT, Bitrate, BitrateScore, DateTimeISO, Framerate, FramerateScore, Height,
                                 Label, Log, LogicalChannelId, Percent, ProbeInfo, ProbeSuccess, ProviderAlias, QualityInfoImpl, QualityScores,
-                                QualityScoresImpl, ResolutionScore, QualityCacheData, QualityCacheDataImpl, Runtime, RuntimeScore, SourceId, StreamName,
+                                QualityScoresImpl, ResolutionScore, QualityCacheData, QualityCacheDataImpl, Runtime, RuntimeInfo, RuntimeScore, SourceId, StopReason, StreamName,
                                 StreamURL, TotalScore, UptimeScore, VideoName, Width, create_stream_name, create_video_name, run_bg)
 
 # --- Constants ---
@@ -176,9 +176,12 @@ class QualityMonitor:
                         except Exception as e:
                             Log.error(Label.QUALITY, f"{video_name}: Error terminating ffprobe process - {e}")
                             process.kill()
+                    if process and process.returncode is None:
+                        Log.critical(Label.STREAM, f"{video_name}: ffprobe was not terminated properly, cannot release slot.")
+                        return
                     run_bg(provider_slots.release())
                 except BaseException as e:
-                    Log.critical(Label.QUALITY, f"{video_name}: Error during stopping ffprobe process - {e}")
+                    Log.critical(Label.QUALITY, f"{video_name}: Error during stopping ffprobe process, cannot release slot - {e}")
                     raise
             run_bg(bg_cleanup())  # Prevent asyncio.CancelledError from interrupting cleanup
 
@@ -376,27 +379,39 @@ class QualityMonitor:
         if input_lc_id:
             Log.info(Label.QUALITY, f"{valid_mappings[0][3]}: Completed analysis for {len(valid_mappings[0][2])} mappings(s).")
 
-    async def append_runtime(self, source_id: SourceId, started_at: datetime, errored_at: datetime) -> None:
+    async def append_runtime(self, video_name: VideoName, source_id: SourceId, started_at: datetime, stopped_at: datetime, stop_reason: StopReason) -> None:
         """Appends runtime information for a source."""
-        runtime = Runtime((errored_at - started_at).total_seconds())
+        runtime_info = RuntimeInfo({
+            "stop_reason": stop_reason,
+            "runtime": Runtime((stopped_at - started_at).total_seconds())
+        })
+        runtime_info_log = f"{video_name} {{'stop_reason': '{stop_reason}', 'runtime': {runtime_info['runtime']}}}"
         async with self._mutex:
             quality_cache = await self.config.get_quality_cache()
             if quality_cache is None:
-                Log.critical(Label.QUALITY, f"{source_id}: Failed to get quality cache for new runtime of {runtime} seconds.")
+                Log.critical(Label.QUALITY, f"{runtime_info_log}: Failed to get quality cache for new runtime.")
                 return
             if source_id not in quality_cache:
                 if not await self.handler.get_discovered_source(source_id):
-                    Log.warn(Label.QUALITY, f"{source_id}: Not found in discovered sources when adding new runtime of {runtime} seconds.")
+                    Log.warn(Label.QUALITY, f"{runtime_info_log}: Not found in discovered sources when adding new runtime.")
                     return
                 self.create_default_entry(quality_cache, source_id)
             source_entry = quality_cache[source_id]
-            source_entry["runtimes"].append(runtime)
+            if source_entry["runtimes"] and source_entry["runtimes"][-1]["stop_reason"] not in FAILED_STOP_REASONS:
+                prev_runtime_info = source_entry["runtimes"].pop()
+                Log.debug(Label.QUALITY, f"{runtime_info_log}: Merging with previous runtime {prev_runtime_info}.")
+                runtime_info = RuntimeInfo({
+                    "stop_reason": stop_reason,
+                    "runtime": Runtime(prev_runtime_info["runtime"] + runtime_info["runtime"])
+                })
+                runtime_info_log = f"{video_name} {{'stop_reason': {stop_reason}, 'runtime': {runtime_info['runtime']}}}"
+            source_entry["runtimes"].append(runtime_info)
             self.trim_entry(source_entry)
             if not await self.config.save_quality_cache(quality_cache):
-                Log.critical(Label.QUALITY, f"{source_id}: Failed to save quality cache when adding new runtime of {runtime} seconds.")
+                Log.critical(Label.QUALITY, f"{runtime_info_log}: Failed to save quality cache when adding new runtime.")
                 return
             self._build_quality_scores(QualityCacheDataImpl({source_id: source_entry}))
-            Log.debug(Label.QUALITY, f"{source_id}: Added new runtime of {runtime} seconds.")
+            Log.debug(Label.QUALITY, f"{runtime_info_log}: Updated last runtime.")
 
     def _build_quality_scores(self, quality_cache: QualityCacheData) -> None:
         """Calculates quality scores and updates the internal state."""
@@ -413,11 +428,16 @@ class QualityMonitor:
             framerate_score = FramerateScore(FRAMERATE_WEIGHT * min(avg_framerate / FRAMERATE_NORM, 1.0))
             uptime_score = UptimeScore(UPTIME_WEIGHT * uptime)
 
-            if len(source_entry["runtimes"]):
-                avg_runtime = Runtime(sum(source_entry["runtimes"]) / len(source_entry["runtimes"]))
+            # Think of the avg_runtime as total_play_duration / total_num_failres
+            # The reason why we don't store that is to only consider recent history rather than the entire lifetime
+            if any(r["stop_reason"] in FAILED_STOP_REASONS for r in source_entry["runtimes"]):
+                if source_entry["runtimes"][-1]["stop_reason"] in FAILED_STOP_REASONS:
+                    avg_runtime = Runtime(sum([r["runtime"] for r in source_entry["runtimes"]]) / len(source_entry["runtimes"]))
+                else:
+                    avg_runtime = Runtime(sum([r["runtime"] for r in source_entry["runtimes"]]) / (len(source_entry["runtimes"])-1))
                 runtime_score = RuntimeScore(RUNTIME_WEIGHT * min(avg_runtime / RUNTIME_NORM, 1.0))
             else:
-                avg_runtime = Runtime(0)
+                avg_runtime = None
                 runtime_score = RuntimeScore(RUNTIME_WEIGHT)  # Default to max so all streams eventually get a score
 
             new_quality_scores[source_id] = {

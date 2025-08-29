@@ -6,7 +6,7 @@ from quart import Response
 
 from nexus_tuner.config import Config
 from nexus_tuner.stream import StreamManager
-from nexus_tuner.utils import MPEGTS_PACKET_SIZE, ProcessInfoMutable, Label, Log, MPEGTSProcessInfo, ReaderId, StreamEngine, VideoKey, VideoName, VideoType, run_bg
+from nexus_tuner.utils import MPEGTS_PACKET_SIZE, ProcessInfoMutable, Label, Log, MPEGTSProcessInfo, ReaderId, StopReason, StreamEngine, VideoKey, VideoName, VideoType, run_bg
 
 BUFFER_CLEANUP_INTERVAL: Final[int] = 10
 BUFFER_SIZE_LIMIT: Final[int] = 100 * 1024 * 1024
@@ -110,9 +110,10 @@ class MPEGTSStream:
                     if self._cancelled:
                         raise asyncio.CancelledError()
                     Log.error(Label.STREAM, f"{self.video_name}: Error reading from stream: {e}", (VideoType.MPEGTS, self.stream_engine))
-                    if not process_info["errored_at"]:
-                        cast(ProcessInfoMutable, process_info)["errored_at"] = datetime.now()
-                        Log.debug(Label.STREAM, f"{self.video_name}: Updated error timestamp.", (VideoType.MPEGTS, self.stream_engine))
+                    if not process_info["stop_reason"]:
+                        cast(ProcessInfoMutable, process_info)["stopped_at"] = datetime.now()
+                        cast(ProcessInfoMutable, process_info)["stop_reason"] = StopReason.ERROR
+                        Log.debug(Label.STREAM, f"{self.video_name}: Updated stopped timestamp with {StopReason.ERROR}.", (VideoType.MPEGTS, self.stream_engine))
                     await self.stream_manager.stop_process(self.video_key)
                     res = await self.recreate_stream()
                     if isinstance(res, Response):

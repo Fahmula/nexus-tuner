@@ -6,7 +6,7 @@ from nexus_tuner.config import Config
 from nexus_tuner.handler import ChannelHandler
 from nexus_tuner.mpegts import MPEGTSStream
 from nexus_tuner.stream import StreamManager
-from nexus_tuner.utils import Label, Log, LogicalChannelId, LogicalChannelTitle, VideoKey, VideoType
+from nexus_tuner.utils import Label, Log, LogicalChannelId, LogicalChannelTitle, StopReason, VideoKey, VideoType
 
 # --- Constants ---
 SESSION_MONITOR_STARTUP_DELAY: Final[int] = 15
@@ -127,7 +127,7 @@ class GhostSessionMonitor:
         for video_key in mpegts_video_keys:
             if video_key in MPEGTSStream.streams:
                 MPEGTSStream.streams[video_key].shutdown()
-        await self.stream_manager.stop_processes(hls_video_keys)
+        await self.stream_manager.stop_processes(StopReason.TIMEOUT, hls_video_keys)
 
     async def _run(self) -> NoReturn:
         """The main execution loop for the monitor task."""

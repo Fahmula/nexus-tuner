@@ -15,7 +15,7 @@ from nexus_tuner.handler import ChannelHandler
 from nexus_tuner.stream import StreamManager
 from nexus_tuner.utils import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL, PROCESS_TERMINATE_TIMEOUT,
                                 MPEGTS_PACKET_SIZE, NEW_DEADLINE_NON_BEST, NEXUS_TUNER_USER_AGENT, ChannelNum, ProcessInfosMutable, Label, Log,
-                                LogicalChannelId, LogicalChannelTitle, PreviewId, Priority, ProviderAlias, QualityScores, QualityScoresImpl, SourceInfo, SourceId, StreamEngine, StreamName, TVGDisplayTitle, TVGName, VideoKey, VideoName,
+                                LogicalChannelId, LogicalChannelTitle, PreviewId, Priority, ProviderAlias, QualityScores, QualityScoresImpl, SourceInfo, SourceId, StopReason, StreamEngine, StreamName, TVGDisplayTitle, TVGName, VideoKey, VideoName,
                                 VideoType, create_stream_key, create_stream_name, create_video_key, create_video_name, duration_to_str, get_playlist_path, get_segment_path, is_preview_id, run_bg, sort_sources)
 
 
@@ -404,8 +404,8 @@ class CreateStream:
                         cast(ProcessInfosMutable, self.stream_manager.processes)[video_key] = {
                             'process': process, 'is_long_term': False, 'is_preview': is_preview, 'stream_engine': self.stream_engine,
                             'video_type': VideoType.MPEGTS, 'video_name': video_name, 'provider_alias': provider_alias, 'source_id': source["source_id"],
-                            'logical_channel_id': self.logical_channel_id, 'channel_hls_dir': None, 'started_at': started_at, 'errored_at': None,
-                            'last_access': started_at, 'is_mpegts_active': False, 'stderr_log_file_obj': stderr_log_file
+                            'logical_channel_id': self.logical_channel_id, 'channel_hls_dir': None, 'started_at': started_at, 'stopped_at': None,
+                            'stop_reason': None, 'last_access': started_at, 'is_mpegts_active': False, 'stderr_log_file_obj': stderr_log_file
                         }
                 else:
                     process = await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.DEVNULL, stderr=cast(IO[Any], stderr_log_file))
@@ -414,8 +414,8 @@ class CreateStream:
                         cast(ProcessInfosMutable, self.stream_manager.processes)[video_key] = {
                             'process': process, 'is_long_term': False, 'is_preview': is_preview, 'stream_engine': self.stream_engine,
                             'video_type': VideoType.HLS, 'video_name': video_name, 'provider_alias': provider_alias, 'logical_channel_id': self.logical_channel_id,
-                            'source_id': source["source_id"], 'channel_hls_dir': cast(Path, channel_hls_dir), 'started_at': started_at, 'errored_at': None,
-                            'last_access': started_at, 'is_mpegts_active': None, 'stderr_log_file_obj': stderr_log_file
+                            'source_id': source["source_id"], 'channel_hls_dir': cast(Path, channel_hls_dir), 'started_at': started_at, 'stopped_at': None,
+                            'stop_reason': None, 'last_access': started_at, 'is_mpegts_active': None, 'stderr_log_file_obj': stderr_log_file
                         }
                 self._slots_acquired.remove(video_key)  # Slot is now owned by the process
                 self._active_video_keys.add(video_key)
@@ -441,7 +441,10 @@ class CreateStream:
                         Log.error(Label.STREAM, f"{video_name} {stream_info}: Error terminating process: {terminate_error}", (self.video_type, self.stream_engine))
                         process.kill()
             finally:
-                self._release_slot(provider_slots, video_key, video_name, stream_info)
+                if process and process.returncode is None:
+                    Log.critical(Label.STREAM, f"{video_name}: Process was not terminated properly, cannot release slot.", (self.video_type, self.stream_engine))
+                else:
+                    self._release_slot(provider_slots, video_key, video_name, stream_info)
             await self._cleanup_pre_stream_failure(video_name, stream_info, channel_hls_dir, stderr_log_file)
             if isinstance(e, Exception):
                 return False
@@ -512,6 +515,6 @@ class CreateStream:
                     (self.video_type, self.stream_engine)
                 )
                 keys_to_stop = [k for k in self._active_video_keys if k != video_key]
-                await self.stream_manager.stop_processes(keys_to_stop)
+                await self.stream_manager.stop_processes(StopReason.DECLINED, keys_to_stop)
         finally:
             self._result_event.set()

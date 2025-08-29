@@ -134,6 +134,16 @@ class Label(StrEnum):
     STREAM = "stream"
     QUALITY = "quality"
 
+class StopReason(StrEnum):
+    DECLINED = "declined"
+    MANUAL = "manual"
+    SHUTDOWN = "shutdown"
+    TIMEOUT = "timeout"
+    PRUNE = "prune"
+    PROVIDER = "provider"
+    ERROR = "error"
+FAILED_STOP_REASONS = {StopReason.ERROR}
+
 
 class ProviderStatus(TypedDict):
     alias: ReadOnly[ProviderAlias]
@@ -213,13 +223,16 @@ ClientChannelInfosImpl = NewType("ClientChannelInfosImpl", dict[LogicalChannelId
 _ClientChannelInfosReadOnly = NewType("_ClientChannelInfosReadOnly", Mapping[LogicalChannelId, ClientChannelInfo])
 type ClientChannelInfos = ClientChannelInfosImpl | _ClientChannelInfosReadOnly
 
+class RuntimeInfo(TypedDict):
+    stop_reason: ReadOnly[StopReason]
+    runtime: ReadOnly[Runtime]
 class QualityInfo(TypedDict):
     statuses: ReadOnly[tuple[Literal["online", "offline"], ...]]
     widths: ReadOnly[tuple[Width, ...]]
     heights: ReadOnly[tuple[Height, ...]]
     bitrates: ReadOnly[tuple[Bitrate, ...]]
     framerates: ReadOnly[tuple[Framerate, ...]]
-    runtimes: ReadOnly[tuple[Runtime, ...]]
+    runtimes: ReadOnly[tuple[RuntimeInfo, ...]]
     updated_at: ReadOnly[DateTimeISO]
 class QualityInfoImpl(TypedDict):
     statuses: list[Literal["online", "offline"]]
@@ -227,7 +240,7 @@ class QualityInfoImpl(TypedDict):
     heights: list[Height]
     bitrates: list[Bitrate]
     framerates: list[Framerate]
-    runtimes: list[Runtime]
+    runtimes: list[RuntimeInfo]
     updated_at: DateTimeISO
 QualityCacheDataImpl = NewType("QualityCacheDataImpl", dict[SourceId, QualityInfoImpl])
 _QualityCacheDataReadOnly = NewType("_QualityCacheDataReadOnly", Mapping[SourceId, QualityInfo])
@@ -239,7 +252,7 @@ class QualityScore(TypedDict):
     bitrate: ReadOnly[Bitrate]
     framerate: ReadOnly[Framerate]
     uptime: ReadOnly[Percent]
-    runtime: ReadOnly[Runtime]
+    runtime: ReadOnly[Runtime | None]
     resolution_score: ReadOnly[ResolutionScore]
     bitrate_score: ReadOnly[BitrateScore]
     framerate_score: ReadOnly[FramerateScore]
@@ -280,7 +293,8 @@ class MPEGTSProcessInfo(TypedDict):
     is_long_term: ReadOnly[bool]
     is_preview: ReadOnly[bool]
     started_at: ReadOnly[datetime]
-    errored_at: ReadOnly[datetime | None]
+    stopped_at: ReadOnly[datetime | None]
+    stop_reason: ReadOnly[StopReason | None]
     last_access: ReadOnly[datetime]
     is_mpegts_active: ReadOnly[bool]
     channel_hls_dir: ReadOnly[None]
@@ -296,7 +310,8 @@ class HLSProcessInfo(TypedDict):
     is_long_term: ReadOnly[bool]
     is_preview: ReadOnly[bool]
     started_at: ReadOnly[datetime]
-    errored_at: ReadOnly[datetime | None]
+    stopped_at: ReadOnly[datetime | None]
+    stop_reason: ReadOnly[StopReason | None]
     last_access: ReadOnly[datetime]
     is_mpegts_active: ReadOnly[None]
     channel_hls_dir: ReadOnly[Path]
@@ -305,7 +320,8 @@ type ProcessInfo = MPEGTSProcessInfo | HLSProcessInfo
 ProcessInfos = NewType("ProcessInfos", Mapping[VideoKey, ProcessInfo])
 class ProcessInfoMutable(TypedDict):
     is_long_term: bool
-    errored_at: datetime | None
+    stopped_at: datetime | None
+    stop_reason: StopReason | None
     last_access: datetime
     is_mpegts_active: bool
 ProcessInfosMutable = NewType("ProcessInfosMutable", dict[VideoKey, ProcessInfo])
@@ -472,6 +488,8 @@ def create_stream_key(stream_engine: StreamEngine, video_type: VideoType, logica
 
 def create_video_key(stream_key: StreamKey, source_id: SourceId) -> VideoKey:
     """Generates a unique key for the video stream."""
+    if source_id in stream_key:
+        return VideoKey(stream_key)  # Preview streams use source_id in logical_channel_id, see create_preview_id()
     return VideoKey(f"{stream_key}_{source_id}")
 
 
@@ -571,7 +589,7 @@ def sort_sources(sources: list[SourceInfo] | list[SourceMappingInfoWithId], qual
     curr_priority: Priority = Priority(-1)
     source_scores: list[tuple[Priority, float, float, float, SourceId]] = sorted((source["priority"],
                              -quality_scores.get(source["source_id"], {}).get("total_score", 0),
-                             -quality_scores.get(source["source_id"], {}).get("runtime", float("inf")),
+                             -(quality_scores.get(source["source_id"], {}).get("runtime", float("inf")) or float("inf")),
                              -quality_scores.get(source["source_id"], {}).get("uptime", 0),
                              source["source_id"]) for source in sources)
     source_priorities: dict[SourceId, Priority] = {}

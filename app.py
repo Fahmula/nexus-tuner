@@ -38,7 +38,7 @@ from nexus_tuner.quality_monitor import QualityMonitor
 from nexus_tuner.session_monitor import GhostSessionMonitor
 from nexus_tuner.stream import StreamManager
 from nexus_tuner.scheduler import Scheduler
-from nexus_tuner.utils import (Log, LogicalChannelFormDetails, Percent, PreviewId, ProcessInfoMutable, Runtime, StreamEngine, VideoKey, background_tasks, CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL,
+from nexus_tuner.utils import (Log, LogicalChannelFormDetails, Percent, PreviewId, ProcessInfoMutable, Runtime, StreamEngine, StopReason, VideoKey, background_tasks, CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL,
                                 DEFAULT_PRIORITY, M3UURL, NEXUS_TUNER_PORT, NEXUS_TUNER_VERSION, ChannelNum, DiscoveredSource,
                                 Label, LogicalChannelId, LogicalChannelInfo, LogicalChannelInfoWithId, LogicalChannelMetrics, LogicalChannelTitle, MaxStreams, 
                                 PercentDisplay, Priority, ProviderAlias, ProviderStatus, QualityScores, SourceInfo, SourceMappingInfoWithId, SourceMetrics,
@@ -121,7 +121,7 @@ async def shutdown() -> None:
     if "scheduler" in globals():
         scheduler.shutdown()
     if "stream_manager" in globals():
-        await stream_manager.stop_processes()
+        await stream_manager.stop_processes(StopReason.SHUTDOWN)
     if "config" in globals():
         await config.clean_up_hls_segments()
     await asyncio.gather(*background_tasks, return_exceptions=True)
@@ -374,9 +374,10 @@ async def serve_hls_playlist(logical_channel_id: LogicalChannelId | PreviewId, s
                     to_cleanup = True
                 elif stream_manager.processes[video_key]['process'].returncode is not None:
                     to_cleanup = True
-                    if not stream_manager.processes[video_key]["errored_at"]:
-                        cast(ProcessInfoMutable, stream_manager.processes[video_key])["errored_at"] = datetime.now()
-                        Log.debug(Label.STREAM, f"{video_name}: Updated error timestamp.", (VideoType.HLS, stream_engine))
+                    if not stream_manager.processes[video_key]["stop_reason"]:
+                        cast(ProcessInfoMutable, stream_manager.processes[video_key])["stopped_at"] = datetime.now()
+                        cast(ProcessInfoMutable, stream_manager.processes[video_key])["stop_reason"] = StopReason.ERROR
+                        Log.debug(Label.STREAM, f"{video_name}: Updated stopped timestamp with {StopReason.ERROR}.", (VideoType.HLS, stream_engine))
             if to_cleanup:
                 msg = f"{video_name}: Process terminated unexpectedly."
                 Log.error(Label.SERVER, msg, (VideoType.HLS, stream_engine))
@@ -463,7 +464,7 @@ async def serve_hls_preview(preview_id: PreviewId, stream_engine: StreamEngine) 
 @app.route("/<string:video_type>/<string:logical_channel_id>/<string:stream_engine>/stop", methods=["POST"])
 async def stop_stream(video_type: VideoType, logical_channel_id: LogicalChannelId, stream_engine: StreamEngine) -> Response:
     """Stops the stream for a logical channel."""
-    await stream_manager.stop_processes_with_logical_channel_id(logical_channel_id, video_type, stream_engine)
+    await stream_manager.stop_processes_with_logical_channel_id(logical_channel_id, video_type, stream_engine, StopReason.MANUAL)
     return Response(status=204)
 
 

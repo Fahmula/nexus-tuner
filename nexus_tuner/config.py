@@ -12,7 +12,7 @@ import aiofiles.os
 import aioshutil
 
 from nexus_tuner.utils import (CONFIG_DIR, NEXUS_TUNER_PORT, NEXUS_TUNER_VERSION, ChannelListDataImpl, ChannelMappingsData, ChannelMappingsDataImpl, DiscoveredSourcesData, DiscoveredSourcesDataImpl, JobName, JobsData, JobsDataImpl,
-                               Label, Log, LogicalChannelsData, LogicalChannelsDataImpl, ProvidersData, ProvidersDataImpl, QualityCacheData, QualityCacheDataImpl, StreamEngine, VideoKey, is_valid_url)
+                               Label, Log, LogicalChannelsData, LogicalChannelsDataImpl, ProvidersData, ProvidersDataImpl, QualityCacheData, QualityCacheDataImpl, StopReason, StreamEngine, VideoKey, is_valid_url)
 
 
 NOT_ALPHANUM_REGEX: Final[re.Pattern[str]] = re.compile(r'[^a-zA-Z0-9_-]')
@@ -378,7 +378,7 @@ class Config:
             data: LogicalChannelsDataImpl = await self._load_json_file(self.logical_channels_path)
             if type(data) is not dict:
                 raise ValueError(f"Invalid logical channels configuration format in {self.logical_channels_path}")
-            for key1, val1 in data.items():
+            for key1, val1 in data.items():  # type: ignore[reportUnknownVariableType]
                 if type(key1) is not str or not key1.isdigit():
                     raise ValueError(f'"{key1}": expected int str, got {type(key1)}')
                 if type(val1) is not dict:
@@ -411,7 +411,7 @@ class Config:
             data: ChannelMappingsDataImpl = await self._load_json_file(self.channel_mappings_path)
             if type(data) is not dict:
                 raise ValueError(f"Invalid channel mappings configuration format in {self.channel_mappings_path}")
-            for key1, val1 in data.items():
+            for key1, val1 in data.items():  # type: ignore[reportUnknownVariableType]
                 if type(key1) is not str or not key1.isdigit():
                     raise ValueError(f'"{key1}": expected int str, got {type(key1)}')
                 if type(val1) is not dict:
@@ -493,7 +493,7 @@ class Config:
             data: QualityCacheDataImpl = await self._load_json_file(self.quality_cache_path)
             if type(data) is not dict:
                 raise ValueError(f"Invalid quality cache format in {self.quality_cache_path}")
-            for key1, val1 in data.items():
+            for key1, val1 in data.items():  # type: ignore[reportUnknownVariableType]
                 if type(key1) is not str:
                     raise ValueError(f'"{key1}": expected str, got {type(key1)}')
                 if type(val1) is not dict:
@@ -537,8 +537,18 @@ class Config:
                         if type(val2) is not list:
                             raise ValueError(f'"{key1}" - "runtimes": expected list, got {type(val2)}')
                         for index, item in enumerate(val2):
-                            if type(item) is not float or item < 0:
-                                raise ValueError(f'"{key1}" - "runtimes" item {index}: expected non-negative float, got {item}')
+                            if type(item) is not dict:
+                                raise ValueError(f'"{key1}" - "runtimes" item {index}: expected dict, got {type(item)}')
+                            for key3 in ("stop_reason", "runtime"):
+                                if key3 not in item:
+                                    raise ValueError(f'"{key1}" - "runtimes" item {index} - missing required key "{key3}"')
+                                val3 = item[key3]
+                                if key3 == "stop_reason":
+                                    if val3 not in StopReason:
+                                        raise ValueError(f'"{key1}" - "runtimes" item {index} - "stop_reason": expected one of [{", ".join(StopReason)}], got {val3}')
+                                elif key3 == "runtime":
+                                    if type(val3) is not float or val3 < 0:
+                                        raise ValueError(f'"{key1}" - "runtimes" item {index} - "runtime": expected non-negative float, got {val3}')
                     elif key2 == "updated_at":
                         try:
                             if type(val2) is not str:
@@ -577,9 +587,9 @@ class Config:
                 for key2, val2 in val1.items():
                     if key2 != "last_run":
                         raise ValueError(f'"{key1}" - unexpected key "{key2}"')
-                    if type(val2) is not str:
-                        raise ValueError(f'"{key1}" - "last_run": expected str, got {type(val2)}')
                     try:
+                        if type(val2) is not str:
+                            raise ValueError()
                         datetime.fromisoformat(val2)
                     except ValueError:
                         raise ValueError(f'"{key1}" - "last_run": expected ISO 8601 date string, got {val2}')
