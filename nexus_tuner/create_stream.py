@@ -13,7 +13,7 @@ from nexus_tuner.quality_monitor import QualityMonitor
 from nexus_tuner.slots import ProviderSlots
 from nexus_tuner.handler import ChannelHandler
 from nexus_tuner.stream import StreamManager
-from nexus_tuner.utils import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL, PROCESS_TERMINATE_TIMEOUT,
+from nexus_tuner.utils import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL, PROCESS_TERMINATE_INTERVAL, PROCESS_TERMINATE_TIMEOUT,
                                 MPEGTS_PACKET_SIZE, NEW_DEADLINE_NON_BEST, NEXUS_TUNER_USER_AGENT, ChannelNum, ProcessInfosMutable, Label, Log,
                                 LogicalChannelId, LogicalChannelTitle, PreviewId, Priority, ProviderAlias, QualityScores, QualityScoresImpl, SourceInfo, SourceId, StopReason, StreamEngine, StreamName, TVGDisplayTitle, TVGName, VideoKey, VideoName,
                                 VideoType, create_stream_key, create_stream_name, create_video_key, create_video_name, duration_to_str, get_playlist_path, get_segment_path, is_preview_id, run_bg, sort_sources)
@@ -86,6 +86,7 @@ async def create_hls_vlc_command(stream_manager: StreamManager, config: Config, 
         "-I", "dummy",
         "--sout", f"#std{{mux=ts{{use-key-frames}},access=livehttp{{seglen={config.hls_segment_duration},numsegs={config.hls_playlist_length},initial-segment-number={start_number},delsegs=true,index={get_playlist_path(channel_hls_dir)},index-url={segment_format}}},dst={get_segment_path(channel_hls_dir, segment_format)}}}",
         "--sout-keep",
+        "--network-caching", "1000",
         "--http-reconnect",
         "--http-user-agent", NEXUS_TUNER_USER_AGENT,
     ]
@@ -100,6 +101,7 @@ def create_mpegts_vlc_command(config: Config, input_url: str) -> list[str]:
         "-I", "dummy",
         "--sout", "#std{mux=ts,access=file,dst=-}",
         "--sout-keep",
+        "--network-caching", "1000",
         "--http-reconnect",
         "--http-user-agent", NEXUS_TUNER_USER_AGENT,
     ]
@@ -327,6 +329,9 @@ class CreateStream:
             finally:
                 self._release_slot(provider_slots, video_key, video_name, stream_info)
 
+            if self._selected:
+                return
+
             source_res = self._pop_source(provider_sources, source, video_name, stream_info)
             if not source_res:
                 return
@@ -342,7 +347,7 @@ class CreateStream:
         except Exception as e:
             error = e
         if not self._selected:
-            Log.error(Label.STREAM, f"{video_name} {stream_info}: Error reading from stream: {error}", (self.video_type, self.stream_engine))
+            Log.error(Label.STREAM, f"{video_name} {stream_info}: Error reading from stream - {error}", (self.video_type, self.stream_engine))
         is_healthy[0] = False
 
     async def _cleanup_pre_stream_failure(self, video_name: VideoName, stream_info: str, channel_hls_dir: Path | None, stderr_log_file: aiofiles.threadpool.text.AsyncTextIOWrapper | None) -> None:
@@ -351,15 +356,16 @@ class CreateStream:
             try:
                 await stderr_log_file.close()
             except Exception as close_error:
-                Log.critical(Label.STREAM, f"{video_name} {stream_info}: Failed to close log file: {close_error}", (self.video_type, self.stream_engine))
+                Log.critical(Label.STREAM, f"{video_name} {stream_info}: Failed to close log file - {close_error}", (self.video_type, self.stream_engine))
         if channel_hls_dir:
             try:
                 await aioshutil.rmtree(channel_hls_dir)
             except Exception as cleanup_error:
-                Log.critical(Label.STREAM, f"{video_name} {stream_info}: Failed to clean up HLS directory: {cleanup_error}", (self.video_type, self.stream_engine))
+                Log.critical(Label.STREAM, f"{video_name} {stream_info}: Failed to clean up HLS directory - {cleanup_error}", (self.video_type, self.stream_engine))
 
     async def _create_stream(self, video_key: VideoKey, video_name: VideoName, provider_alias: ProviderAlias, provider_slots: ProviderSlots, source: SourceInfo, stream_info: str, new_active_count: str) -> bool:
         """Creates a stream using the specified parameters."""
+        loop = asyncio.get_running_loop()
         self._source_quality_messages[video_key] = stream_info
 
         channel_hls_dir: Path | None = None
@@ -385,7 +391,7 @@ class CreateStream:
             stderr_log_file = await aiofiles.open(log_path, 'a', encoding='utf-8')
         except BaseException as e:
             self._release_slot(provider_slots, video_key, video_name, stream_info)
-            Log.critical(Label.STREAM, f"{video_name} {stream_info}: Failed to create command: {e}", (self.video_type, self.stream_engine))
+            Log.critical(Label.STREAM, f"{video_name} {stream_info}: Failed to create command - {e}", (self.video_type, self.stream_engine))
             await self._cleanup_pre_stream_failure(video_name, stream_info, channel_hls_dir, stderr_log_file)
             if isinstance(e, Exception):
                 return False
@@ -422,7 +428,7 @@ class CreateStream:
         except BaseException as e:
             try:
                 if not isinstance(e, asyncio.CancelledError):
-                    Log.critical(Label.STREAM, f"{video_name} {stream_info}: Failed to start process: {e}", (self.video_type, self.stream_engine))
+                    Log.critical(Label.STREAM, f"{video_name} {stream_info}: Failed to start process - {e}", (self.video_type, self.stream_engine))
             except BaseException:
                 pass
             try:
@@ -438,9 +444,12 @@ class CreateStream:
                         Log.warn(Label.STREAM, f"{video_name} {stream_info}: Killing unresponsive process.", (self.video_type, self.stream_engine))
                         process.kill()
                     except BaseException as terminate_error:  # Catch all exceptions to ensure cleanup, we will re-raise later
-                        Log.error(Label.STREAM, f"{video_name} {stream_info}: Error terminating process: {terminate_error}", (self.video_type, self.stream_engine))
+                        Log.error(Label.STREAM, f"{video_name} {stream_info}: Error terminating process - {terminate_error}", (self.video_type, self.stream_engine))
                         process.kill()
             finally:
+                end_time = loop.time() + PROCESS_TERMINATE_TIMEOUT
+                while process and process.returncode is None and loop.time() < end_time:
+                    await asyncio.sleep(PROCESS_TERMINATE_INTERVAL)
                 if process and process.returncode is None:
                     Log.critical(Label.STREAM, f"{video_name}: Process was not terminated properly, cannot release slot.", (self.video_type, self.stream_engine))
                 else:
@@ -455,11 +464,9 @@ class CreateStream:
             is_healthy: list[bool | None] = [None]
             if self.video_type == VideoType.MPEGTS:
                 run_bg(self._check_mpegts_health(video_name, stream_info, cast(asyncio.StreamReader, process.stdout), is_healthy))
-            loop = asyncio.get_running_loop()
             end_time = loop.time() + (CREATE_STREAM_DEADLINE if is_preview else self.config.process_start_timeout)
             while loop.time() < end_time:
                 if self._selected:
-                    Log.debug(Label.STREAM, f"{video_name} {stream_info}: Another source has already been selected, stopping health check.", (self.video_type, self.stream_engine))
                     return False
                 if process.returncode is not None:
                     raise ChildProcessError(f"exited prematurely with code {process.returncode}")
@@ -479,7 +486,7 @@ class CreateStream:
                 await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
             raise TimeoutError("timed out waiting for segments or process stability")
         except BaseException as e:
-            Log.error(Label.STREAM, f"{video_name} {stream_info}: Validation failed (PID: {process.pid if process else 'N/A'}): {e}. Cleaning up.", (self.video_type, self.stream_engine))
+            Log.error(Label.STREAM, f"{video_name} {stream_info}: Validation failed (PID: {process.pid if process else 'N/A'}) - {e}", (self.video_type, self.stream_engine))
             self._remove_active_video_key(video_key, video_name, stream_info)
             await self.stream_manager.stop_process(video_key)
             if isinstance(e, Exception):

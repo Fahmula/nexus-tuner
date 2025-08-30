@@ -18,7 +18,7 @@ class MPEGTSStream:
     __slots__ = (
         'config', 'stream_manager', 'video_key', 'video_name', 'stream_engine',
         'recreate_stream', '_buffer', '_event', '_reader_positions', '_cancelled',
-        '_writer', '_cleaner',
+        '_stalled', '_writer', '_cleaner',
     )
 
     streams: dict[VideoKey, Self] = {}
@@ -34,6 +34,7 @@ class MPEGTSStream:
         self._event: asyncio.Event = asyncio.Event()
         self._reader_positions: dict[ReaderId, int] = {}
         self._cancelled: bool = False
+        self._stalled: bool = False
         self._writer: asyncio.Task[NoReturn]
         self._cleaner: asyncio.Task[NoReturn]
 
@@ -66,13 +67,13 @@ class MPEGTSStream:
         """Register a new reader for the stream and return its ID."""
         reader_id = ReaderId(max(self._reader_positions.keys(), default=0) + 1)
         self._reader_positions[reader_id] = 0
-        Log.debug(Label.STREAM, f"{self.video_name}: Registering Client #{reader_id}: {len(self._reader_positions)} readers total.", (VideoType.MPEGTS, self.stream_engine))
+        Log.debug(Label.STREAM, f"{self.video_name}: Registering Client #{reader_id} - {len(self._reader_positions)} readers total.", (VideoType.MPEGTS, self.stream_engine))
         return reader_id
 
     def unregister(self, reader_id: ReaderId) -> None:
         """Unregister a reader from the stream, will stop the stream if no readers are left."""
         del self._reader_positions[reader_id]
-        Log.debug(Label.STREAM, f"{self.video_name}: Unregistering Client #{reader_id}: {len(self._reader_positions)} readers left.", (VideoType.MPEGTS, self.stream_engine))
+        Log.debug(Label.STREAM, f"{self.video_name}: Unregistering Client #{reader_id} - {len(self._reader_positions)} readers left.", (VideoType.MPEGTS, self.stream_engine))
         if not len(self._reader_positions):
             self.shutdown()
 
@@ -106,10 +107,25 @@ class MPEGTSStream:
                         self._buffer.append(chunk)
                         self._event.set()
                         self._event = asyncio.Event()
-                except Exception as e:
-                    if self._cancelled:
-                        raise asyncio.CancelledError()
-                    Log.error(Label.STREAM, f"{self.video_name}: Error reading from stream: {e}", (VideoType.MPEGTS, self.stream_engine))
+                except BaseException as e:
+                    if isinstance(e, Exception):  # Recreate stream on errors from process
+                        if self._cancelled:
+                            raise asyncio.CancelledError()
+                        Log.error(Label.STREAM, f"{self.video_name}: Error reading from stream - {e}", (VideoType.MPEGTS, self.stream_engine))
+                    else:
+                        if (self._stalled and isinstance(e, asyncio.CancelledError)):  # Recreate stalled streams
+                            Log.error(Label.STREAM, f"{self.video_name}: Error reading from stream - {e}", (VideoType.MPEGTS, self.stream_engine))
+                            self._stalled = False
+                            self._writer.uncancel()
+                            if not process_info["stop_reason"]:
+                                cast(ProcessInfoMutable, process_info)["stopped_at"] = datetime.now()
+                                cast(ProcessInfoMutable, process_info)["stop_reason"] = StopReason.STALLED
+                                Log.debug(Label.STREAM, f"{self.video_name}: Updated stopped timestamp with {StopReason.STALLED}.", (VideoType.MPEGTS, self.stream_engine))
+                            await self.stream_manager.stop_process(self.video_key)
+                            if self._cancelled:
+                                raise asyncio.CancelledError()  # We were cancelled while stalled so don't recreate
+                        else:
+                            raise  # Re-raise BaseException in all other cases
                     if not process_info["stop_reason"]:
                         cast(ProcessInfoMutable, process_info)["stopped_at"] = datetime.now()
                         cast(ProcessInfoMutable, process_info)["stop_reason"] = StopReason.ERROR
@@ -117,7 +133,7 @@ class MPEGTSStream:
                     await self.stream_manager.stop_process(self.video_key)
                     res = await self.recreate_stream()
                     if isinstance(res, Response):
-                        Log.error(Label.STREAM, f"{self.video_name}: Failed to recreate stream: {res.status}", (VideoType.MPEGTS, self.stream_engine))
+                        Log.error(Label.STREAM, f"{self.video_name}: Failed to recreate stream - {res.status}", (VideoType.MPEGTS, self.stream_engine))
                         raise
                     self.streams.pop(self.video_key, None)
                     self.video_key = res
@@ -132,12 +148,13 @@ class MPEGTSStream:
         except asyncio.CancelledError:
             raise
         except BaseException as e:
-            Log.error(Label.STREAM, f"{self.video_name}: Unexpected error: {e}", (VideoType.MPEGTS, self.stream_engine))
+            Log.error(Label.STREAM, f"{self.video_name}: Unexpected error - {e}", (VideoType.MPEGTS, self.stream_engine))
             raise
         finally:  # Don't stop early incase the user reconnects, let the timeout handle it
             async def bg_cleanup() -> None:
                 Log.debug(Label.STREAM, f"{self.video_name}: Shutting down stream handler...", (VideoType.MPEGTS, self.stream_engine))
                 self.shutdown()
+                self._cleaner.cancel()
                 async with self.stream_manager.stream_process_lock:
                     Log.debug(Label.STREAM, f"{self.video_name}: Marking as inactive.", (VideoType.MPEGTS, self.stream_engine))
                     cast(ProcessInfoMutable, process_info)["last_access"] = datetime.now() - timedelta(seconds=self.config.segment_prune_timeout)  # Elligible for pruning immediately
@@ -148,8 +165,14 @@ class MPEGTSStream:
     async def _cleanup(self) -> NoReturn:
         """Periodically clean up the buffer to prevent excessive memory usage."""
         max_entries = BUFFER_SIZE_LIMIT // MPEGTS_CHUNK_SIZE
+        buffer_pre_sleep = len(self._buffer)
         while True:
             await asyncio.sleep(BUFFER_CLEANUP_INTERVAL)
+            if len(self._buffer) == buffer_pre_sleep:
+                self._stalled = True
+                self._writer.cancel(f"process read stalled, no new data received in {BUFFER_CLEANUP_INTERVAL} seconds.")
+                await self._event.wait()
+                continue
             min_index = min(self._reader_positions.values(), default=len(self._buffer))
             self._buffer = self._buffer[min_index:]
             for reader_id in self._reader_positions:
@@ -161,9 +184,9 @@ class MPEGTSStream:
                     new_pos = max(0, self._reader_positions[reader_id] - dropped)
                     Log.debug(Label.STREAM, f"--- Adjusting Client #{reader_id} position from {self._reader_positions[reader_id]} to {new_pos}.", (VideoType.MPEGTS, self.stream_engine))
                     self._reader_positions[reader_id] = new_pos
+            buffer_pre_sleep = len(self._buffer)
 
     def shutdown(self) -> None:
         """Cancel the stream, cleaning up resources and stopping the writer task."""
         self._cancelled = True  # Let the stdout reader finish gracefully incase we will reconnect
-        self._cleaner.cancel()
         self._event.set()  # Ensure any waiting readers are woken up

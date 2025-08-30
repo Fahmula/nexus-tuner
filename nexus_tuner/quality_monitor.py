@@ -6,7 +6,7 @@ from typing import Coroutine, Final, Any, Self
 from nexus_tuner.config import Config
 from nexus_tuner.handler import ChannelHandler
 from nexus_tuner.slots import ProviderSlots
-from nexus_tuner.utils import (FAILED_STOP_REASONS, PROCESS_TERMINATE_TIMEOUT, NEXUS_TUNER_USER_AGENT, Bitrate, BitrateScore, DateTimeISO, Framerate, FramerateScore, Height,
+from nexus_tuner.utils import (FAILED_STOP_REASONS, PROCESS_TERMINATE_INTERVAL, PROCESS_TERMINATE_TIMEOUT, NEXUS_TUNER_USER_AGENT, Bitrate, BitrateScore, DateTimeISO, Framerate, FramerateScore, Height,
                                 Label, Log, LogicalChannelId, Percent, ProbeInfo, ProbeSuccess, ProviderAlias, QualityInfoImpl, QualityScores,
                                 QualityScoresImpl, ResolutionScore, QualityCacheData, QualityCacheDataImpl, Runtime, RuntimeInfo, RuntimeScore, SourceId, StopReason, StreamName,
                                 StreamURL, TotalScore, UptimeScore, VideoName, Width, create_stream_name, create_video_name, run_bg)
@@ -127,6 +127,7 @@ class QualityMonitor:
         Extracts stream information using ffprobe, ensuring the subprocess is
         terminated on timeout or cancellation.
         """
+        loop = asyncio.get_running_loop()
         cmd: list[str] = [
             str(self.config.ffprobe_path),
             "-v", "error",
@@ -176,6 +177,9 @@ class QualityMonitor:
                         except Exception as e:
                             Log.error(Label.QUALITY, f"{video_name}: Error terminating ffprobe process - {e}")
                             process.kill()
+                    end_time = loop.time() + PROCESS_TERMINATE_TIMEOUT
+                    while process and process.returncode is None and loop.time() < end_time:
+                        await asyncio.sleep(PROCESS_TERMINATE_INTERVAL)
                     if process and process.returncode is None:
                         Log.critical(Label.STREAM, f"{video_name}: ffprobe was not terminated properly, cannot release slot.")
                         return
@@ -256,7 +260,7 @@ class QualityMonitor:
             Log.info(Label.QUALITY, f"{video_name}: Probe task was cancelled by slot manager.")
             raise
         except Exception as e:
-            Log.error(Label.QUALITY, f"{video_name}: Unexpected error during probe: {e}")
+            Log.error(Label.QUALITY, f"{video_name}: Unexpected error during probe - {e}")
             return source_id, {"status": "offline", "reason": f"Probe failed: {e}"}, video_name
     
     async def analyze_mapped_sources(self, input_lc_id: LogicalChannelId | None = None) -> None:

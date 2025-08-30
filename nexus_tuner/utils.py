@@ -46,7 +46,8 @@ NEW_DEADLINE_NON_BEST: Final[int] = 1             # The number of seconds after 
 CREATE_STREAM_POLL_INTERVAL: Final[float] = 0.01  # Polling interval for stream creation
 MPEGTS_PACKET_SIZE: Final[int] = 188              # Size of a single MPEGTS packet in bytes
 DEFAULT_PRIORITY: Final[int] = 5                  # Default priority for sources
-PROCESS_TERMINATE_TIMEOUT: Final[int] = 5          # Timeout for terminating processes
+PROCESS_TERMINATE_TIMEOUT: Final[int] = 5         # Timeout for terminating processes
+PROCESS_TERMINATE_INTERVAL: Final[float] = 0.01   # Polling interval for checking process termination
 URL_REGEX: Final[re.Pattern[str]] = re.compile(
     r'^(?:http|ftp)s?://' # http:// or https://
     r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|' #domain...
@@ -142,7 +143,8 @@ class StopReason(StrEnum):
     PRUNE = "prune"
     PROVIDER = "provider"
     ERROR = "error"
-FAILED_STOP_REASONS = {StopReason.ERROR}
+    STALLED = "stalled"
+FAILED_STOP_REASONS = (StopReason.ERROR, StopReason.STALLED)
 
 
 class ProviderStatus(TypedDict):

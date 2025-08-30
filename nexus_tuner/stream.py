@@ -8,7 +8,7 @@ from typing import Any, Coroutine, Final, Iterable, NoReturn, Self, cast
 from nexus_tuner.config import Config
 from nexus_tuner.handler import ChannelHandler
 from nexus_tuner.quality_monitor import QualityMonitor
-from nexus_tuner.utils import (CREATE_STREAM_DEADLINE, PROCESS_TERMINATE_TIMEOUT, NEW_DEADLINE_NON_BEST, ProcessInfo, ProcessInfoMutable, ProcessInfos, ProcessInfosMutable,
+from nexus_tuner.utils import (CREATE_STREAM_DEADLINE, PROCESS_TERMINATE_INTERVAL, PROCESS_TERMINATE_TIMEOUT, NEW_DEADLINE_NON_BEST, ProcessInfo, ProcessInfoMutable, ProcessInfos, ProcessInfosMutable,
                                 Label, Log, LogicalChannelId, PreviewId, ProviderAlias, SegmentNum, StopReason, StreamEngine, VideoKey, VideoName, VideoType, get_playlist_path, get_segment_number, run_bg)
 
 
@@ -114,7 +114,7 @@ class StreamManager:
             if video_key in self.processes:
                 channel_hls_dir = self.processes[video_key]['channel_hls_dir']
                 if not channel_hls_dir:
-                    Log.error(Label.STREAM, f"Stream {video_key} has no HLS directory set.")
+                    Log.error(Label.STREAM, f"Stream {video_key} has no HLS directory set.", (VideoType.HLS, stream_engine))
                     return
                 return channel_hls_dir / segment_filename
 
@@ -158,7 +158,7 @@ class StreamManager:
                 for video_key, data in current_processes:
                     timeout = self.config.segment_prune_timeout if data['is_preview'] else self.config.process_inactivity_timeout
                     if data['process'].returncode is not None:
-                        Log.info(Label.STREAM, f"{data['video_name']}: Cleaning up dead process (PID: {data['process'].pid}).")
+                        Log.info(Label.STREAM, f"{data['video_name']}: Cleaning up dead process (PID: {data['process'].pid}).", (data['video_type'], data['stream_engine']))
                         if not data['stop_reason']:
                             cast(ProcessInfoMutable, data)['stopped_at'] = datetime.now()
                             cast(ProcessInfoMutable, data)['stop_reason'] = StopReason.ERROR
@@ -166,14 +166,14 @@ class StreamManager:
                         inactive_ids.add(video_key)
                     elif data['is_long_term']:
                         if not data['is_mpegts_active'] and now - data['last_access'] > timedelta(seconds=timeout):
-                            Log.info(Label.STREAM, f"{data['video_name']}: Timed out due to inactivity after {timeout}s (PID: {data['process'].pid}).")
+                            Log.info(Label.STREAM, f"{data['video_name']}: Timed out due to inactivity after {timeout}s (PID: {data['process'].pid}).", (data['video_type'], data['stream_engine']))
                             if not data['stop_reason']:
                                 cast(ProcessInfoMutable, data)['stopped_at'] = datetime.now()
                                 cast(ProcessInfoMutable, data)['stop_reason'] = StopReason.TIMEOUT
                             inactive_ids.add(video_key)
                     else:
                         if now - data['last_access'] > timedelta(seconds=CREATE_STREAM_DEADLINE + NEW_DEADLINE_NON_BEST + 5):
-                            Log.info(Label.STREAM, f"{data['video_name']}: Not long-term and hasn't been cleaned up (PID: {data['process'].pid}).")
+                            Log.info(Label.STREAM, f"{data['video_name']}: Not long-term and hasn't been cleaned up (PID: {data['process'].pid}).", (data['video_type'], data['stream_engine']))
                             if not data['stop_reason']:
                                 cast(ProcessInfoMutable, data)['stopped_at'] = datetime.now()
                                 cast(ProcessInfoMutable, data)['stop_reason'] = StopReason.TIMEOUT
@@ -197,7 +197,7 @@ class StreamManager:
                     continue
                 if now - data['last_access'] < timedelta(seconds=self.config.segment_prune_timeout):
                     continue
-                Log.info(Label.STREAM, f"{data['video_name']}: Pruning inactive {alias} stream.")
+                Log.info(Label.STREAM, f"{data['video_name']}: Pruning inactive {alias} stream.", (data['video_type'], data['stream_engine']))
                 if not data['stop_reason']:
                     cast(ProcessInfoMutable, data)['stopped_at'] = datetime.now()
                     cast(ProcessInfoMutable, data)['stop_reason'] = StopReason.PRUNE
@@ -225,6 +225,7 @@ class StreamManager:
         Stops a single process and cleans its resources.
         If data_to_cleanup is provided, it will NOT release the slot or pop from self.processes.
         """
+        loop = asyncio.get_running_loop()
         if data_to_cleanup is None:
             async with self.stream_process_lock:
                 if (data_to_cleanup := cast(ProcessInfosMutable, self.processes).pop(video_key, None)) is None:
@@ -238,7 +239,7 @@ class StreamManager:
             stream_engine = data_to_cleanup['stream_engine']
             started_at_str = data_to_cleanup['started_at'].isoformat()
             stopped_at_str = data_to_cleanup['stopped_at'].isoformat() if data_to_cleanup['stopped_at'] else None
-            Log.debug(Label.STREAM, f"{video_name}: Stopping process: {started_at_str} -> {data_to_cleanup['stop_reason']} -> {stopped_at_str} | LongTerm={data_to_cleanup['is_long_term']} | Preview={data_to_cleanup['is_preview']}", (video_type, stream_engine))
+            Log.debug(Label.STREAM, f"{video_name}: Stopping process | {started_at_str} -> {data_to_cleanup['stop_reason']} -> {stopped_at_str} | LongTerm={data_to_cleanup['is_long_term']} | Preview={data_to_cleanup['is_preview']}", (video_type, stream_engine))
         else:
             if not data_to_cleanup['stop_reason'] and not data_to_cleanup['is_long_term']:
                 cast(ProcessInfoMutable, data_to_cleanup)['stopped_at'] = datetime.now()
@@ -249,7 +250,7 @@ class StreamManager:
             stream_engine = data_to_cleanup['stream_engine']
             started_at_str = data_to_cleanup['started_at'].isoformat()
             stopped_at_str = data_to_cleanup['stopped_at'].isoformat() if data_to_cleanup['stopped_at'] else None
-            Log.debug(Label.STREAM, f"{video_name}: Stopping process with caller cleanup: {started_at_str} -> {data_to_cleanup['stop_reason']} -> {stopped_at_str} | LongTerm={data_to_cleanup['is_long_term']} | Preview={data_to_cleanup['is_preview']}", (video_type, stream_engine))
+            Log.debug(Label.STREAM, f"{video_name}: Stopping process with caller cleanup | {started_at_str} -> {data_to_cleanup['stop_reason']} -> {stopped_at_str} | LongTerm={data_to_cleanup['is_long_term']} | Preview={data_to_cleanup['is_preview']}", (video_type, stream_engine))
 
         process: asyncio.subprocess.Process = data_to_cleanup['process']
         alias = data_to_cleanup['provider_alias']
@@ -269,13 +270,16 @@ class StreamManager:
                     Log.warn(Label.STREAM, f"{video_name}: Killing unresponsive process.", (video_type, stream_engine))
                     process.kill()
                 except Exception as e:
-                    Log.error(Label.STREAM, f"{video_name}: Error terminating process: {e}", (video_type, stream_engine))
+                    Log.error(Label.STREAM, f"{video_name}: Error terminating process - {e}", (video_type, stream_engine))
                     process.kill()
             except BaseException as e:
-                Log.critical(Label.STREAM, f"{video_name}: Error while stopping process, cannot release slot: {e}", (video_type, stream_engine))
+                Log.critical(Label.STREAM, f"{video_name}: Error while stopping process, cannot release slot - {e}", (video_type, stream_engine))
                 raise
         else:
             Log.debug(Label.STREAM, f"{video_name}: Process already terminated with code {process.returncode}.", (video_type, stream_engine))
+        end_time = loop.time() + PROCESS_TERMINATE_TIMEOUT
+        while process.returncode is None and loop.time() < end_time:
+            await asyncio.sleep(PROCESS_TERMINATE_INTERVAL)
         if process.returncode is None:
             Log.critical(Label.STREAM, f"{video_name}: Process was not terminated properly, cannot release slot.", (video_type, stream_engine))
             return
@@ -283,7 +287,7 @@ class StreamManager:
         try:
             await log_file.close()
         except Exception as e:
-            Log.error(Label.STREAM, f"{video_name}: Error closing log file: {e}", (video_type, stream_engine))
+            Log.error(Label.STREAM, f"{video_name}: Error closing log file - {e}", (video_type, stream_engine))
 
         provider_slots = await self.handler.get_provider_slots(alias)
         if provider_slots:
@@ -301,14 +305,14 @@ class StreamManager:
             if hls_dir and await aiofiles.os.path.exists(hls_dir):
                 await aioshutil.rmtree(hls_dir)
         except Exception as e:
-            Log.error(Label.STREAM, f"{video_name}: Failed to clean HLS directory {hls_dir}: {e}", (video_type, stream_engine))
+            Log.error(Label.STREAM, f"{video_name}: Failed to clean HLS directory {hls_dir} - {e}", (video_type, stream_engine))
 
-        Log.info(Label.STREAM, f"{video_name}: Successfully stopped and cleaned up all resources {{{alias}:{new_active_count}}}", (video_type, stream_engine))
         if data_to_cleanup['stop_reason'] and data_to_cleanup['stopped_at']:
             if data_to_cleanup['is_long_term'] and not data_to_cleanup['is_preview']:
-                run_bg(self.quality_monitor.append_runtime(video_name, data_to_cleanup['source_id'], data_to_cleanup['started_at'], data_to_cleanup['stopped_at'], data_to_cleanup['stop_reason']))
+                await self.quality_monitor.append_runtime(video_name, data_to_cleanup['source_id'], data_to_cleanup['started_at'], data_to_cleanup['stopped_at'], data_to_cleanup['stop_reason'])
         else:
             Log.critical(Label.STREAM, f"{video_name}: Internal error - stop_reason or stopped_at is missing: StopReason={data_to_cleanup['stop_reason']} | StoppedAt={stopped_at_str}", (video_type, stream_engine))
+        Log.info(Label.STREAM, f"{video_name}: Successfully stopped and cleaned up all resources {{{alias}:{new_active_count}}}", (video_type, stream_engine))
 
     async def stop_processes(self, stop_reason: StopReason, video_keys: Iterable[VideoKey] | None = None) -> None:
         """Stops all (or a specified list of) active processes and cleans up resources."""

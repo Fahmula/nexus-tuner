@@ -81,7 +81,7 @@ async def startup() -> None:
     except BaseException as e:
         if Log.initialized:
             Log.critical(Label.SERVER, f"Could not initialize application: {e}")
-        print(f"FATAL: Could not initialize application: {e}", file=sys.stderr)
+        print(f"FATAL: Could not initialize application - {e}", file=sys.stderr)
         sys.exit(1)
 
     global prev_sigterm_handler, prev_sigint_handler, prev_sighup_handler, prev_sigquit_handler
@@ -392,7 +392,7 @@ async def serve_hls_playlist(logical_channel_id: LogicalChannelId | PreviewId, s
                     response.headers["Expires"] = "0"
                     return response
                 except Exception as e:
-                    msg = f"{video_name}: Error serving HLS playlist {playlist_path}: {e}"
+                    msg = f"{video_name}: Error serving HLS playlist {playlist_path} - {e}"
                     Log.error(Label.SERVER, msg, (VideoType.HLS, stream_engine))
                     abort(500, msg)
             await asyncio.sleep(PLAYLIST_POLL_INTERVAL)
@@ -943,7 +943,7 @@ async def ui_logs_modal(num_lines: int) -> str:
                 break
             prev_date -= timedelta(days=1)
     except FileNotFoundError as e:
-        log_lines = [f"Error: Log file not found in '{config.logs_dir}': {e}"]
+        log_lines = [f"Error: Log file not found in '{config.logs_dir}' - {e}"]
     except Exception as e:
         log_lines = [f"An error occurred while reading the log file: {e}"]
     return await render_template("_logs_modal_content.html", log_lines=log_lines, num_lines=num_lines)
