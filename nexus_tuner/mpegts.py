@@ -1,24 +1,25 @@
 import asyncio
 from datetime import datetime, timedelta
+import time
 from typing import Awaitable, Callable, Final, NoReturn, Self, cast
 
 from quart import Response
 
 from nexus_tuner.config import Config
 from nexus_tuner.stream import StreamManager
-from nexus_tuner.utils import MPEGTS_PACKET_SIZE, ProcessInfoMutable, Label, Log, MPEGTSProcessInfo, ReaderId, StopReason, StreamEngine, VideoKey, VideoName, VideoType, run_bg
+from nexus_tuner.utils import (MPEGTS_CHUNK_READ_TIMEOUT, MPEGTS_CHUNK_SIZE, MPEGTSHealthImpl, ProcessInfoMutable, Label, Log, MPEGTSProcessInfo, ReaderId,
+                               StopReason, StreamEngine, VideoKey, VideoName, VideoType, run_bg)
 
-BUFFER_CLEANUP_INTERVAL: Final[int] = 10
+BUFFER_CLEANUP_INTERVAL: Final[int] = 5
 BUFFER_SIZE_LIMIT: Final[int] = 100 * 1024 * 1024
-MPEGTS_CHUNK_SIZE: Final[int] = MPEGTS_PACKET_SIZE * 21
 
 
 class MPEGTSStream:
     """A class to manage MPEGTS streams, handling reading and buffering of data."""
     __slots__ = (
         'config', 'stream_manager', 'video_key', 'video_name', 'stream_engine',
-        'recreate_stream', '_buffer', '_event', '_reader_positions', '_cancelled',
-        '_stalled', '_writer', '_cleaner',
+        'recreate_stream', '_buffer', '_event', '_reader_positions', 
+        '_total_bytes_read', '_started_at', '_cancelled', '_writer', '_cleaner',
     )
 
     streams: dict[VideoKey, Self] = {}
@@ -33,8 +34,9 @@ class MPEGTSStream:
         self._buffer: list[bytes] = []
         self._event: asyncio.Event = asyncio.Event()
         self._reader_positions: dict[ReaderId, int] = {}
+        self._total_bytes_read: int = 0
+        self._started_at: float | None = None
         self._cancelled: bool = False
-        self._stalled: bool = False
         self._writer: asyncio.Task[NoReturn]
         self._cleaner: asyncio.Task[NoReturn]
 
@@ -96,10 +98,31 @@ class MPEGTSStream:
             while True:
                 Log.debug(Label.STREAM, f"{self.video_name}: Marking as active.", (VideoType.MPEGTS, self.stream_engine))
                 cast(ProcessInfoMutable, process_info)["is_mpegts_active"] = True
+                if process_info["mpegts_health"]:
+                    cast(MPEGTSHealthImpl, process_info["mpegts_health"])["stop_read"] = True
+                    await process_info["mpegts_health"]["stopped"].wait()
+                    total_elapsed = time.monotonic() - process_info["mpegts_health"]["started_at"]
+                    bytes_read = sum(len(chunk) for chunk in process_info["mpegts_health"]["buffer"])
+                    mbps = (bytes_read * 8) / 1_000_000 / total_elapsed if total_elapsed else 0
+                    Log.debug(Label.STREAM, f"{self.video_name}: Initializing buffer with {len(process_info['mpegts_health']['buffer']):,} chunks ({bytes_read:,} bytes) over {total_elapsed:.3f}s ({mbps:.2f}mbps).", (VideoType.MPEGTS, self.stream_engine))
+                    if not self._started_at:
+                        self._started_at = process_info["mpegts_health"]["started_at"]
+                    self._total_bytes_read += bytes_read
+                    self._buffer.extend(process_info["mpegts_health"]["buffer"])
+                    if process_info["mpegts_health"]["is_healthy"]:
+                        self._event.set()
+                        self._event = asyncio.Event()
+                    else:
+                        Log.error(Label.STREAM, f"{self.video_name}: Stream ended while transitioning ownership from health check to stream handler.", (VideoType.MPEGTS, self.stream_engine))
+                    cast(ProcessInfoMutable, process_info)["mpegts_health"] = None
+                else:
+                    self._started_at = time.monotonic()
+                    Log.debug(Label.STREAM, f"{self.video_name}: No health check data to initialize with.", (VideoType.MPEGTS, self.stream_engine))
                 stdout: asyncio.StreamReader = cast(asyncio.StreamReader, process_info["process"].stdout)
                 try:
                     while True:
-                        chunk = await stdout.readexactly(MPEGTS_CHUNK_SIZE)
+                        chunk = await asyncio.wait_for(stdout.readexactly(MPEGTS_CHUNK_SIZE), timeout=MPEGTS_CHUNK_READ_TIMEOUT)
+                        self._total_bytes_read += len(chunk)
                         if self._cancelled:
                             raise asyncio.CancelledError()  # Ensure we finish reading properly
                         if not chunk:
@@ -107,25 +130,20 @@ class MPEGTSStream:
                         self._buffer.append(chunk)
                         self._event.set()
                         self._event = asyncio.Event()
-                except BaseException as e:
-                    if isinstance(e, Exception):  # Recreate stream on errors from process
+                except Exception as e:
+                    if isinstance(e, asyncio.TimeoutError):
+                        Log.error(Label.STREAM, f"{self.video_name}: Process read stalled, no new data received in {MPEGTS_CHUNK_READ_TIMEOUT}s.", (VideoType.MPEGTS, self.stream_engine))
+                        if not process_info["stop_reason"]:
+                            cast(ProcessInfoMutable, process_info)["stopped_at"] = datetime.now()
+                            cast(ProcessInfoMutable, process_info)["stop_reason"] = StopReason.STALLED
+                            Log.debug(Label.STREAM, f"{self.video_name}: Updated stopped timestamp with {StopReason.STALLED}.", (VideoType.MPEGTS, self.stream_engine))
+                        await self.stream_manager.stop_process(self.video_key)
+                        if self._cancelled:
+                            raise asyncio.CancelledError()
+                    else:
                         if self._cancelled:
                             raise asyncio.CancelledError()
                         Log.error(Label.STREAM, f"{self.video_name}: Error reading from stream - {e}", (VideoType.MPEGTS, self.stream_engine))
-                    else:
-                        if (self._stalled and isinstance(e, asyncio.CancelledError)):  # Recreate stalled streams
-                            Log.error(Label.STREAM, f"{self.video_name}: Error reading from stream - {e}", (VideoType.MPEGTS, self.stream_engine))
-                            self._stalled = False
-                            self._writer.uncancel()
-                            if not process_info["stop_reason"]:
-                                cast(ProcessInfoMutable, process_info)["stopped_at"] = datetime.now()
-                                cast(ProcessInfoMutable, process_info)["stop_reason"] = StopReason.STALLED
-                                Log.debug(Label.STREAM, f"{self.video_name}: Updated stopped timestamp with {StopReason.STALLED}.", (VideoType.MPEGTS, self.stream_engine))
-                            await self.stream_manager.stop_process(self.video_key)
-                            if self._cancelled:
-                                raise asyncio.CancelledError()  # We were cancelled while stalled so don't recreate
-                        else:
-                            raise  # Re-raise BaseException in all other cases
                     if not process_info["stop_reason"]:
                         cast(ProcessInfoMutable, process_info)["stopped_at"] = datetime.now()
                         cast(ProcessInfoMutable, process_info)["stop_reason"] = StopReason.ERROR
@@ -165,26 +183,32 @@ class MPEGTSStream:
     async def _cleanup(self) -> NoReturn:
         """Periodically clean up the buffer to prevent excessive memory usage."""
         max_entries = BUFFER_SIZE_LIMIT // MPEGTS_CHUNK_SIZE
-        buffer_pre_sleep = len(self._buffer)
-        while True:
-            await asyncio.sleep(BUFFER_CLEANUP_INTERVAL)
-            if len(self._buffer) == buffer_pre_sleep:
-                self._stalled = True
-                self._writer.cancel(f"process read stalled, no new data received in {BUFFER_CLEANUP_INTERVAL} seconds.")
-                await self._event.wait()
-                continue
-            min_index = min(self._reader_positions.values(), default=len(self._buffer))
-            self._buffer = self._buffer[min_index:]
-            for reader_id in self._reader_positions:
-                self._reader_positions[reader_id] -= min_index
-            if len(self._buffer) > max_entries:
-                dropped = len(self._buffer) - max_entries
-                Log.debug(Label.STREAM, f"{self.video_name}: Cleaning up buffer, {len(self._buffer)} entries, dropping {dropped} entries.", (VideoType.MPEGTS, self.stream_engine))
+        try:
+            await self._event.wait()
+            while True:
+                await asyncio.sleep(BUFFER_CLEANUP_INTERVAL)
+
+                # Drop the chunks all readers have sent and shift all their positions.
+                min_index = min(self._reader_positions.values(), default=len(self._buffer))
+                del self._buffer[:min_index]
                 for reader_id in self._reader_positions:
+                    self._reader_positions[reader_id] -= min_index
+
+                if len(self._buffer) <= max_entries:
+                    continue
+                dropped = len(self._buffer) - max_entries
+                Log.warn(Label.STREAM, f"{self.video_name}: Cleaning up buffer, {len(self._buffer)} entries ({sum(len(chunk) for chunk in self._buffer)} bytes), dropping {dropped} entries (will cause skips).", (VideoType.MPEGTS, self.stream_engine))
+                for reader_id in self._reader_positions:
+                    skip_msg = f"will cause skips" if dropped > self._reader_positions[reader_id] else "no skips"
                     new_pos = max(0, self._reader_positions[reader_id] - dropped)
-                    Log.debug(Label.STREAM, f"--- Adjusting Client #{reader_id} position from {self._reader_positions[reader_id]} to {new_pos}.", (VideoType.MPEGTS, self.stream_engine))
+                    Log.debug(Label.STREAM, f"--- Adjusting Client #{reader_id} position from {self._reader_positions[reader_id]} to {new_pos} ({skip_msg}).", (VideoType.MPEGTS, self.stream_engine))
                     self._reader_positions[reader_id] = new_pos
-            buffer_pre_sleep = len(self._buffer)
+                del self._buffer[:dropped]
+                Log.debug(Label.STREAM, f"{self.video_name}: Cleaned up buffer, new size at {len(self._buffer)} entries ({sum(len(chunk) for chunk in self._buffer)} bytes).", (VideoType.MPEGTS, self.stream_engine))
+        finally:
+            total_elapsed = time.monotonic() - self._started_at if self._started_at else 0
+            mbps = (self._total_bytes_read * 8) / 1_000_000 / total_elapsed if total_elapsed else 0
+            Log.debug(Label.STREAM, f"{self.video_name}: Read {self._total_bytes_read:,} bytes at {mbps:.2f}mbps for {total_elapsed:,.3f}s.", (VideoType.MPEGTS, self.stream_engine))
 
     def shutdown(self) -> None:
         """Cancel the stream, cleaning up resources and stopping the writer task."""

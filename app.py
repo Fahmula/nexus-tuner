@@ -104,7 +104,7 @@ def handle_signal(signum: int, frame: FrameType | None) -> None:
     sig = signal.Signals(signum)
     Log.info(Label.SERVER, f"Received {sig.name}, shutting down NexusTuner v{NEXUS_TUNER_VERSION}...")
     for mpegts_stream in MPEGTSStream.streams.values():
-        mpegts_stream.shutdown()
+        mpegts_stream.shutdown()  # We need to close any active connections for @app.after_serving to trigger
     if sig == signal.SIGTERM and callable(prev_sigterm_handler):
         prev_sigterm_handler(sig, frame)
     elif sig == signal.SIGINT and callable(prev_sigint_handler):

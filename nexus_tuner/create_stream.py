@@ -13,8 +13,8 @@ from nexus_tuner.quality_monitor import QualityMonitor
 from nexus_tuner.slots import ProviderSlots
 from nexus_tuner.handler import ChannelHandler
 from nexus_tuner.stream import StreamManager
-from nexus_tuner.utils import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL, PROCESS_TERMINATE_INTERVAL, PROCESS_TERMINATE_TIMEOUT,
-                                MPEGTS_PACKET_SIZE, NEW_DEADLINE_NON_BEST, NEXUS_TUNER_USER_AGENT, ChannelNum, ProcessInfosMutable, Label, Log,
+from nexus_tuner.utils import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL, MPEGTS_CHUNK_READ_TIMEOUT, PROCESS_TERMINATE_INTERVAL, PROCESS_TERMINATE_TIMEOUT,
+                                MPEGTS_PACKET_SIZE, MPEGTS_CHUNK_SIZE, NEW_DEADLINE_NON_BEST, NEXUS_TUNER_USER_AGENT, ChannelNum, MPEGTSHealth, MPEGTSHealthImpl, ProcessInfosMutable, Label, Log,
                                 LogicalChannelId, LogicalChannelTitle, PreviewId, Priority, ProviderAlias, QualityScores, QualityScoresImpl, SourceInfo, SourceId, StopReason, StreamEngine, StreamName, TVGDisplayTitle, TVGName, VideoKey, VideoName,
                                 VideoType, create_stream_key, create_stream_name, create_video_key, create_video_name, duration_to_str, get_playlist_path, get_segment_path, is_preview_id, run_bg, sort_sources)
 
@@ -64,8 +64,7 @@ def create_mpegts_ffmpeg_command(config: Config, input_url: str) -> list[str]:
         "-c:v", "copy",
         "-c:a", "aac", "-b:a", "192k", "-ac", "2",
         "-map", "0:v", "-map", "0:a", "-c:s", "copy",
-        "-f", "mpegts",
-        "pipe:1"
+        "-f", "mpegts", "pipe:1"
     ]
     return command
 
@@ -337,18 +336,42 @@ class CreateStream:
                 return
             source, video_key, video_name, stream_info = source_res
 
-    async def _check_mpegts_health(self, video_name: VideoName, stream_info: str, stdout_reader: asyncio.StreamReader, is_healthy: list[bool | None]) -> None:
-        """Tries to read from stdout, blocks until data is available or the stream ends."""
-        error: Exception | str = "no data received or timed out"
+    async def _check_mpegts_health(self, video_name: VideoName, stream_info: str, stdout_reader: asyncio.StreamReader, mpegts_health: MPEGTSHealthImpl, healthy_timeout: float) -> None:
+        """Tries to read a single packet from stdout to determine if the MPEGTS stream is healthy. If healthy reads into a buffer until MPEGTSStream takes over."""
         try:
-            if await stdout_reader.readexactly(MPEGTS_PACKET_SIZE):
-                is_healthy[0] = True
-                return
+            inital_bytes = await asyncio.wait_for(stdout_reader.readexactly(MPEGTS_PACKET_SIZE), timeout=healthy_timeout)
+            if not inital_bytes:
+                raise EOFError("no data received")
+            mpegts_health["is_healthy"] = True
+            mpegts_health["buffer"].append(inital_bytes)
         except Exception as e:
-            error = e
-        if not self._selected:
-            Log.error(Label.STREAM, f"{video_name} {stream_info}: Error reading from stream - {error}", (self.video_type, self.stream_engine))
-        is_healthy[0] = False
+            mpegts_health["is_healthy"] = False
+            mpegts_health["stopped"].set()
+            if not self._selected and not isinstance(e, asyncio.TimeoutError):
+                Log.error(Label.STREAM, f"{video_name} {stream_info}: Error reading from stream for health check - {e}", (self.video_type, self.stream_engine))
+            return
+
+        try:
+            chunk_diff = MPEGTS_CHUNK_SIZE - MPEGTS_PACKET_SIZE
+            if chunk_diff > 0:  # Ensure all chunks in buffer are of MPEGTS_CHUNK_SIZE
+                chunk = await asyncio.wait_for(stdout_reader.readexactly(chunk_diff), timeout=MPEGTS_CHUNK_READ_TIMEOUT)
+                if not chunk:
+                    raise EOFError("no data received")
+                mpegts_health["buffer"][0] += chunk
+            while True:
+                if mpegts_health["stop_read"]:
+                    return
+                chunk = await asyncio.wait_for(stdout_reader.readexactly(MPEGTS_CHUNK_SIZE), timeout=MPEGTS_CHUNK_READ_TIMEOUT)
+                if not chunk:
+                    raise EOFError("no data received")
+                mpegts_health["buffer"].append(chunk)
+        except Exception as e:
+            mpegts_health["is_healthy"] = False
+            if not self._selected:
+                error = f"timed out after {healthy_timeout}s" if isinstance(e, asyncio.TimeoutError) else e
+                Log.error(Label.STREAM, f"{video_name} {stream_info}: Error reading from stream for inital buffer - {error}", (self.video_type, self.stream_engine))
+        finally:
+            mpegts_health["stopped"].set()
 
     async def _cleanup_pre_stream_failure(self, video_name: VideoName, stream_info: str, channel_hls_dir: Path | None, stderr_log_file: aiofiles.threadpool.text.AsyncTextIOWrapper | None) -> None:
         """Cleans up resources if stream creation fails before starting the process."""
@@ -399,19 +422,23 @@ class CreateStream:
 
         process: asyncio.subprocess.Process | None = None
         is_preview = is_preview_id(self.logical_channel_id)
+        healthy_timeout = CREATE_STREAM_DEADLINE if is_preview else self.config.process_start_timeout
+        mpegts_health: MPEGTSHealth | None = None
         try:
             async with self._mutex:
                 if self._selected:
                     raise asyncio.CancelledError("Stream selection already occurred.")
                 if self.video_type == VideoType.MPEGTS:
                     process = await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.PIPE, stderr=cast(IO[Any], stderr_log_file))
+                    mpegts_health = cast(MPEGTSHealth, MPEGTSHealthImpl({"is_healthy": None, "buffer": [], "stop_read": False, "stopped": asyncio.Event(), "started_at": time.monotonic()}))
+                    run_bg(self._check_mpegts_health(video_name, stream_info, cast(asyncio.StreamReader, process.stdout), cast(MPEGTSHealthImpl, mpegts_health), healthy_timeout))
                     async with self.stream_manager.stream_process_lock:
                         started_at = datetime.now()
                         cast(ProcessInfosMutable, self.stream_manager.processes)[video_key] = {
                             'process': process, 'is_long_term': False, 'is_preview': is_preview, 'stream_engine': self.stream_engine,
                             'video_type': VideoType.MPEGTS, 'video_name': video_name, 'provider_alias': provider_alias, 'source_id': source["source_id"],
                             'logical_channel_id': self.logical_channel_id, 'channel_hls_dir': None, 'started_at': started_at, 'stopped_at': None,
-                            'stop_reason': None, 'last_access': started_at, 'is_mpegts_active': False, 'stderr_log_file_obj': stderr_log_file
+                            'stop_reason': None, 'last_access': started_at, 'is_mpegts_active': False, 'mpegts_health': mpegts_health, 'stderr_log_file_obj': stderr_log_file
                         }
                 else:
                     process = await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.DEVNULL, stderr=cast(IO[Any], stderr_log_file))
@@ -421,7 +448,7 @@ class CreateStream:
                             'process': process, 'is_long_term': False, 'is_preview': is_preview, 'stream_engine': self.stream_engine,
                             'video_type': VideoType.HLS, 'video_name': video_name, 'provider_alias': provider_alias, 'logical_channel_id': self.logical_channel_id,
                             'source_id': source["source_id"], 'channel_hls_dir': cast(Path, channel_hls_dir), 'started_at': started_at, 'stopped_at': None,
-                            'stop_reason': None, 'last_access': started_at, 'is_mpegts_active': None, 'stderr_log_file_obj': stderr_log_file
+                            'stop_reason': None, 'last_access': started_at, 'is_mpegts_active': None, 'mpegts_health': None, 'stderr_log_file_obj': stderr_log_file
                         }
                 self._slots_acquired.remove(video_key)  # Slot is now owned by the process
                 self._active_video_keys.add(video_key)
@@ -461,10 +488,7 @@ class CreateStream:
         Log.info(Label.STREAM, f"{video_name} {stream_info}: Claimed a '{provider_alias}' slot and started process (PID: {process.pid}) {{{provider_alias}:{new_active_count}}}.", (self.video_type, self.stream_engine))
 
         try:
-            is_healthy: list[bool | None] = [None]
-            if self.video_type == VideoType.MPEGTS:
-                run_bg(self._check_mpegts_health(video_name, stream_info, cast(asyncio.StreamReader, process.stdout), is_healthy))
-            end_time = loop.time() + (CREATE_STREAM_DEADLINE if is_preview else self.config.process_start_timeout)
+            end_time = loop.time() + healthy_timeout
             while loop.time() < end_time:
                 if self._selected:
                     return False
@@ -474,12 +498,11 @@ class CreateStream:
                     if any(f.endswith('.ts') for f in await aiofiles.os.listdir(channel_hls_dir)):
                         Log.info(Label.STREAM, f"{video_name} {stream_info}: Stream is now healthy (PID: {process.pid})", (self.video_type, self.stream_engine))
                         return True
-                elif self.video_type == VideoType.MPEGTS:
-                    res = is_healthy[0]
-                    if res is True:
+                elif mpegts_health:
+                    if mpegts_health["is_healthy"] is True:
                         Log.info(Label.STREAM, f"{video_name} {stream_info}: Stream is now healthy (PID: {process.pid})", (self.video_type, self.stream_engine))
                         return True
-                    elif res is False:
+                    elif mpegts_health["is_healthy"] is False:
                         raise ChildProcessError("MPEGTS health check failed")
                 else:
                     raise ValueError(f"Unsupported video type: {self.video_type}")
@@ -515,13 +538,13 @@ class CreateStream:
                 await self.stream_manager.set_process_long_term(video_key, video_name, True)
                 self._res = (True, video_key, video_name)
                 self._result_event.set()
+                keys_to_stop = [k for k in self._active_video_keys if k != video_key]
+                await self.stream_manager.stop_processes(StopReason.DECLINED, keys_to_stop)
                 Log.info(Label.STREAM,
                     f"{video_name} {self._source_quality_messages[video_key]}: "
                     f"Selected as the best stream from {len(self._results)} tested and healthy sources "
                     f"(Total: {len(self._sources)} sources)",
                     (self.video_type, self.stream_engine)
                 )
-                keys_to_stop = [k for k in self._active_video_keys if k != video_key]
-                await self.stream_manager.stop_processes(StopReason.DECLINED, keys_to_stop)
         finally:
             self._result_event.set()

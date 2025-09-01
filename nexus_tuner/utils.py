@@ -41,13 +41,15 @@ NEXUS_TUNER_USER_AGENT: Final[str] = f"NexusTuner/{NEXUS_TUNER_VERSION}"
 NEXUS_TUNER_PORT: Final[int] = int(os.getenv("NEXUS_PORT", 4040))
 if NEXUS_TUNER_PORT < 1 or NEXUS_TUNER_PORT > 65535:
     raise ValueError("NEXUS_PORT must be a valid port number between 1 and 65535.")
-CREATE_STREAM_DEADLINE: Final[int] = 25           # The maximum time that clients will wait for a stream to be created
-NEW_DEADLINE_NON_BEST: Final[int] = 1             # The number of seconds after a stream is healthy before giving up waiting on others, the best remaining source deadline is immediate
-CREATE_STREAM_POLL_INTERVAL: Final[float] = 0.01  # Polling interval for stream creation
-MPEGTS_PACKET_SIZE: Final[int] = 188              # Size of a single MPEGTS packet in bytes
-DEFAULT_PRIORITY: Final[int] = 5                  # Default priority for sources
-PROCESS_TERMINATE_TIMEOUT: Final[int] = 5         # Timeout for terminating processes
-PROCESS_TERMINATE_INTERVAL: Final[float] = 0.01   # Polling interval for checking process termination
+CREATE_STREAM_DEADLINE: Final[int] = 25                   # The maximum time that clients will wait for a stream to be created
+NEW_DEADLINE_NON_BEST: Final[int] = 1                     # The number of seconds after a stream is healthy before giving up waiting on others, the best remaining source deadline is immediate
+CREATE_STREAM_POLL_INTERVAL: Final[float] = 0.01          # Polling interval for stream creation
+MPEGTS_PACKET_SIZE: Final[int] = 188                      # Size of a single MPEGTS packet in bytes
+MPEGTS_CHUNK_SIZE: Final[int] = MPEGTS_PACKET_SIZE * 21   # Size of each chunk we send to clients. Update with MPEGTS_CHUNK_READ_TIMEOUT.
+MPEGTS_CHUNK_READ_TIMEOUT: Final[int] = 10                # Timeout for reading MPEGTS chunks. Update with MPEGTS_CHUNK_SIZE.
+DEFAULT_PRIORITY: Final[int] = 5                          # Default priority for sources
+PROCESS_TERMINATE_TIMEOUT: Final[int] = 5                 # Timeout for terminating processes
+PROCESS_TERMINATE_INTERVAL: Final[float] = 0.01           # Polling interval for checking process termination
 URL_REGEX: Final[re.Pattern[str]] = re.compile(
     r'^(?:http|ftp)s?://' # http:// or https://
     r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|' #domain...
@@ -284,6 +286,18 @@ JobsDataImpl = NewType("JobsDataImpl", dict[JobName, JobInfoImpl])
 _JobsDataReadOnly = NewType("_JobsDataReadOnly", Mapping[JobName, JobInfo])
 type JobsData = JobsDataImpl | _JobsDataReadOnly
 
+class MPEGTSHealth(TypedDict):
+    is_healthy: ReadOnly[bool | None]
+    buffer: ReadOnly[tuple[bytes, ...]]
+    stop_read: ReadOnly[bool]
+    stopped: ReadOnly[asyncio.Event]
+    started_at: ReadOnly[float]
+class MPEGTSHealthImpl(TypedDict):
+    is_healthy: bool | None
+    buffer: list[bytes]
+    stop_read: bool
+    stopped: asyncio.Event
+    started_at: float
 class MPEGTSProcessInfo(TypedDict):
     process: ReadOnly[asyncio.subprocess.Process]
     provider_alias: ReadOnly[ProviderAlias]
@@ -299,6 +313,7 @@ class MPEGTSProcessInfo(TypedDict):
     stop_reason: ReadOnly[StopReason | None]
     last_access: ReadOnly[datetime]
     is_mpegts_active: ReadOnly[bool]
+    mpegts_health: ReadOnly[MPEGTSHealth | None]
     channel_hls_dir: ReadOnly[None]
     stderr_log_file_obj: ReadOnly[aiofiles.threadpool.text.AsyncTextIOWrapper]
 class HLSProcessInfo(TypedDict):
@@ -316,6 +331,7 @@ class HLSProcessInfo(TypedDict):
     stop_reason: ReadOnly[StopReason | None]
     last_access: ReadOnly[datetime]
     is_mpegts_active: ReadOnly[None]
+    mpegts_health: ReadOnly[None]
     channel_hls_dir: ReadOnly[Path]
     stderr_log_file_obj: ReadOnly[aiofiles.threadpool.text.AsyncTextIOWrapper]
 type ProcessInfo = MPEGTSProcessInfo | HLSProcessInfo
@@ -326,6 +342,7 @@ class ProcessInfoMutable(TypedDict):
     stop_reason: StopReason | None
     last_access: datetime
     is_mpegts_active: bool
+    mpegts_health: MPEGTSHealthImpl | None
 ProcessInfosMutable = NewType("ProcessInfosMutable", dict[VideoKey, ProcessInfo])
 
 class ProbeSuccess(TypedDict):
@@ -509,7 +526,7 @@ def create_video_name(stream_name: StreamName, source_name: TVGDisplayTitle | TV
 
 def create_preview_id(source_id: SourceId) -> PreviewId:
     """Generates a unique ID for the preview stream."""
-    return PreviewId(f"preview_{source_id}")
+    return PreviewId(f"preview_{source_id}")  # Need to update create_video_key() if changing
 
 
 def get_source_id_from_preview(preview_id: PreviewId) -> SourceId:

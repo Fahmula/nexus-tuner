@@ -279,7 +279,6 @@ class QualityMonitor:
                 return
             valid_mappings.append((DateTimeISO("0001-01-01"), input_lc_id, [source_id for source_id in mappings], stream_name))
         else:
-            Log.info(Label.QUALITY, "Starting stream quality analysis cycle.")
             all_mappings = await self.handler.copy_channel_mappings_data()
             if not all_mappings:
                 Log.warn(Label.QUALITY, "No mapped sources to analyze.")
@@ -436,9 +435,9 @@ class QualityMonitor:
             # The reason why we don't store that is to only consider recent history rather than the entire lifetime
             if any(r["stop_reason"] in FAILED_STOP_REASONS for r in source_entry["runtimes"]):
                 if source_entry["runtimes"][-1]["stop_reason"] in FAILED_STOP_REASONS:
-                    avg_runtime = Runtime(sum([r["runtime"] for r in source_entry["runtimes"]]) / len(source_entry["runtimes"]))
+                    avg_runtime = Runtime(sum(r["runtime"] for r in source_entry["runtimes"]) / len(source_entry["runtimes"]))
                 else:
-                    avg_runtime = Runtime(sum([r["runtime"] for r in source_entry["runtimes"]]) / (len(source_entry["runtimes"])-1))
+                    avg_runtime = Runtime(sum(r["runtime"] for r in source_entry["runtimes"]) / (len(source_entry["runtimes"])-1))
                 runtime_score = RuntimeScore(RUNTIME_WEIGHT * min(avg_runtime / RUNTIME_NORM, 1.0))
             else:
                 avg_runtime = None
