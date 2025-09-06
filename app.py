@@ -649,7 +649,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
         channel_num: ChannelNum = ChannelNum(form_data.get("channel_num", "").strip())
         group_title: TVGGroupTitle = TVGGroupTitle(form_data.get("group_title", "Uncategorized").strip())
         tvg_id: TVGId = TVGId(form_data.get("tvg_id", "").strip())
-        tvg_log: TVGLogo = TVGLogo(form_data.get("tvg_logo", "").strip())
+        tvg_logo: TVGLogo = TVGLogo(form_data.get("tvg_logo", "").strip())
 
         if not logical_channel_title or not channel_num:
             msg = "Display Name and Channel Number are required."
@@ -664,17 +664,26 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
             await flash(msg, "error")
             return redirect(request.url)
 
+        source_ids: list[SourceId] = [SourceId(source_id) for source_id in form_data.getlist('mapping_source_id')]
         mappings_to_save: list[SourceMappingInfoWithId] = []
-        for source_id_str in form_data.getlist('mapping_source_id'):
+        for source_id in source_ids:
             try:
                 mappings_to_save.append(SourceMappingInfoWithId({
-                    'source_id': SourceId(source_id_str),
-                    'priority': Priority(int(form_data.get(f"priority_{source_id_str}", DEFAULT_PRIORITY)))
+                    'source_id': source_id,
+                    'priority': Priority(int(form_data.get(f"priority_{source_id}", DEFAULT_PRIORITY)))
                 }))
             except (ValueError, TypeError):
-                msg = f"Skipping mapping with invalid priority for source '{source_id_str}'."
+                msg = f"Skipping mapping with invalid priority for source '{source_id}'."
                 Log.warn(Label.SERVER, msg)
                 await flash(msg, "warning")
+        sort_sources(mappings_to_save, await quality_monitor.get_quality_scores(), reverse=False)
+
+        if not tvg_logo:
+            for mapping in mappings_to_save:
+                discovered_source = await handler.get_discovered_source(mapping['source_id'])
+                if discovered_source and discovered_source['tvg_logo']:
+                    tvg_logo = discovered_source['tvg_logo']
+                    break
 
         stream_name = create_stream_name(logical_channel_title, channel_num)
         submitted_id = form_data.get("logical_channel_id")
@@ -685,7 +694,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
                 "channel_num": channel_num,
                 "group_title": group_title,
                 "tvg_id": tvg_id,
-                "tvg_logo": tvg_log,
+                "tvg_logo": tvg_logo,
             }
             if not await handler.update_logical_channel(logical_channel_id, lc_data):
                 await flash(f"{stream_name}: Failed to update.", "error")
@@ -706,7 +715,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
                 "channel_num": channel_num,
                 "group_title": group_title,
                 "tvg_id": tvg_id,
-                "tvg_logo": tvg_log,
+                "tvg_logo": tvg_logo,
             }
             new_id = await handler.add_logical_channel(lc_data)
             if not new_id:

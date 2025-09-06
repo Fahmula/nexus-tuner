@@ -10,12 +10,12 @@
     <table class="table table-sm table-hover">
         <thead class="table-light">
             <tr>
-                <th style="width: 5%;" class="text-center" data-bs-toggle="tooltip" title="Enable or disable this source mapping">Enable</th>
-                <th>Source</th>
-                <th style="width: 5%;" class="text-center" data-bs-toggle="tooltip" title="Availability when due for quality analysis">Uptime</th>
-                <th style="width: 5%;" class="text-center" data-bs-toggle="tooltip" title="Average duration played before encountering an issue">Runtime</th>
-                <th style="width: 5%;" class="text-center" data-bs-toggle="tooltip" title="Adjust to override quality metrics">Priority</th>
-                <th style="width: 5%;" class="text-end" data-bs-toggle="tooltip" title="Preview the source stream">Preview</th>
+                <th data-bs-toggle="tooltip" title="The TVG Display Title of the source">Source</th>
+                <th style="width: 5%;" data-bs-toggle="tooltip" title="Availability when due for quality analysis">Uptime</th>
+                <th style="width: 5%;" data-bs-toggle="tooltip" title="Average duration played before encountering an issue">Runtime</th>
+                <th style="width: 5%;" data-bs-toggle="tooltip" title="Enable or disable this source mapping">Enable</th>
+                <th style="width: 5%;" data-bs-toggle="tooltip" title="Adjust to override quality metrics">Priority</th>
+                <th style="width: 5%;" data-bs-toggle="tooltip" title="Preview the source stream">Preview</th>
             </tr>
         </thead>
 
@@ -23,21 +23,17 @@
             {% for source in mapped_sources %}
             {% set source_metrics = all_source_metrics.get(source.source_id, {}) %}
             <tr>
-                <td class="text-center align-middle">
-                    <input class="form-check-input" type="checkbox" name="mapping_source_id"
-                        value="{{ source.source_id }}" checked>
-                </td>
                 <td class="align-middle">
-                    <span data-bs-toggle="tooltip" title="{{ source.source_id }}">{{ source.tvg_name}}</span>
+                    <span data-bs-toggle="tooltip" title="{{ source.source_id }}">{{ source.display_title }}</span>
                     <small class="text-muted">({{ source.provider_alias }})</small>
                     <span class="badge bg-success ms-2">Mapped</span>
                     {% if source.source_id in sources_mapped_elsewhere %}
-                        <span class="badge bg-warning ms-2" data-bs-toggle="tooltip" title="Duplicated with Ch No. {{ sources_mapped_elsewhere[source.source_id] }}">
+                        <span class="badge bg-warning ms-2" data-bs-toggle="tooltip" title="Duplicated with channels {{ sources_mapped_elsewhere[source.source_id] }}">
                             Duplicated {{ sources_mapped_elsewhere[source.source_id] }}
                         </span>
                     {% endif %}
                 </td>
-                <td class="text-center align-middle">
+                <td class="align-middle text-center">
                     {% if source_metrics.uptime is defined and source_metrics.uptime is not none %}
                         {% set uptime_val = source_metrics.uptime|int %}
                         {% if uptime_val >= 75 %}
@@ -58,7 +54,7 @@
                         title="Availability when due for quality analysis">N/A</span>
                     {% endif %}
                 </td>
-                <td class="text-center align-middle">
+                <td class="align-middle text-center">
                     {% if source_metrics.runtime is defined and source_metrics.runtime is not none %}
                         {% set runtime_str = source_metrics.runtime|duration_to_str %}
                         {% if source_metrics.runtime >= 8 * 60 * 60 %}
@@ -79,16 +75,19 @@
                         title="Average duration played before encountering an issue">&infin;</span>
                     {% endif %}
                 </td>
-                <td class="align-middle">
+                <td class="align-middle text-center">
+                    <input class="form-check-input" type="checkbox" name="mapping_source_id" value="{{ source.source_id }}" checked>
+                </td>
+                <td class="align-middle text-center">
                     <input type="number" class="form-control form-control-sm" name="priority_{{ source.source_id }}"
                         value="{{ source_metrics.priority|default(5) }}" min="0" max="10" required>
                 </td>
-                <td class="text-end align-middle">
+                <td class="align-middle text-center">
                     <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal"
                         data-bs-target="#previewModal"
                         hx-get="{{ url_for('ui_player_for_source', source_id=source.source_id) }}"
                         hx-target="#preview-modal-body" hx-trigger="click"
-                        title="Preview Stream URL for {{ source.tvg_name }}">
+                        title="Preview Stream URL for {{ source.display_title }}">
                         <i class="fas fa-play"></i>
                     </button>
                 </td>
@@ -100,20 +99,16 @@
             {% for source in unmapped_sources_for_page %}
             {% set source_metrics = all_source_metrics.get(source.source_id, {}) %}
             <tr>
-                <td class="text-center align-middle">
-                    <input class="form-check-input" type="checkbox" name="mapping_source_id"
-                        value="{{ source.source_id }}">
-                </td>
                 <td class="align-middle">
-                    <span data-bs-toggle="tooltip" title="{{ source.source_id }}">{{ source.tvg_name}}</span>
+                    <span data-bs-toggle="tooltip" title="{{ source.source_id }}">{{ source.display_title }}</span>
                     <small class="text-muted">({{ source.provider_alias }})</small>
                     {% if source.source_id in sources_mapped_elsewhere %}
-                        <span class="badge bg-secondary ms-2" data-bs-toggle="tooltip" title="Already mapped to Ch No. {{ sources_mapped_elsewhere[source.source_id] }}">
+                        <span class="badge bg-primary ms-2" data-bs-toggle="tooltip" title="Already mapped to channels {{ sources_mapped_elsewhere[source.source_id] }}">
                             In Use {{ sources_mapped_elsewhere[source.source_id] }}
                         </span>
                     {% endif %}
                 </td>
-                <td class="text-center align-middle">
+                <td class="align-middle text-center">
                     {% if source_metrics.uptime is defined and source_metrics.uptime is not none %}
                         {% set uptime_val = source_metrics.uptime|int %}
                         {% if uptime_val >= 75 %}
@@ -134,7 +129,7 @@
                         title="Availability when due for quality analysis">N/A</span>
                     {% endif %}
                 </td>
-                <td class="text-center align-middle">
+                <td class="align-middle text-center">
                     {% if source_metrics.runtime is defined and source_metrics.runtime is not none %}
                         {% set runtime_str = source_metrics.runtime|duration_to_str %}
                         {% if source_metrics.runtime >= 8 * 60 * 60 %}
@@ -155,16 +150,19 @@
                         title="Average duration played before encountering an issue">&infin;</span>
                     {% endif %}
                 </td>
-                <td class="align-middle">
+                <td class="align-middle text-center">
+                    <input class="form-check-input" type="checkbox" name="mapping_source_id" value="{{ source.source_id }}">
+                </td>
+                <td class="align-middle text-center">
                     <input type="number" class="form-control form-control-sm" name="priority_{{ source.source_id }}"
                         value="{{ source_metrics.priority|default(5) }}" min="0" max="10" required>
                 </td>
-                <td class="text-end align-middle">
+                <td class="align-middle text-center">
                     <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal"
                         data-bs-target="#previewModal"
                         hx-get="{{ url_for('ui_player_for_source', source_id=source.source_id) }}"
                         hx-target="#preview-modal-body" hx-trigger="click"
-                        title="Preview Stream URL for {{ source.tvg_name }}">
+                        title="Preview Stream URL for {{ source.display_title }}">
                         <i class="fas fa-play"></i>
                     </button>
                 </td>

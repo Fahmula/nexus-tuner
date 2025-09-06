@@ -38,5 +38,6 @@
         <label for="tvg_logo" class="form-label">Logo URL (Optional)</label>
         <input type="url" class="form-control" id="tvg_logo" name="tvg_logo"
             value="{{ channel.tvg_logo if channel else '' }}">
+        <div class="form-text">Leave blank to use the first logo available starting with the highest priority source.</div>
     </div>
 </div>

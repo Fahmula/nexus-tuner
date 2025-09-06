@@ -57,50 +57,50 @@
     <table class="table table-striped table-hover table-sm">
         <thead class="table-light">
             <tr>
-                <th>Source ID</th>
-                <th>Provider</th>
-                <th>TVG Name</th>
+                <th style="min-width:83px;">TVG Logo</th>
                 <th>TVG Display Title</th>
-                <th>TVG Group</th>
-                <th>TVG ID</th>
-                <th>TVG Logo</th>
-                <th>Preview</th>
+                <th>TVG Name</th>
+                <th style="min-width:92px;">TVG Group</th>
+                <th style="min-width:62px;">TVG ID</th>
+                <th>Provider</th>
+                <th>Source ID</th>
+                <th style="width: 5%;">Preview</th>
             </tr>
         </thead>
         <tbody>
             {% if sources %}
-            {% for source in sources %}
-            <tr>
-                <td><small class="text-muted">{{ source.source_id }}</small></td>
-                <td><span class="badge bg-secondary">{{ source.provider_alias }}</span></td>
-                <td>{{ source.tvg_name if source.tvg_name else '-' }}</td>
-                <td>{{ source.display_title if source.display_title else '-' }}</td>
-                <td>{{ source.group_title if source.group_title else '-' }}</td>
-                <td>{{ source.tvg_id if source.tvg_id else '-' }}</td>
-                <td>
-                    {% if source.tvg_log %}
-                    <img src="{{ source.tvg_log }}" alt="logo" style="max-height: 20px; max-width: 40px;"
-                        onerror="this.style.display='none'" loading="lazy">
-                    {% else %}
-                    -
-                    {% endif %}
-                </td>
-                <td>
-                    <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal"
-                        data-bs-target="#previewModal"
-                        hx-get="{{ url_for('ui_player_for_source', source_id=source.source_id) }}"
-                        hx-target="#preview-modal-body" hx-trigger="click"
-                        title="Preview Stream URL for {{ source.tvg_name }}">
-                        <i class="fas fa-play"></i>
-                    </button>
-                </td>
-            </tr>
-            {% endfor %}
+                {% for source in sources %}
+                    <tr>
+                        <td class="align-middle text-center">
+                            {% if source.tvg_logo %}
+                                <img src="{{ source.tvg_logo }}" alt="logo" style="max-height: 20px; max-width: 40px;"
+                                    onerror="this.style.display='none'" loading="lazy">
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td class="align-middle">{{ source.display_title if source.display_title else '-' }}</td>
+                        <td class="align-middle">{{ source.tvg_name if source.tvg_name else '-' }}</td>
+                        <td class="align-middle">{{ source.group_title if source.group_title else '-' }}</td>
+                        <td class="align-middle text-center">{{ source.tvg_id if source.tvg_id else '-' }}</td>
+                        <td class="align-middle text-center"><span class="badge bg-secondary">{{ source.provider_alias }}</span></td>
+                        <td class="align-middle"><small class="text-muted">{{ source.source_id }}</small></td>
+                        <td class="align-middle text-center">
+                            <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal"
+                                data-bs-target="#previewModal"
+                                hx-get="{{ url_for('ui_player_for_source', source_id=source.source_id) }}"
+                                hx-target="#preview-modal-body" hx-trigger="click"
+                                title="Preview Stream URL for {{ source.display_title }}">
+                                <i class="fas fa-play"></i>
+                            </button>
+                        </td>
+                    </tr>
+                {% endfor %}
             {% else %}
-            <tr>
-                <td colspan="7" class="text-center">No source sources found matching your criteria, or no providers
-                    configured/parsed.</td>
-            </tr>
+                <tr>
+                    <td colspan="7" class="text-center">No source sources found matching your criteria, or no providers
+                        configured/parsed.</td>
+                </tr>
             {% endif %}
         </tbody>
     </table>

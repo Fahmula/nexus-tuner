@@ -57,7 +57,7 @@
                 <th class="sortable" data-sort="group-title">Group <i class="fas fa-sort"></i></th>
                 <th class="sortable" data-sort="tvg-id">TVG ID <i class="fas fa-sort"></i></th>
                 <th class="sortable" data-sort="logical-id">Ch. ID <i class="fas fa-sort"></i></th>
-                <th style="width: 15%;">Actions</th>
+                <th style="width: 9%;">Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -69,7 +69,7 @@
                         {% if discovered_percent <= 75 %}table-danger
                         {% elif discovered_percent < 100 %}table-warning{% endif %}
                        {% endif %}">
-                <td class="text-center align-middle">
+                <td class="align-middle text-center">
                     {% if channel.tvg_logo %}
                         <img src="{{ channel.tvg_logo }}" alt="logo" style="max-height: 20px; max-width: 40px;"
                             onerror="this.style.display='none'" loading="lazy">
@@ -77,11 +77,11 @@
                         <small class="text-muted">-</small>
                     {% endif %}
                 </td>
-                <td class="align-middle" data-sort-value="{{ channel.channel_num|default(9999) }}">{{
+                <td class="align-middle text-center" data-sort-value="{{ channel.channel_num|default(9999) }}">{{
                     channel.channel_num if channel.channel_num else '-' }}</td>
                 <td class="align-middle" data-sort-value="{{ channel.logical_channel_title }}"><strong>{{
                     channel.logical_channel_title }}</strong></td>
-                <td class="text-center align-middle" data-sort-value="{{ channel_metrics.enabled_mappings|default(0) }}">
+                <td class="align-middle text-center" data-sort-value="{{ channel_metrics.enabled_mappings|default(0) }}">
                     {% if channel_metrics.discovered_mappings is defined and channel_metrics.enabled_mappings is defined and channel_metrics.enabled_mappings > 0 %}
                         {% set discovered_percent = (channel_metrics.discovered_mappings / channel_metrics.enabled_mappings
                         * 100)|round %}
@@ -97,7 +97,7 @@
                     {% endif %}
                 </td>
 
-                <td class="text-center align-middle" data-sort-value="{{ channel_metrics.health_score|default(0) }}">
+                <td class="align-middle text-center" data-sort-value="{{ channel_metrics.health_score|default(0) }}">
                     {% if channel_metrics.health_score is defined and channel_metrics.health_score is not none %}
                     {% set score = channel_metrics.health_score %}
                     {% if score >= 75 %}
@@ -119,7 +119,7 @@
                     {% endif %}
                 </td>
 
-                <td class="text-center align-middle" data-sort-value="{{ channel_metrics.lowest_uptime|default(0) }}">
+                <td class="align-middle text-center" data-sort-value="{{ channel_metrics.lowest_uptime|default(0) }}">
                     {% if channel_metrics.lowest_uptime is defined and channel_metrics.lowest_uptime is not none %}
                     {% set score = channel_metrics.lowest_uptime %}
                     {% if score >= 75 %}
@@ -141,7 +141,7 @@
                     {% endif %}
                 </td>
 
-                <td class="text-center align-middle" data-sort-value="{{ channel_metrics.lowest_runtime|default(3155760000) }}">
+                <td class="align-middle text-center" data-sort-value="{{ channel_metrics.lowest_runtime|default(3155760000) }}">
                     {% if channel_metrics.lowest_runtime is defined and channel_metrics.lowest_runtime is not none %}
                     {% set runtime_str = channel_metrics.lowest_runtime|duration_to_str %}
                     {% if channel_metrics.lowest_runtime >= 8 * 60 * 60 %}
@@ -163,14 +163,14 @@
                     {% endif %}
                 </td>
 
-                <td class="align-middle" data-sort-value="{{ channel.group_title|default('') }}"><small class="text-muted">{{
+                <td class="align-middle text-center" data-sort-value="{{ channel.group_title|default('') }}"><small class="text-muted">{{
                     channel.group_title if channel.group_title else '-' }}</small></td>
-                <td class="align-middle" data-sort-value="{{ channel.tvg_id|default('') }}"><small class="text-muted">{{
+                <td class="align-middle text-center" data-sort-value="{{ channel.tvg_id|default('') }}"><small class="text-muted">{{
                     channel.tvg_id if channel.tvg_id else '-' }}</small></td>
-                <td class="align-middle" data-sort-value="{{ channel.logical_channel_id }}"><small class="text-muted">{{
+                <td class="align-middle text-center" data-sort-value="{{ channel.logical_channel_id }}"><small class="text-muted">{{
                     channel.logical_channel_id }}</small></td>
 
-                <td class="align-middle">
+                <td class="align-middle text-center">
                     <a href="{{ url_for('ui_logical_channel_form', logical_channel_id=channel.logical_channel_id) }}"
                         class="btn btn-sm btn-outline-primary me-1" title="Edit & Map Sources">
                         <i class="fas fa-edit"></i> Edit
