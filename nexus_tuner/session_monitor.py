@@ -113,6 +113,8 @@ class GhostSessionMonitor:
                 if data['logical_channel_id'] in legitimately_active_lc_ids:
                     continue
                 video_type = data['video_type']
+                if data['is_mpegts_active'] is False:
+                    continue
                 stream_engine = data['stream_engine']
                 Log.warn(Label.SESSION, f"{data['video_name']}: Found ghost session.", (video_type, stream_engine))
                 if video_type == VideoType.MPEGTS:
