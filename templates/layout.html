@@ -393,10 +393,12 @@
         </div>
     </nav>
 
-    <div class="container-fluid" id="provider-status-bar" hx-get="{{ url_for('ui_provider_status') }}"
-        hx-trigger="load, every 1s" hx-swap="innerHTML settle:0ms" hx-sync="this:replace">
-        <span class="text-muted small text-center d-block">Loading provider status...</span>
-    </div>
+    <a href="{{ url_for('ui_providers_manage') }}" class="text-decoration-none">
+        <div class="container-fluid" id="provider-status-bar" hx-get="{{ url_for('ui_provider_status') }}"
+            hx-trigger="load, every 1s" hx-swap="innerHTML settle:0ms" hx-sync="this:replace" role="button">
+            <span class="text-muted small text-center d-block">Loading provider status...</span>
+        </div>
+    </a>
 
     <main class="container mt-4 mb-5 flex-shrink-0">
         <div id="flash-messages-container" hx-trigger="flashMessagesUpdated from:body"

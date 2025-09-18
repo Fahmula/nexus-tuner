@@ -7,7 +7,7 @@ from nexus_tuner.config import Config
 from nexus_tuner.handler import ChannelHandler
 from nexus_tuner.slots import ProviderSlots
 from nexus_tuner.utils import (FAILED_STOP_REASONS, PROCESS_TERMINATE_INTERVAL, PROCESS_TERMINATE_TIMEOUT, NEXUS_TUNER_USER_AGENT, Bitrate, BitrateScore, DateTimeISO, Framerate, FramerateScore, Height,
-                                Label, Log, LogicalChannelId, Percent, ProbeInfo, ProbeSuccess, ProviderAlias, QualityInfoImpl, QualityScores,
+                                Label, Log, LogicalChannelId, Percent, ProbeInfo, ProbeSuccess, ProviderAlias, QualityInfoImpl, QualityScore, QualityScores,
                                 QualityScoresImpl, ResolutionScore, QualityCacheData, QualityCacheDataImpl, Runtime, RuntimeInfo, RuntimeScore, SourceId, StopReason, StreamName,
                                 StreamURL, TotalScore, UptimeScore, VideoName, Width, create_stream_name, create_video_name, run_bg)
 
@@ -47,6 +47,11 @@ class QualityMonitor:
         if quality_cache:
             instance._build_quality_scores(quality_cache)
         return instance
+
+    async def get_quality_score(self, source_id: SourceId) -> QualityScore | None:
+        """Returns the current quality score for a specific source."""
+        async with self._mutex:
+            return self._quality_scores.get(source_id)
 
     async def get_quality_scores(self) -> QualityScores:
         """Returns the current quality scores for all sources."""

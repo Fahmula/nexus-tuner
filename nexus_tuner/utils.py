@@ -1,10 +1,10 @@
 """The goal is for every long running value to be uniquely typed so that they cannot be used incorrectly.
 For example, LogicalChannelId cannot be used instead of SourceId as it will fail type checking.
-Futher more these types are then used in TypedDicts to model the data structures used in the application.
+Further more these types are then used in TypedDicts to model the data structures used in the application.
 All the TypedDicts have all fields marked as ReadOnly and uses Mapping and Tuple instead of dict and list
 to signal immutability, the underlying data structures are likely still dict or lists. This ensures that 99%
 of the application sees these data as immutable as they should, only in the select few areas were we perform
-CRUD operations do we use the mutable versions of these types by contructing a new object or copying the previous.
+CRUD operations do we use the mutable versions of these types by constructing a new object or copying the previous.
 This design allows the most dangerous operations to be clearly marked and the rest of the code to be type safe and const safe.
 """
 
@@ -345,6 +345,27 @@ class ProcessInfoMutable(TypedDict):
     mpegts_health: MPEGTSHealthImpl | None
 ProcessInfosMutable = NewType("ProcessInfosMutable", dict[VideoKey, ProcessInfo])
 
+class ProcessStatus(TypedDict):
+    stream_id: ReadOnly[LogicalChannelId | PreviewId]
+    logical_channel_id: ReadOnly[LogicalChannelId | None]
+    tvg_logo: ReadOnly[TVGLogo | None]
+    source_title: ReadOnly[TVGDisplayTitle | TVGName]
+    channel_num: ReadOnly[ChannelNum | Literal["Preview"] | None]
+    stream_engine: ReadOnly[StreamEngine]
+    video_type: ReadOnly[VideoType]
+    started_at: ReadOnly[DateTimeISO]
+    runtime: ReadOnly[DurationStr]
+    last_access: ReadOnly[RelativeTimeStr]
+    is_long_term: ReadOnly[bool]
+    is_preview: ReadOnly[bool]
+    width: ReadOnly[Width | None]
+    height: ReadOnly[Height | None]
+    bitrate: ReadOnly[Bitrate | None]
+    framerate: ReadOnly[Framerate | None]
+ProcessStatusesImpl = NewType("ProcessStatusesImpl", dict[ProviderAlias, list[ProcessStatus]])
+ProcessStatusesReadOnly = NewType("ProcessStatusesReadOnly", Mapping[ProviderAlias, tuple[ProcessStatus, ...]])
+type ProcessStatuses = ProcessStatusesImpl | ProcessStatusesReadOnly
+
 class ProbeSuccess(TypedDict):
     status: ReadOnly[Literal["online"]]
     width: ReadOnly[Width]
@@ -524,14 +545,22 @@ def create_video_name(stream_name: StreamName, source_name: TVGDisplayTitle | TV
     return VideoName(f"{stream_name} - {source_name} ({source_id})")
 
 
-def create_preview_id(source_id: SourceId) -> PreviewId:
+def create_preview_id(source_id: SourceId, logical_channel_id: LogicalChannelId | None = None) -> PreviewId:
     """Generates a unique ID for the preview stream."""
-    return PreviewId(f"preview_{source_id}")  # Need to update create_video_key() if changing
+    if logical_channel_id:
+        return PreviewId(f"preview_{logical_channel_id}_{source_id}")
+    return PreviewId(f"preview_{source_id}")  # Need to update create_video_key() and preview functions below if changing
 
 
 def get_source_id_from_preview(preview_id: PreviewId) -> SourceId:
     """Extracts the source ID from the preview stream ID."""
-    return SourceId(preview_id.replace("preview_", ""))
+    return SourceId(preview_id.split('_')[-1])
+
+
+def get_logical_channel_id_from_preview(preview_id: PreviewId) -> LogicalChannelId | None:
+    """Extracts the logical channel ID from the preview stream ID, if present."""
+    parts = preview_id.split('_')
+    return LogicalChannelId(parts[1]) if len(parts) == 3 else None
 
 
 def is_preview_id(input_id: PreviewId | LogicalChannelId) -> bool:

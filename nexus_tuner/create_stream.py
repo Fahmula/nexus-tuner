@@ -165,7 +165,7 @@ class CreateStream:
         """Performs async setup and launches all processing tasks."""
         loop = asyncio.get_running_loop()
         self._deadline = loop.time() + CREATE_STREAM_DEADLINE
-        self._sources = self.handler.get_sources_for_client_channel(cast(LogicalChannelId, self.logical_channel_id)) if self._input_sources is None else deepcopy(self._input_sources)
+        self._sources = await self.handler.copy_sources_for_client_channel(cast(LogicalChannelId, self.logical_channel_id)) if self._input_sources is None else deepcopy(self._input_sources)
         for source in self._sources.copy():
             discovered_source = await self.handler.get_discovered_source(source["source_id"])
             if not discovered_source:

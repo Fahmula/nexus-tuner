@@ -85,7 +85,7 @@
                 <td class="align-middle text-center">
                     <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal"
                         data-bs-target="#previewModal"
-                        hx-get="{{ url_for('ui_player_for_source', source_id=source.source_id) }}"
+                        hx-get="{{ url_for('ui_player_for_source', source_id=source.source_id, logical_channel_id=channel.logical_channel_id) }}"
                         hx-target="#preview-modal-body" hx-trigger="click"
                         title="Preview Stream URL for {{ source.display_title }}">
                         <i class="fas fa-play"></i>
@@ -160,7 +160,7 @@
                 <td class="align-middle text-center">
                     <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal"
                         data-bs-target="#previewModal"
-                        hx-get="{{ url_for('ui_player_for_source', source_id=source.source_id) }}"
+                        hx-get="{{ url_for('ui_player_for_source', source_id=source.source_id, logical_channel_id=channel.logical_channel_id) }}"
                         hx-target="#preview-modal-body" hx-trigger="click"
                         title="Preview Stream URL for {{ source.display_title }}">
                         <i class="fas fa-play"></i>
@@ -171,12 +171,12 @@
 
             {% if filter_query is not none and not unmapped_sources_for_page and not mapped_sources %}
             <tr>
-                <td colspan="5" class="text-center text-muted fst-italic py-3">No sources found matching your criteria.
+                <td colspan="6" class="text-center text-muted fst-italic py-3">No sources found matching your criteria.
                 </td>
             </tr>
             {% elif not mapped_sources and filter_query is none %}
             <tr>
-                <td colspan="5" class="text-center text-muted fst-italic py-3">
+                <td colspan="6" class="text-center text-muted fst-italic py-3">
                     Type in the "Display Name" field on the left to automatically find matching sources,
                     or use the search bar above to search all available sources.
                 </td>

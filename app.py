@@ -289,7 +289,7 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
             async def recreate_stream() -> Response | VideoKey:
                 return await serve_mpegts_stream(logical_channel_id, stream_response=False)
             try:
-                mpegts_stream, reader_id = await MPEGTSStream.register(config, stream_manager, video_key, video_name, stream_engine, recreate_stream)
+                mpegts_stream, reader_id = await MPEGTSStream.register(config, stream_manager, logical_channel_id, video_key, video_name, stream_engine, recreate_stream)
             except Exception as e:
                 msg = f"{video_name}: Failed to register stream - {e}"
                 Log.error(Label.SERVER, msg, (VideoType.MPEGTS, stream_engine))
@@ -426,7 +426,10 @@ async def serve_hls_segment(logical_channel_id: LogicalChannelId, stream_engine:
 
 
 @app.route("/ui/source-preview/<path:source_id>")
-async def ui_player_for_source(source_id: SourceId) -> str:
+async def ui_player_for_source(source_id: SourceId, logical_channel_id: LogicalChannelId | None = None) -> str:
+    lc_id_from_qs = request.args.get("logical_channel_id")
+    if lc_id_from_qs:
+        logical_channel_id = LogicalChannelId(lc_id_from_qs)
     discovered_source = await handler.get_discovered_source(source_id)
     if not discovered_source:
         msg = f"Source ID '{source_id}' not found for preview."
@@ -434,7 +437,7 @@ async def ui_player_for_source(source_id: SourceId) -> str:
         await flash(msg, "error")
         abort(404, msg)
     source_name = discovered_source["display_title"] or discovered_source["tvg_name"] or "Preview"
-    preview_id = create_preview_id(source_id)
+    preview_id = create_preview_id(source_id, logical_channel_id)
     stream_engine = config.stream_engine
     playlist_url = url_for('serve_hls_preview', preview_id=preview_id, stream_engine=stream_engine)
     return await render_template("_video_player_modal.html", playlist_url=playlist_url, preview_id=preview_id, stream_engine=stream_engine, source_id=source_id, source_name=source_name)
@@ -445,7 +448,7 @@ async def serve_hls_preview(preview_id: PreviewId, stream_engine: StreamEngine) 
     """Serves a preview HLS playlist for a channel."""
     source_id = get_source_id_from_preview(preview_id)
     discovered_source = await handler.get_discovered_source(source_id)
-    
+
     if not discovered_source:
         msg = f"Preview requested for non-existent source ID {source_id}."
         Log.error(Label.SERVER, msg, (VideoType.HLS, None))
@@ -464,6 +467,10 @@ async def serve_hls_preview(preview_id: PreviewId, stream_engine: StreamEngine) 
 @app.route("/<string:video_type>/<string:logical_channel_id>/<string:stream_engine>/stop", methods=["POST"])
 async def stop_stream(video_type: VideoType, logical_channel_id: LogicalChannelId, stream_engine: StreamEngine) -> Response:
     """Stops the stream for a logical channel."""
+    if video_type == VideoType.MPEGTS:
+        for mpegts_stream in MPEGTSStream.streams.values():
+            if mpegts_stream.logical_channel_id == logical_channel_id and mpegts_stream.stream_engine == stream_engine:
+                mpegts_stream.shutdown()
     await stream_manager.stop_processes_with_logical_channel_id(logical_channel_id, video_type, stream_engine, StopReason.MANUAL)
     return Response(status=204)
 
@@ -493,10 +500,31 @@ async def ui_flash_messages() -> str:
     return await render_template("_flash_messages.html")
 
 
+@app.route("/ui/provider-status")
+async def ui_provider_status() -> str:
+    statuses = await handler.get_provider_stream_status()
+    active_streams = sum(status['active_streams'] for status in statuses.values())
+    max_total_streams = sum(status['max_streams'] for status in statuses.values())
+    return await render_template("_provider_status_bar.html", active_streams=active_streams, max_total_streams=max_total_streams)
+
+
 @app.route("/ui/providers", methods=["GET"])
 async def ui_providers_manage() -> str:
     all_providers = sorted((await handler.get_provider_stream_status()).values(), key=lambda p: p['alias'])
-    return await render_template("ui_providers.html", providers=all_providers)
+    all_processes = await stream_manager.get_process_statuses()
+    return await render_template("ui_providers.html", providers=all_providers, processes=all_processes)
+
+
+@app.route("/ui/providers/streams/<string:alias>")
+async def ui_provider_streams_row(alias: ProviderAlias) -> str:
+    providers = await handler.get_provider_stream_status()
+    provider = providers.get(alias)
+    if not provider:
+        abort(404)
+    all_processes = await stream_manager.get_process_statuses()
+    return await render_template("_provider_streams_rows.html",
+                                 provider=provider,
+                                 processes=all_processes)
 
 
 @app.route("/ui/providers/add", methods=["GET", "POST"])
@@ -578,14 +606,6 @@ async def ui_provider_delete(alias: ProviderAlias) -> Response:
     response.headers["HX-Trigger"] = "flashMessagesUpdated"
     response.headers["HX-Refresh"] = "true"
     return response
-
-
-@app.route("/ui/provider-status")
-async def ui_provider_status() -> str:
-    statuses = await handler.get_provider_stream_status()
-    active_streams = sum(status['active_streams'] for status in statuses.values())
-    max_total_streams = sum(status['max_streams'] for status in statuses.values())
-    return await render_template("_provider_status_bar.html", active_streams=active_streams, max_total_streams=max_total_streams)
 
 
 @app.route("/ui/sources")

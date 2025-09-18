@@ -7,7 +7,7 @@ from quart import Response
 
 from nexus_tuner.config import Config
 from nexus_tuner.stream import StreamManager
-from nexus_tuner.utils import (MPEGTS_CHUNK_READ_TIMEOUT, MPEGTS_CHUNK_SIZE, MPEGTSHealthImpl, ProcessInfoMutable, Label, Log, MPEGTSProcessInfo, ReaderId,
+from nexus_tuner.utils import (MPEGTS_CHUNK_READ_TIMEOUT, MPEGTS_CHUNK_SIZE, LogicalChannelId, MPEGTSHealthImpl, ProcessInfoMutable, Label, Log, MPEGTSProcessInfo, ReaderId,
                                StopReason, StreamEngine, VideoKey, VideoName, VideoType, run_bg)
 
 BUFFER_CLEANUP_INTERVAL: Final[int] = 5
@@ -17,16 +17,17 @@ BUFFER_SIZE_LIMIT: Final[int] = 100 * 1024 * 1024
 class MPEGTSStream:
     """A class to manage MPEGTS streams, handling reading and buffering of data."""
     __slots__ = (
-        'config', 'stream_manager', 'video_key', 'video_name', 'stream_engine',
-        'recreate_stream', '_buffer', '_event', '_reader_positions', 
+        'config', 'stream_manager', 'logical_channel_id', 'video_key', 'video_name',
+        'stream_engine', 'recreate_stream', '_buffer', '_event', '_reader_positions', 
         '_total_bytes_read', '_started_at', '_cancelled', '_writer', '_cleaner',
     )
 
     streams: dict[VideoKey, Self] = {}
     
-    def __init__(self, config: Config, stream_manager: StreamManager, video_key: VideoKey, video_name: VideoName, stream_engine: StreamEngine, recreate_stream: Callable[[], Awaitable[Response | VideoKey]]) -> None:
+    def __init__(self, config: Config, stream_manager: StreamManager, logical_channel_id: LogicalChannelId, video_key: VideoKey, video_name: VideoName, stream_engine: StreamEngine, recreate_stream: Callable[[], Awaitable[Response | VideoKey]]) -> None:
         self.config: Config = config
         self.stream_manager: StreamManager = stream_manager
+        self.logical_channel_id: LogicalChannelId = logical_channel_id
         self.video_key: VideoKey = video_key
         self.video_name: VideoName = video_name
         self.stream_engine: StreamEngine = stream_engine
@@ -49,10 +50,10 @@ class MPEGTSStream:
         self._cleaner = asyncio.create_task(self._cleanup())
 
     @classmethod
-    async def register(cls, config: Config, stream_manager: StreamManager, video_key: VideoKey, video_name: VideoName, stream_engine: StreamEngine, recreate_stream: Callable[[], Awaitable[Response | VideoKey]]) -> tuple[Self, ReaderId]:
+    async def register(cls, config: Config, stream_manager: StreamManager, logical_channel_id: LogicalChannelId, video_key: VideoKey, video_name: VideoName, stream_engine: StreamEngine, recreate_stream: Callable[[], Awaitable[Response | VideoKey]]) -> tuple[Self, ReaderId]:
         """Create a new stream or return an existing one."""
         if video_key not in cls.streams:  # If stream is cancelled, still choose it to prevent dual ownership
-            instance = cls(config, stream_manager, video_key, video_name, stream_engine, recreate_stream)
+            instance = cls(config, stream_manager, logical_channel_id, video_key, video_name, stream_engine, recreate_stream)
             cls.streams[video_key] = instance
             Log.debug(Label.STREAM, f"{instance.video_name}: Created stream handler", (VideoType.MPEGTS, stream_engine))
             try:

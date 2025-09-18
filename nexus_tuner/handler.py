@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Final, Self
 import aiohttp
 from nexus_tuner.config import Config
 from nexus_tuner.slots import ProviderSlots
-from nexus_tuner.utils import (M3UURL, NEXUS_TUNER_USER_AGENT, ClientChannelInfos, ClientChannelInfosImpl, ChannelListData, ChannelListDataImpl,
+from nexus_tuner.utils import (M3UURL, NEXUS_TUNER_USER_AGENT, ClientChannelInfo, ClientChannelInfos, ClientChannelInfosImpl, ChannelListData, ChannelListDataImpl,
                                 ChannelListGroup, ChannelListInfo, ChannelMappings, ChannelMappingsImpl, ChannelMappingsData, ChannelMappingsDataImpl, ChannelNum, DateTimeISO,
                                 DiscoveredSource, DiscoveredSourceWithId, DiscoveredSourcesData, DiscoveredSourcesDataImpl, Log, LogicalChannelInfo, LogicalChannelInfoWithId, LogicalChannelTitle, LogicalChannelsDataImpl, Priority, ProviderInfo,
                                 ProviderStatuses, SourceInfo, SourceMappingInfoWithId, SourceId, StreamURL, TVGGroupTitle, Label, LogicalChannelId,
@@ -410,9 +410,15 @@ class ChannelHandler:
         
         self._main_m3u_playlist = MainM3UPlaylist("\n".join(m3u_lines) + "\n")
 
-    def get_sources_for_client_channel(self, logical_channel_id: LogicalChannelId) -> list[SourceInfo]:
-        """Retrieves source stream URLs for a channel."""
-        return self._client_channels.get(logical_channel_id, {}).get("sources", [])
+    async def get_client_channel(self, logical_channel_id: LogicalChannelId) -> ClientChannelInfo | None:
+        """Retrieves a client channel by its logical channel ID."""
+        async with self._mutex:
+            return self._client_channels.get(logical_channel_id)
+
+    async def copy_sources_for_client_channel(self, logical_channel_id: LogicalChannelId) -> list[SourceInfo]:
+        """Retrieves sources for a channel."""
+        async with self._mutex:
+            return self._client_channels.get(logical_channel_id, {}).get("sources", []).copy()
 
     def _update_providers_slots(self) -> None:
         """Initializes or updates provider slots based on config."""

@@ -8,8 +8,8 @@ from typing import Any, Coroutine, Final, Iterable, NoReturn, Self, cast
 from nexus_tuner.config import Config
 from nexus_tuner.handler import ChannelHandler
 from nexus_tuner.quality_monitor import QualityMonitor
-from nexus_tuner.utils import (CREATE_STREAM_DEADLINE, PROCESS_TERMINATE_INTERVAL, PROCESS_TERMINATE_TIMEOUT, NEW_DEADLINE_NON_BEST, ProcessInfo, ProcessInfoMutable, ProcessInfos, ProcessInfosMutable,
-                                Label, Log, LogicalChannelId, PreviewId, ProviderAlias, SegmentNum, StopReason, StreamEngine, VideoKey, VideoName, VideoType, get_playlist_path, get_segment_number, run_bg)
+from nexus_tuner.utils import (CREATE_STREAM_DEADLINE, PROCESS_TERMINATE_INTERVAL, PROCESS_TERMINATE_TIMEOUT, NEW_DEADLINE_NON_BEST, DateTimeISO, ProcessInfo, ProcessInfoMutable, ProcessInfos, ProcessInfosMutable,
+                                Label, Log, LogicalChannelId, PreviewId, ProcessStatuses, ProcessStatusesImpl, ProviderAlias, RelativeTimeStr, SegmentNum, StopReason, StreamEngine, TVGDisplayTitle, VideoKey, VideoName, VideoType, duration_to_str, get_logical_channel_id_from_preview, get_playlist_path, get_segment_number, run_bg)
 
 
 # --- Constants ---
@@ -55,16 +55,6 @@ class StreamManager:
         async with self.stream_process_lock:
             return self.processes.get(video_key)
 
-    async def set_process_long_term(self, video_key: VideoKey, video_name: VideoName, long_term: bool) -> None:
-        """Sets if an process is long term for a given video key."""
-        async with self.stream_process_lock:
-            if video_key in self.processes:
-                Log.debug(Label.STREAM, f"{video_name}: Setting long term status to {long_term}.", (self.processes[video_key]['video_type'], self.processes[video_key]['stream_engine']))
-                cast(ProcessInfoMutable, self.processes[video_key])['is_long_term'] = long_term
-                cast(ProcessInfoMutable, self.processes[video_key])['last_access'] = datetime.now()  # Prevent immediate pruning
-            else:
-                Log.debug(Label.STREAM, f"{video_name}: Cannot set long term status to {long_term}: process not found.")
-
     async def get_processes_from_logical_id(self, logical_channel_id: LogicalChannelId | PreviewId, *, video_type: VideoType, stream_engine: StreamEngine, long_term_only: bool) -> ProcessInfosMutable:
         """
         Returns a dictionary of all processes associated with the given logical channel ID and video type.
@@ -79,6 +69,82 @@ class StreamManager:
                 video_key: data for video_key, data in self.processes.items()
                 if data['logical_channel_id'] == logical_channel_id and data['video_type'] == video_type and data['stream_engine'] == stream_engine
             })
+
+    async def get_process_statuses(self) -> ProcessStatuses:
+        """Returns the current process statuses for all providers."""
+        async with self.stream_process_lock:
+            process_infos = list(self.processes.values())
+        process_statuses: ProcessStatusesImpl = ProcessStatusesImpl({p["provider_alias"]: [] for p in process_infos})
+        for process_info in process_infos:
+            logical_channel_id = process_info["logical_channel_id"]
+            if process_info["is_preview"]:
+                id_for_page = get_logical_channel_id_from_preview(PreviewId(logical_channel_id))
+                tvg_logo = None
+                channel_num = "Preview"
+            elif (client_channel := await self.handler.get_client_channel(LogicalChannelId(logical_channel_id))):
+                id_for_page = LogicalChannelId(logical_channel_id)
+                tvg_logo = client_channel["tvg_logo"]
+                channel_num = client_channel["channel_num"]
+            else:
+                id_for_page = None
+                tvg_logo = None
+                channel_num = None
+            source_id = process_info["source_id"]
+            discovered_source = await self.handler.get_discovered_source(source_id)
+            if discovered_source:
+                source_title = discovered_source["display_title"] or discovered_source["tvg_name"]
+                if not tvg_logo:
+                    tvg_logo = discovered_source["tvg_logo"]
+            else:
+                source_title = TVGDisplayTitle("Unknown Source")
+            quality_score = await self.quality_monitor.get_quality_score(source_id)
+            if quality_score:
+                width = quality_score["width"]
+                height = quality_score["height"]
+                bitrate = quality_score["bitrate"]
+                framerate = quality_score["framerate"]
+            else:
+                width = None
+                height = None
+                bitrate = None
+                framerate = None
+            seconds_since_last_access = (datetime.now() - process_info["last_access"]).total_seconds()
+            if process_info["is_mpegts_active"] or seconds_since_last_access < 5:
+                last_access = RelativeTimeStr("now")
+            else:
+                last_access = RelativeTimeStr(f"{duration_to_str(seconds_since_last_access)} ago")
+            process_statuses[process_info["provider_alias"]].append({
+                "stream_id": logical_channel_id,
+                "logical_channel_id": id_for_page,
+                "tvg_logo": tvg_logo,
+                "source_title": source_title,
+                "channel_num": channel_num,
+                "stream_engine": process_info["stream_engine"],
+                "video_type": process_info["video_type"],
+                "started_at": DateTimeISO(process_info["started_at"].isoformat()),
+                "runtime": duration_to_str((datetime.now() - process_info["started_at"]).total_seconds()),
+                "last_access": last_access,
+                "is_long_term": process_info["is_long_term"],
+                "is_preview": process_info["is_preview"],
+                "width": width,
+                "height": height,
+                "bitrate": bitrate,
+                "framerate": framerate,
+            })
+        for statuses in process_statuses.values():
+            statuses.sort(key=lambda x: x["started_at"])
+        return process_statuses
+
+
+    async def set_process_long_term(self, video_key: VideoKey, video_name: VideoName, long_term: bool) -> None:
+        """Sets if an process is long term for a given video key."""
+        async with self.stream_process_lock:
+            if video_key in self.processes:
+                Log.debug(Label.STREAM, f"{video_name}: Setting long term status to {long_term}.", (self.processes[video_key]['video_type'], self.processes[video_key]['stream_engine']))
+                cast(ProcessInfoMutable, self.processes[video_key])['is_long_term'] = long_term
+                cast(ProcessInfoMutable, self.processes[video_key])['last_access'] = datetime.now()  # Prevent immediate pruning
+            else:
+                Log.debug(Label.STREAM, f"{video_name}: Cannot set long term status to {long_term}: process not found.")
 
     async def record_video_access(self, logical_channel_id: LogicalChannelId | PreviewId, video_type: VideoType, stream_engine: StreamEngine, *, segment_filename: str | None = None) -> None:
         """Updates the last access time for the stream associated with the given logical channel ID and video type."""

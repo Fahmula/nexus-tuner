@@ -1,5 +1,9 @@
 <tr id="provider-{{ provider.alias | replace(' ', '-') }}" hx-target="this" hx-swap="outerHTML">
-    <td colspan="5">
+    <td colspan="4">
+        <div class="alert alert-warning small mb-2 d-flex align-items-start" role="alert">
+            <i class="fas fa-exclamation-triangle me-2 mt-1"></i>
+            <div>Edits will stop all active streams for this provider on save.</div>
+        </div>
         <form hx-put="{{ url_for('ui_provider_edit', alias=provider.alias) }}"
               hx-target="closest tr"
               hx-swap="outerHTML">
