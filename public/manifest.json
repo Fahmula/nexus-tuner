@@ -46,6 +46,13 @@
             "label": "Dashboard"
         },
         {
+            "src": "screenshots/providers.png",
+            "sizes": "1920x1080",
+            "type": "image/png",
+            "form_factor": "wide",
+            "label": "Providers"
+        },
+        {
             "src": "screenshots/logical-channels.png",
             "sizes": "1920x1080",
             "type": "image/png",
