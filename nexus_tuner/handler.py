@@ -691,8 +691,8 @@ class ChannelHandler:
         async with self._mutex:
             new_mappings_data = ChannelMappingsDataImpl({k: ChannelMappingsImpl({x: y for x, y in v.items()})
                                                         for k, v in self._channel_mappings_data.items()})
-            new_mappings_data[logical_channel_id] = ChannelMappingsImpl({m["source_id"]: {"priority": m["priority"]}
-                                                                         for m in new_mappings if "source_id" in m})
+            new_mappings_data[logical_channel_id] = ChannelMappingsImpl({m["source_id"]: {"priority": m["priority"], "offset": m["offset"]}
+                                                                         for m in new_mappings})
             if not await self.config.save_channel_mappings_config(new_mappings_data):
                 Log.critical(self.label, f"Failed to save updated channel mappings for logical channel {logical_channel_id}.")
                 return False

@@ -50,6 +50,7 @@ MPEGTS_CHUNK_READ_TIMEOUT: Final[int] = 10                # Timeout for reading 
 DEFAULT_PRIORITY: Final[int] = 5                          # Default priority for sources
 PROCESS_TERMINATE_TIMEOUT: Final[int] = 5                 # Timeout for terminating processes
 PROCESS_TERMINATE_INTERVAL: Final[float] = 0.01           # Polling interval for checking process termination
+NOT_ALPHANUM_REGEX: Final[re.Pattern[str]] = re.compile(r'[^a-zA-Z0-9_-]')
 URL_REGEX: Final[re.Pattern[str]] = re.compile(
     r'^(?:http|ftp)s?://' # http:// or https://
     r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|' #domain...
@@ -85,6 +86,7 @@ VideoKey = NewType("VideoKey", str)
 StreamName = NewType("StreamName", str)
 VideoName = NewType("VideoName", str)
 Priority = NewType("Priority", int)
+Offset = NewType("Offset", float)
 
 ChannelNum = NewType("ChannelNum", str)
 ChannelTitle = NewType("ChannelTitle", str)
@@ -94,6 +96,7 @@ Width = NewType("Width", float)
 Height = NewType("Height", float)
 Bitrate = NewType("Bitrate", float)
 Framerate = NewType("Framerate", float)
+Uptime = NewType("Uptime", float)
 Runtime = NewType("Runtime", float)
 ResolutionScore = NewType("ResolutionScore", float)
 BitrateScore = NewType("BitrateScore", float)
@@ -201,6 +204,7 @@ class LogicalChannelMetrics(TypedDict):
 
 class SourceMappingInfo(TypedDict):
     priority: ReadOnly[Priority]
+    offset: ReadOnly[Offset | None]
 ChannelMappingsImpl = NewType("ChannelMappingsImpl", dict[SourceId, SourceMappingInfo])
 _ChannelMappingsReadOnly = NewType("_ChannelMappingsReadOnly", Mapping[SourceId, SourceMappingInfo])
 type ChannelMappings = ChannelMappingsImpl | _ChannelMappingsReadOnly
@@ -209,11 +213,14 @@ _ChannelMappingsDataReadOnly = NewType("_ChannelMappingsDataReadOnly", Mapping[L
 type ChannelMappingsData = ChannelMappingsDataImpl | _ChannelMappingsDataReadOnly
 class SourceMappingInfoWithId(SourceMappingInfo):
     source_id: ReadOnly[SourceId]
+class SourceMappingInfoMutable(TypedDict):
+    offset: Offset | None
 
 class SourceMetrics(TypedDict):
     priority: ReadOnly[Priority]
     uptime: ReadOnly[PercentDisplay | None]
     runtime: ReadOnly[Runtime | None]
+    offset: ReadOnly[Offset | None]
 
 class SourceInfo(TypedDict):
     source_id: ReadOnly[SourceId]
@@ -255,7 +262,7 @@ class QualityScore(TypedDict):
     height: ReadOnly[Height]
     bitrate: ReadOnly[Bitrate]
     framerate: ReadOnly[Framerate]
-    uptime: ReadOnly[Percent]
+    uptime: ReadOnly[Uptime]
     runtime: ReadOnly[Runtime | None]
     resolution_score: ReadOnly[ResolutionScore]
     bitrate_score: ReadOnly[BitrateScore]
@@ -302,6 +309,7 @@ class MPEGTSProcessInfo(TypedDict):
     process: ReadOnly[asyncio.subprocess.Process]
     provider_alias: ReadOnly[ProviderAlias]
     logical_channel_id: ReadOnly[LogicalChannelId | PreviewId]
+    channel_num: ReadOnly[ChannelNum | None]
     source_id: ReadOnly[SourceId]
     stream_engine: ReadOnly[StreamEngine]
     video_type: ReadOnly[Literal[VideoType.MPEGTS]]
@@ -320,6 +328,7 @@ class HLSProcessInfo(TypedDict):
     process: ReadOnly[asyncio.subprocess.Process]
     provider_alias: ReadOnly[ProviderAlias]
     logical_channel_id: ReadOnly[LogicalChannelId | PreviewId]
+    channel_num: ReadOnly[ChannelNum | None]
     source_id: ReadOnly[SourceId]
     stream_engine: ReadOnly[StreamEngine]
     video_type: ReadOnly[Literal[VideoType.HLS]]
@@ -345,19 +354,30 @@ class ProcessInfoMutable(TypedDict):
     mpegts_health: MPEGTSHealthImpl | None
 ProcessInfosMutable = NewType("ProcessInfosMutable", dict[VideoKey, ProcessInfo])
 
+class QualityProcessInfo(TypedDict):
+    provider_alias: ReadOnly[ProviderAlias]
+    tvg_logo: ReadOnly[TVGLogo]
+    source_title: ReadOnly[TVGDisplayTitle | TVGName]
+    logical_channel_id: ReadOnly[LogicalChannelId]
+    channel_num: ReadOnly[ChannelNum | None]
+    type: ReadOnly[Literal["Quality"] | Literal["Offset"]]
+    started_at: ReadOnly[datetime]
+QualityProcessInfosReadOnly = NewType("QualityProcessInfosReadOnly", Mapping[SourceId, QualityProcessInfo])
+QualityProcessInfosImpl = NewType("QualityProcessInfosImpl", dict[SourceId, QualityProcessInfo])
+type QualityProcessInfos = QualityProcessInfosImpl | QualityProcessInfosReadOnly
+
 class ProcessStatus(TypedDict):
-    stream_id: ReadOnly[LogicalChannelId | PreviewId]
+    stream_id: ReadOnly[LogicalChannelId | PreviewId | None]
     logical_channel_id: ReadOnly[LogicalChannelId | None]
     tvg_logo: ReadOnly[TVGLogo | None]
     source_title: ReadOnly[TVGDisplayTitle | TVGName]
     channel_num: ReadOnly[ChannelNum | Literal["Preview"] | None]
     stream_engine: ReadOnly[StreamEngine]
-    video_type: ReadOnly[VideoType]
+    video_type: ReadOnly[VideoType | Literal["ffprobe"]]
     started_at: ReadOnly[DateTimeISO]
     runtime: ReadOnly[DurationStr]
     last_access: ReadOnly[RelativeTimeStr]
     is_long_term: ReadOnly[bool]
-    is_preview: ReadOnly[bool]
     width: ReadOnly[Width | None]
     height: ReadOnly[Height | None]
     bitrate: ReadOnly[Bitrate | None]
@@ -582,6 +602,9 @@ def get_segment_number(segment_filename: str) -> SegmentNum:
     """Extracts the segment number from the segment filename."""
     return SegmentNum(int(segment_filename.split('_')[1].split('.')[0]))
 
+def get_fs_safe_alphanum(name: str) -> str:
+    """Converts a string to a filesystem-safe alphanumeric format."""
+    return re.sub(NOT_ALPHANUM_REGEX, '_', name)
 
 def is_valid_url(url: str) -> bool:
     """Check if the given URL is valid."""

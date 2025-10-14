@@ -38,7 +38,7 @@ from nexus_tuner.quality_monitor import QualityMonitor
 from nexus_tuner.session_monitor import GhostSessionMonitor
 from nexus_tuner.stream import StreamManager
 from nexus_tuner.scheduler import Scheduler
-from nexus_tuner.utils import (Log, LogicalChannelFormDetails, Percent, PreviewId, ProcessInfoMutable, Runtime, StreamEngine, StopReason, VideoKey, background_tasks, CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL,
+from nexus_tuner.utils import (Log, LogicalChannelFormDetails, PreviewId, ProcessInfoMutable, Runtime, StreamEngine, StopReason, Uptime, VideoKey, background_tasks, CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL,
                                 DEFAULT_PRIORITY, M3UURL, NEXUS_TUNER_PORT, NEXUS_TUNER_VERSION, ChannelNum, DiscoveredSource,
                                 Label, LogicalChannelId, LogicalChannelInfo, LogicalChannelInfoWithId, LogicalChannelMetrics, LogicalChannelTitle, MaxStreams, 
                                 PercentDisplay, Priority, ProviderAlias, ProviderStatus, QualityScores, SourceInfo, SourceMappingInfoWithId, SourceMetrics,
@@ -73,9 +73,10 @@ async def startup() -> None:
         config = await Config.create()
         handler = await ChannelHandler.create(config)
         quality_monitor = await QualityMonitor.create(config, handler)
-        stream_manager = await StreamManager.create(config, handler, quality_monitor)
-        ghost_monitor = await GhostSessionMonitor.create(config, handler, stream_manager)
         handler.quality_monitor = quality_monitor
+        stream_manager = await StreamManager.create(config, handler, quality_monitor)
+        quality_monitor.stream_manager = stream_manager
+        ghost_monitor = await GhostSessionMonitor.create(config, handler, stream_manager)
         scheduler = await Scheduler.create(config, handler, quality_monitor)
         Log.info(Label.SERVER, f"Started on {config.nexus_url}")
     except BaseException as e:
@@ -123,14 +124,14 @@ async def shutdown() -> None:
     if "stream_manager" in globals():
         await stream_manager.stop_processes(StopReason.SHUTDOWN)
     if "config" in globals():
-        await config.clean_up_hls_segments()
+        await config.cleanup_tmp_dir()
     await asyncio.gather(*background_tasks, return_exceptions=True)
 
 
 async def calculate_channel_metrics(mapped_sources: list[SourceMappingInfoWithId], all_quality_scores: QualityScores) -> LogicalChannelMetrics:
     """Calculates uptime metrics for a channel."""
     sort_sources(mapped_sources, all_quality_scores, reverse=False)
-    uptime_scores: list[Percent] = []
+    uptime_scores: list[Uptime] = []
     runtime_scores: list[Runtime] = []
     for mapped_source in mapped_sources[:HIGHEST_PRIORITY_SOURCES_NUM]:
         quality_score = all_quality_scores.get(mapped_source["source_id"])
@@ -185,7 +186,8 @@ async def calculate_logical_channel_form_details(*, logical_channel_id: LogicalC
             all_source_metrics[source_id] = SourceMetrics({
                 "priority": mapping["priority"],
                 "uptime": PercentDisplay(int(raw_uptime * 100)) if raw_uptime is not None else None,
-                "runtime": raw_runtime if raw_runtime else None
+                "runtime": raw_runtime if raw_runtime else None,
+                "offset": mapping["offset"],
             })
     
     unmapped_sources: list[DiscoveredSource] = []
@@ -199,7 +201,8 @@ async def calculate_logical_channel_form_details(*, logical_channel_id: LogicalC
                 all_source_metrics[source_id] = SourceMetrics({
                     "priority": Priority(DEFAULT_PRIORITY),
                     "uptime": PercentDisplay(int(raw_uptime * 100)) if raw_uptime is not None else None,
-                    "runtime": raw_runtime if raw_runtime else None
+                    "runtime": raw_runtime if raw_runtime else None,
+                    "offset": None,
                 })
 
     total_unmapped_sources = len(unmapped_sources)
@@ -318,7 +321,7 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
 
 
 @app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/<string:stream_engine>/playlist.m3u8')
-async def serve_hls_playlist(logical_channel_id: LogicalChannelId | PreviewId, stream_engine: StreamEngine, logical_channel_title: LogicalChannelTitle | None = None, sources: list[SourceInfo] | None = None) -> Response:
+async def serve_hls_playlist(logical_channel_id: LogicalChannelId | PreviewId, stream_engine: StreamEngine, logical_channel_title: LogicalChannelTitle | None = None, channel_num: ChannelNum | None = None, sources: list[SourceInfo] | None = None) -> Response:
     """Serves the HLS playlist for a channel."""
     run_bg(stream_manager.record_video_access(logical_channel_id, VideoType.HLS, stream_engine))
     added_pending_stream = False
@@ -343,7 +346,7 @@ async def serve_hls_playlist(logical_channel_id: LogicalChannelId | PreviewId, s
             logical_channel_title = logical_channel['logical_channel_title']
             channel_num = logical_channel['channel_num']
         else:
-            channel_num = None
+            channel_num = channel_num
 
         lc_id_processes = await stream_manager.get_processes_from_logical_id(logical_channel_id, video_type=VideoType.HLS, stream_engine=stream_engine, long_term_only=True)
         if len(lc_id_processes):
@@ -430,6 +433,12 @@ async def ui_player_for_source(source_id: SourceId, logical_channel_id: LogicalC
     lc_id_from_qs = request.args.get("logical_channel_id")
     if lc_id_from_qs:
         logical_channel_id = LogicalChannelId(lc_id_from_qs)
+    preview_id = create_preview_id(source_id, logical_channel_id)
+    if logical_channel_id:
+        logical_channel = await handler.get_logical_channel_by_id(logical_channel_id)
+        channel_num = logical_channel['channel_num'] if logical_channel else None
+    else:
+        channel_num = None
     discovered_source = await handler.get_discovered_source(source_id)
     if not discovered_source:
         msg = f"Source ID '{source_id}' not found for preview."
@@ -437,15 +446,18 @@ async def ui_player_for_source(source_id: SourceId, logical_channel_id: LogicalC
         await flash(msg, "error")
         abort(404, msg)
     source_name = discovered_source["display_title"] or discovered_source["tvg_name"] or "Preview"
-    preview_id = create_preview_id(source_id, logical_channel_id)
+    tvg_logo = discovered_source["tvg_logo"]
     stream_engine = config.stream_engine
-    playlist_url = url_for('serve_hls_preview', preview_id=preview_id, stream_engine=stream_engine)
-    return await render_template("_video_player_modal.html", playlist_url=playlist_url, preview_id=preview_id, stream_engine=stream_engine, source_id=source_id, source_name=source_name)
+    playlist_url = url_for('serve_hls_preview', preview_id=preview_id, stream_engine=stream_engine, channel_num=channel_num)
+    return await render_template("_video_player_modal.html", playlist_url=playlist_url, preview_id=preview_id, stream_engine=stream_engine, source_id=source_id, source_name=source_name, tvg_logo=tvg_logo)
 
 
 @app.route(f'/{VideoType.HLS}/<string:preview_id>/<string:stream_engine>/preview.m3u8')
-async def serve_hls_preview(preview_id: PreviewId, stream_engine: StreamEngine) -> Response:
+async def serve_hls_preview(preview_id: PreviewId, stream_engine: StreamEngine, channel_num: ChannelNum | None = None) -> Response:
     """Serves a preview HLS playlist for a channel."""
+    ch_num_from_qs = request.args.get("channel_num")
+    if ch_num_from_qs:
+        channel_num = ChannelNum(ch_num_from_qs)
     source_id = get_source_id_from_preview(preview_id)
     discovered_source = await handler.get_discovered_source(source_id)
 
@@ -461,7 +473,7 @@ async def serve_hls_preview(preview_id: PreviewId, stream_engine: StreamEngine) 
         'stream_url': discovered_source['stream_url']
     }]
 
-    return await serve_hls_playlist(preview_id, stream_engine, logical_channel_title=LogicalChannelTitle('Preview'), sources=sources)
+    return await serve_hls_playlist(preview_id, stream_engine, logical_channel_title=LogicalChannelTitle('Preview'), channel_num=channel_num, sources=sources)
 
 
 @app.route("/<string:video_type>/<string:logical_channel_id>/<string:stream_engine>/stop", methods=["POST"])
@@ -683,14 +695,18 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
             Log.error(Label.SERVER, msg)
             await flash(msg, "error")
             return redirect(request.url)
+        submitted_id = form_data.get("logical_channel_id", "")
+        logical_channel_id = LogicalChannelId(submitted_id) if submitted_id else None
 
         source_ids: list[SourceId] = [SourceId(source_id) for source_id in form_data.getlist('mapping_source_id')]
+        prev_mappings = await handler.get_mappings_for_logical_channel(logical_channel_id) if logical_channel_id else None
         mappings_to_save: list[SourceMappingInfoWithId] = []
         for source_id in source_ids:
             try:
                 mappings_to_save.append(SourceMappingInfoWithId({
                     'source_id': source_id,
-                    'priority': Priority(int(form_data.get(f"priority_{source_id}", DEFAULT_PRIORITY)))
+                    'priority': Priority(int(form_data.get(f"priority_{source_id}", DEFAULT_PRIORITY))),
+                    'offset': prev_mappings.get(source_id, {}).get('offset') if prev_mappings else None,
                 }))
             except (ValueError, TypeError):
                 msg = f"Skipping mapping with invalid priority for source '{source_id}'."
@@ -706,9 +722,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
                     break
 
         stream_name = create_stream_name(logical_channel_title, channel_num)
-        submitted_id = form_data.get("logical_channel_id")
-        if submitted_id:
-            logical_channel_id = LogicalChannelId(submitted_id)
+        if logical_channel_id:
             lc_data: LogicalChannelInfo = {
                 "logical_channel_title": logical_channel_title,
                 "channel_num": channel_num,
@@ -728,7 +742,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
                 Log.warn(Label.SERVER, msg)
                 await flash(msg, "warning")
             await handler.reload_handler_config()
-            return redirect(url_for('ui_logical_channel_form', logical_channel_id=submitted_id))
+            return redirect(url_for('ui_logical_channel_form', logical_channel_id=logical_channel_id))
         else:
             lc_data: LogicalChannelInfo = {
                 "logical_channel_title": logical_channel_title,
@@ -891,9 +905,33 @@ async def ui_analyze_mappings(logical_channel_id: LogicalChannelId) -> Response:
         response.headers["HX-Trigger"] = "flashMessagesUpdated"
         return response
 
-    await quality_monitor.analyze_mapped_sources(logical_channel_id)
-    await flash(f"{stream_name}: Quality analysis completed for {len(sources)} mapping(s)", "success")
+    res = await quality_monitor.analyze_mapped_sources(logical_channel_id)
+    if res == 1:
+        msg = f"{stream_name}: Quality analysis completed for {len(sources)} mapping(s) but failed to measure relative offset."
+        Log.warn(Label.SERVER, msg)
+        await flash(msg, "warning")
+        response = Response("", 202)
+        response.headers["HX-Refresh"] = "true"
+        response.headers["HX-Trigger"] = "flashMessagesUpdated"
+        return response
+    elif res == 0:
+        msg = f"{stream_name}: Failed to analyze mappings."
+        Log.error(Label.SERVER, msg)
+        await flash(msg, "error")
+        response = Response("", 500)
+        response.headers["HX-Refresh"] = "true"
+        response.headers["HX-Trigger"] = "flashMessagesUpdated"
+        return response
+    elif isinstance(res, str):
+        msg = f"{stream_name}: Quality analysis already in progress for {res}."
+        Log.warn(Label.SERVER, msg)
+        await flash(msg, "warning")
+        response = Response("", 409)
+        response.headers["HX-Refresh"] = "true"
+        response.headers["HX-Trigger"] = "flashMessagesUpdated"
+        return response
 
+    await flash(f"{stream_name}: Quality analysis completed for {len(sources)} mapping(s)", "success")
     response = Response("", 200)
     response.headers["HX-Refresh"] = "true"
     response.headers["HX-Trigger"] = "flashMessagesUpdated"

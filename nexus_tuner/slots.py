@@ -104,7 +104,7 @@ class ProviderSlots:
 
     async def release(self) -> str:
         """Cancel the release. WARNING: This method must be called with run_bg() or
-        in a context where cancellation is not possibe.
+        in a context where cancellation is not possible.
         """
         async with self._mutex:
             return self._semaphore.release()

@@ -1,7 +1,6 @@
 from datetime import datetime
 import os
 import json
-import re
 import time
 from pathlib import Path
 from typing import Any, Final, Mapping, Self
@@ -12,10 +11,7 @@ import aiofiles.os
 import aioshutil
 
 from nexus_tuner.utils import (CONFIG_DIR, NEXUS_TUNER_PORT, NEXUS_TUNER_VERSION, ChannelListDataImpl, ChannelMappingsData, ChannelMappingsDataImpl, DiscoveredSourcesData, DiscoveredSourcesDataImpl, JobName, JobsData, JobsDataImpl,
-                               Label, Log, LogicalChannelsData, LogicalChannelsDataImpl, ProvidersData, ProvidersDataImpl, QualityCacheData, QualityCacheDataImpl, StopReason, StreamEngine, VideoKey, is_valid_url)
-
-
-NOT_ALPHANUM_REGEX: Final[re.Pattern[str]] = re.compile(r'[^a-zA-Z0-9_-]')
+                               Label, Log, LogicalChannelsData, LogicalChannelsDataImpl, ProvidersData, ProvidersDataImpl, QualityCacheData, QualityCacheDataImpl, StopReason, StreamEngine, VideoKey, get_fs_safe_alphanum, is_valid_url)
 
 
 class Config:
@@ -35,10 +31,10 @@ class Config:
         'quality_cache_name', 'quality_cache_path',
         'jobs_name', 'jobs_path', 'vlc_path', 'stream_engine',
         'backups_base_path', 'backups_scheduled_path', 'backups_manual_path', 'backup_count',
-        'hls_base_segment_dir', 'hls_segment_duration', 'segment_prune_timeout', 'latest_segment_timeout', 'hls_playlist_length',
+        'tmp_dir', 'hls_segment_duration', 'segment_prune_timeout', 'latest_segment_timeout', 'hls_playlist_length',
         'process_start_timeout', 'process_inactivity_timeout', 'ffmpeg_path', 'ffprobe_path', 'process_logs_dir',
         'emby_url', 'emby_api_key', 'jellyfin_url', 'jellyfin_api_key', 'ghost_check_interval',
-        'file_lock', '_cleaning_up_process_logs',
+        'file_lock', '_cleaning_up_process_logs'
     )
     
     def __init__(self) -> None:
@@ -136,9 +132,9 @@ class Config:
         if self.backup_count < 0:
             raise ValueError("NEXUS_BACKUP_COUNT must be a non-negative integer.")
 
-        # --- HLS Segment Directory ---
+        # --- Temp Directory ---
 
-        self.hls_base_segment_dir: Final[Path] = CONFIG_DIR / "hls_segments"
+        self.tmp_dir: Final[Path] = CONFIG_DIR / "tmp"
         
         # --- Process & HLS Configs ---
 
@@ -209,23 +205,26 @@ class Config:
             Log.debug(Label.STARTUP, f"Creating default channel list at {self.channel_list_path}")
             await aioshutil.copy(self.channel_list_default_path, self.channel_list_path)
 
-        Log.debug(Label.STARTUP, f"Cleaning HLS directory: {self.hls_base_segment_dir}")
-        await aioshutil.rmtree(self.hls_base_segment_dir, ignore_errors=True)
-        await aiofiles.os.makedirs(self.hls_base_segment_dir, exist_ok=True)
+        await aioshutil.rmtree(self.tmp_dir, ignore_errors=True)
+        await aiofiles.os.makedirs(self.tmp_dir, exist_ok=True)
         await aiofiles.os.makedirs(self.process_logs_dir, exist_ok=True)
 
-    async def clean_up_hls_segments(self) -> None:
-        """Cleans up old HLS segment files in the configured directory."""
-        Log.info(Label.STREAM, f"Cleaning up HLS segments in {self.hls_base_segment_dir}")
-        await aioshutil.rmtree(self.hls_base_segment_dir, ignore_errors=True)
+    async def cleanup_tmp_dir(self) -> None:
+        """Cleans up old temporary files."""
+        Log.debug(Label.STREAM, f"Cleaning up temporary files in {self.tmp_dir}...")
+        await aioshutil.rmtree(self.tmp_dir, ignore_errors=True)
 
-    def get_fs_safe_alphanum(self, name: str) -> str:
-        """Converts a string to a filesystem-safe alphanumeric format."""
-        return re.sub(NOT_ALPHANUM_REGEX, '_', name)
+    def get_hls_dir(self, video_key: VideoKey) -> Path:
+        """Generates a safe directory path for HLS segments and playlists."""
+        return self.tmp_dir / get_fs_safe_alphanum(f"{video_key}_{time.time()}")
+
+    def get_offset_path(self, video_key: VideoKey) -> Path:
+        """Generates a safe file path for storing offset information."""
+        return self.tmp_dir / f"{get_fs_safe_alphanum(f'{video_key}_{time.time()}')}.wav"
 
     def get_process_log_path(self, video_key: VideoKey) -> Path:
         """Generates a safe file path for a process log file."""
-        log_filename = f"{self.get_fs_safe_alphanum(f'{video_key}_{time.time()}')}.log" 
+        log_filename = f"{get_fs_safe_alphanum(f'{video_key}_{time.time()}')}.log" 
         return self.process_logs_dir / log_filename
     
     async def cleanup_process_logs_by_age(self) -> None:
@@ -421,11 +420,19 @@ class Config:
                         raise ValueError(f'"{key1}" - "{key2}": expected str, got {type(key2)}')
                     if type(val2) is not dict:
                         raise ValueError(f'"{key1}" - "{key2}": expected dict, got {type(val2)}')
-                    for key3, val3 in val2.items():
-                        if key3 not in ("priority",):
+                    val2.setdefault("offset", None)
+                    for key3 in ("priority", "offset"):
+                        if key3 not in val2:
+                            raise ValueError(f'"{key1}" - "{key2}" - missing required key "{key3}"')
+                        val3 = val2[key3]
+                        if key3 == "priority":
+                            if type(val3) is not int or val3 < 0 or val3 > 10:
+                                raise ValueError(f'"{key1}" - "{key2}" - "{key3}": expected int between 0 and 10, got {val3}')
+                        elif key3 == "offset":
+                            if val3 is not None and (type(val3) not in (float, int) or val3 < 0):
+                                raise ValueError(f'"{key1}" - "{key2}" - "{key3}": expected non-negative float or null, got {val3}')
+                        else:
                             raise ValueError(f'"{key1}" - "{key2}" - unexpected key "{key3}"')
-                        if type(val3) is not int or val3 < 0 or val3 > 10:
-                            raise ValueError(f'"{key1}" - "{key2}" - "{key3}": expected int between 0 and 10, got {val3}')
             return data
         except BaseException as e:
             if label == Label.STARTUP and isinstance(e, FileNotFoundError):
@@ -525,13 +532,13 @@ class Config:
                         if type(val2) is not list:
                             raise ValueError(f'"{key1}" - "bitrates": expected list, got {type(val2)}')
                         for index, item in enumerate(val2):
-                            if type(item) is not float or item < 0:
+                            if type(item) not in (float, int) or item < 0:
                                 raise ValueError(f'"{key1}" - "bitrates" item {index}: expected non-negative float, got {item}')
                     elif key2 == "framerates":
                         if type(val2) is not list:
                             raise ValueError(f'"{key1}" - "framerates": expected list, got {type(val2)}')
                         for index, item in enumerate(val2):
-                            if type(item) is not float or item < 0:
+                            if type(item) not in (float, int) or item < 0:
                                 raise ValueError(f'"{key1}" - "framerates" item {index}: expected non-negative float, got {item}')
                     elif key2 == "runtimes":
                         if type(val2) is not list:
@@ -547,7 +554,7 @@ class Config:
                                     if val3 not in StopReason:
                                         raise ValueError(f'"{key1}" - "runtimes" item {index} - "stop_reason": expected one of [{", ".join(StopReason)}], got {val3}')
                                 elif key3 == "runtime":
-                                    if type(val3) is not float or val3 < 0:
+                                    if type(val3) not in (float, int) or val3 < 0:
                                         raise ValueError(f'"{key1}" - "runtimes" item {index} - "runtime": expected non-negative float, got {val3}')
                     elif key2 == "updated_at":
                         try:

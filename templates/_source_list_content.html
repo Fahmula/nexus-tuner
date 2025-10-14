@@ -2,7 +2,7 @@
 <h6 class="card-subtitle my-2 text-muted">Manage Mappings</h6>
 <p class="small text-muted">
     Set priority for failover (0=highest, 5=default). Only change if you want to override
-    the quality scores for specific sources based on factors like uptime, runtime, or latency
+    the quality scores for specific sources based on factors like uptime, runtime, or offset
     (enabled source order reflects actual stream order).
 </p>
 
@@ -13,6 +13,7 @@
                 <th data-bs-toggle="tooltip" title="The TVG Display Title of the source">Source</th>
                 <th style="width: 5%;" data-bs-toggle="tooltip" title="Availability when due for quality analysis">Uptime</th>
                 <th style="width: 5%;" data-bs-toggle="tooltip" title="Average duration played before encountering an issue">Runtime</th>
+                <th style="width: 5%;" data-bs-toggle="tooltip" title="Stream delay relative to the mapped source with the lowest offset">Offset</th>
                 <th style="width: 5%;" data-bs-toggle="tooltip" title="Enable or disable this source mapping">Enable</th>
                 <th style="width: 5%;" data-bs-toggle="tooltip" title="Adjust to override quality metrics">Priority</th>
                 <th style="width: 5%;" data-bs-toggle="tooltip" title="Preview the source stream">Preview</th>
@@ -73,6 +74,27 @@
                     {% else %}
                         <span class="badge bg-success" data-bs-toggle="tooltip"
                         title="Average duration played before encountering an issue">&infin;</span>
+                    {% endif %}
+                </td>
+                <td class="align-middle text-center">
+                    {% if source_metrics.offset is defined and source_metrics.offset is not none %}
+                        {% set offset_str = source_metrics.offset|duration_to_str %}
+                        {% if source_metrics.offset <= 10 %}
+                            <span class="badge bg-success" data-bs-toggle="tooltip"
+                            title="Stream delay relative to the mapped source with the lowest offset">{{ offset_str }}</span>
+                        {% elif source_metrics.offset <= 30 %}
+                            <span class="badge bg-warning" data-bs-toggle="tooltip"
+                            title="Stream delay relative to the mapped source with the lowest offset">{{ offset_str }}</span>
+                        {% elif source_metrics.offset <= 60 %}
+                            <span class="badge bg-orange" data-bs-toggle="tooltip"
+                            title="Stream delay relative to the mapped source with the lowest offset">{{ offset_str }}</span>
+                        {% else %}
+                            <span class="badge bg-danger" data-bs-toggle="tooltip"
+                            title="Stream delay relative to the mapped source with the lowest offset">{{ offset_str }}</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="badge bg-secondary" data-bs-toggle="tooltip"
+                        title="Stream delay relative to the mapped source with the lowest offset">N/A</span>
                     {% endif %}
                 </td>
                 <td class="align-middle text-center">
@@ -148,6 +170,27 @@
                     {% else %}
                         <span class="badge bg-success" data-bs-toggle="tooltip"
                         title="Average duration played before encountering an issue">&infin;</span>
+                    {% endif %}
+                </td>
+                <td class="align-middle text-center">
+                    {% if source_metrics.offset is defined and source_metrics.offset is not none %}
+                        {% set offset_str = source_metrics.offset|duration_to_str %}
+                        {% if source_metrics.offset <= 10 %}
+                            <span class="badge bg-success" data-bs-toggle="tooltip"
+                            title="Stream delay relative to the mapped source with the lowest offset">{{ offset_str }}</span>
+                        {% elif source_metrics.offset <= 30 %}
+                            <span class="badge bg-warning" data-bs-toggle="tooltip"
+                            title="Stream delay relative to the mapped source with the lowest offset">{{ offset_str }}</span>
+                        {% elif source_metrics.offset <= 60 %}
+                            <span class="badge bg-orange" data-bs-toggle="tooltip"
+                            title="Stream delay relative to the mapped source with the lowest offset">{{ offset_str }}</span>
+                        {% else %}
+                            <span class="badge bg-danger" data-bs-toggle="tooltip"
+                            title="Stream delay relative to the mapped source with the lowest offset">{{ offset_str }}</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="badge bg-secondary" data-bs-toggle="tooltip"
+                        title="Stream delay relative to the mapped source with the lowest offset">N/A</span>
                     {% endif %}
                 </td>
                 <td class="align-middle text-center">

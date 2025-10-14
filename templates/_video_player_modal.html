@@ -23,11 +23,22 @@
         const stopStreamBtn = document.getElementById('stop-stream-btn');
         let hls = null;
 
+        const modalLogoEl = document.getElementById('previewModalLogo');
+        const tvgLogo = '{{ tvg_logo }}';
+        if (modalLogoEl) {
+            if (tvgLogo) {
+                modalLogoEl.src = tvgLogo;
+                modalLogoEl.style.display = '';
+            } else {
+                modalLogoEl.src = '';
+                modalLogoEl.style.display = 'none';
+            }
+        }
         const modalTitleTextEl = document.getElementById('previewModalTitleText');
-        const modalSourceIdEl = document.getElementById('previewModalSourceId');
         if (modalTitleTextEl) {
             modalTitleTextEl.textContent = '{{ source_name }}';
         }
+        const modalSourceIdEl = document.getElementById('previewModalSourceId');
         if (modalSourceIdEl) {
             modalSourceIdEl.textContent = '(' + '{{ source_id }}' + ')';
         }
@@ -43,6 +54,10 @@
                     if (modal_hidden) return;
                     modal_hidden = true;
                     console.log("Modal hidden event triggered");
+                    if (modalLogoEl) {
+                        modalLogoEl.src = '';
+                        modalLogoEl.style.display = 'none';
+                    }
                     if (modalTitleTextEl) {
                         modalTitleTextEl.textContent = 'Stream Preview';
                     }

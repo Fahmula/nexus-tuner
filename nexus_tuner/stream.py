@@ -8,7 +8,7 @@ from typing import Any, Coroutine, Final, Iterable, NoReturn, Self, cast
 from nexus_tuner.config import Config
 from nexus_tuner.handler import ChannelHandler
 from nexus_tuner.quality_monitor import QualityMonitor
-from nexus_tuner.utils import (CREATE_STREAM_DEADLINE, PROCESS_TERMINATE_INTERVAL, PROCESS_TERMINATE_TIMEOUT, NEW_DEADLINE_NON_BEST, DateTimeISO, ProcessInfo, ProcessInfoMutable, ProcessInfos, ProcessInfosMutable,
+from nexus_tuner.utils import (CREATE_STREAM_DEADLINE, PROCESS_TERMINATE_INTERVAL, PROCESS_TERMINATE_TIMEOUT, NEW_DEADLINE_NON_BEST, ChannelNum, DateTimeISO, ProcessInfo, ProcessInfoMutable, ProcessInfos, ProcessInfosMutable,
                                 Label, Log, LogicalChannelId, PreviewId, ProcessStatuses, ProcessStatusesImpl, ProviderAlias, RelativeTimeStr, SegmentNum, StopReason, StreamEngine, TVGDisplayTitle, VideoKey, VideoName, VideoType, duration_to_str, get_logical_channel_id_from_preview, get_playlist_path, get_segment_number, run_bg)
 
 
@@ -70,6 +70,23 @@ class StreamManager:
                 if data['logical_channel_id'] == logical_channel_id and data['video_type'] == video_type and data['stream_engine'] == stream_engine
             })
 
+    async def is_provider_available_soon(self, alias: ProviderAlias, offset: int = 0) -> bool | None:
+        """"
+        Checks if the provider's slots is filled by long term streams. Offset is used to add in external streams as full.
+        Returns None if slots aren't available due to the offset, False if slots aren't available even without the offset."""
+        provider_slots = await self.handler.get_provider_slots(alias)
+        if not provider_slots:
+            Log.error(Label.STREAM, f"No slots found for provider '{alias}'.")
+            return True
+        async with self.stream_process_lock:
+            active_long_term_count = sum(1 for data in self.processes.values() if data['provider_alias'] == alias and data['is_long_term'])
+        total_slots = provider_slots.get_total_slots()
+        if active_long_term_count >= total_slots:
+            return False
+        if active_long_term_count + offset >= total_slots:
+            return None
+        return True
+
     async def get_process_statuses(self) -> ProcessStatuses:
         """Returns the current process statuses for all providers."""
         async with self.stream_process_lock:
@@ -80,15 +97,15 @@ class StreamManager:
             if process_info["is_preview"]:
                 id_for_page = get_logical_channel_id_from_preview(PreviewId(logical_channel_id))
                 tvg_logo = None
-                channel_num = "Preview"
+                channel_num = ChannelNum(f"{process_info['channel_num']}|Preview") if process_info['channel_num'] else ChannelNum("Preview")
             elif (client_channel := await self.handler.get_client_channel(LogicalChannelId(logical_channel_id))):
                 id_for_page = LogicalChannelId(logical_channel_id)
                 tvg_logo = client_channel["tvg_logo"]
-                channel_num = client_channel["channel_num"]
+                channel_num = client_channel["channel_num"] or process_info['channel_num']
             else:
                 id_for_page = None
                 tvg_logo = None
-                channel_num = None
+                channel_num = process_info['channel_num']
             source_id = process_info["source_id"]
             discovered_source = await self.handler.get_discovered_source(source_id)
             if discovered_source:
@@ -125,7 +142,37 @@ class StreamManager:
                 "runtime": duration_to_str((datetime.now() - process_info["started_at"]).total_seconds()),
                 "last_access": last_access,
                 "is_long_term": process_info["is_long_term"],
-                "is_preview": process_info["is_preview"],
+                "width": width,
+                "height": height,
+                "bitrate": bitrate,
+                "framerate": framerate,
+            })
+        async with self.quality_monitor.quality_process_lock:
+            quality_process_infos = tuple(self.quality_monitor.processes.items())
+        for source_id, quality_process_info in quality_process_infos:
+            quality_score = await self.quality_monitor.get_quality_score(source_id)
+            if quality_score:
+                width = quality_score["width"]
+                height = quality_score["height"]
+                bitrate = quality_score["bitrate"]
+                framerate = quality_score["framerate"]
+            else:
+                width = None
+                height = None
+                bitrate = None
+                framerate = None
+            process_statuses.setdefault(quality_process_info["provider_alias"], []).append({
+                "stream_id": None,
+                "logical_channel_id": quality_process_info["logical_channel_id"],
+                "tvg_logo": quality_process_info["tvg_logo"],
+                "source_title": quality_process_info["source_title"],
+                "channel_num": ChannelNum(f"{quality_process_info['channel_num']}|{quality_process_info['type']}"),
+                "stream_engine": StreamEngine.FFMPEG,
+                "video_type": "ffprobe",
+                "started_at": DateTimeISO(quality_process_info["started_at"].isoformat()),
+                "runtime": duration_to_str((datetime.now() - quality_process_info["started_at"]).total_seconds()),
+                "last_access": RelativeTimeStr("now"),
+                "is_long_term": False,
                 "width": width,
                 "height": height,
                 "bitrate": bitrate,

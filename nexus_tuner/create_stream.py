@@ -21,7 +21,7 @@ from nexus_tuner.utils import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERV
 
 async def create_hls_ffmpeg_command(stream_manager: StreamManager, config: Config, input_url: str, video_key: VideoKey, logical_channel_id: LogicalChannelId | PreviewId, video_name: VideoName, stream_info: str) -> tuple[list[str], Path]:
     """Constructs the FFmpeg command list and creates the necessary HLS directory."""
-    channel_hls_dir = config.hls_base_segment_dir / config.get_fs_safe_alphanum(f"{video_key}_{time.time()}")
+    channel_hls_dir = config.get_hls_dir(video_key)
     await aiofiles.os.makedirs(channel_hls_dir, exist_ok=True)
     
     latest_segment = await stream_manager.get_hls_latest_segment(logical_channel_id, StreamEngine.FFMPEG)
@@ -31,11 +31,11 @@ async def create_hls_ffmpeg_command(stream_manager: StreamManager, config: Confi
     command = [
         str(config.ffmpeg_path),
         "-hide_banner", "-loglevel", "info",
+        "-user_agent", NEXUS_TUNER_USER_AGENT,
         "-fflags", "+genpts", "-copyts",
-        "-analyzeduration", "1000000", "-probesize", "1000000", "-reconnect", "1",
+        "-analyzeduration", "1M", "-probesize", "1M", "-reconnect", "1",
         "-reconnect_delay_max", "3", "-reconnect_streamed", "1", "-reconnect_at_eof", "1",
         "-reconnect_on_network_error", "1", "-reconnect_on_http_error", "5xx",
-        "-user_agent", NEXUS_TUNER_USER_AGENT,
         "-i", input_url,
         "-codec", "copy",
         "-map", "0:v", "-map", "0:a", "-c:s", "copy",
@@ -55,14 +55,14 @@ def create_mpegts_ffmpeg_command(config: Config, input_url: str) -> list[str]:
     command = [
         str(config.ffmpeg_path),
         "-hide_banner", "-loglevel", "info",
+        "-user_agent", NEXUS_TUNER_USER_AGENT,
         "-fflags", "+genpts", "-copyts",
         "-analyzeduration", "1000000", "-probesize", "1000000", "-reconnect", "1",
         "-reconnect_delay_max", "3", "-reconnect_streamed", "1", "-reconnect_at_eof", "1",
         "-reconnect_on_network_error", "1", "-reconnect_on_http_error", "5xx",
-        "-user_agent", NEXUS_TUNER_USER_AGENT,
         "-i", input_url,
         "-c:v", "copy",
-        "-c:a", "aac", "-b:a", "192k", "-ac", "2",
+        "-c:a", "libmp3lame", "-ac", "2",
         "-map", "0:v", "-map", "0:a", "-c:s", "copy",
         "-f", "mpegts", "pipe:1"
     ]
@@ -71,7 +71,7 @@ def create_mpegts_ffmpeg_command(config: Config, input_url: str) -> list[str]:
 
 async def create_hls_vlc_command(stream_manager: StreamManager, config: Config, input_url: str, video_key: VideoKey, logical_channel_id: LogicalChannelId | PreviewId, video_name: VideoName, stream_info: str) -> tuple[list[str], Path]:
     """Constructs the VLC command list and creates the necessary HLS directory."""
-    channel_hls_dir = config.hls_base_segment_dir / config.get_fs_safe_alphanum(f"{video_key}_{time.time()}")
+    channel_hls_dir = config.get_hls_dir(video_key)
     await aiofiles.os.makedirs(channel_hls_dir, exist_ok=True)
     
     latest_segment = await stream_manager.get_hls_latest_segment(logical_channel_id, StreamEngine.VLC)
@@ -242,7 +242,7 @@ class CreateStream:
         video_name = create_video_name(self.stream_name, self._source_names[new_source["source_id"]], new_source["source_id"])
         self._video_names[video_key] = video_name
         quality_score = self._quality_scores.get(new_source["source_id"])
-        score_msg = f"Score={quality_score['total_score']:.2f} | Uptime={quality_score['uptime']*100:.0f}% | Runtime={duration_to_str(quality_score['runtime']) if quality_score['runtime'] else '∞'}" if quality_score else "Score=Unknown | Uptime=Unknown | Runtime=Unknown"
+        score_msg = f"Score={quality_score['total_score']:.2f} | Uptime={quality_score['uptime']:.0%} | Runtime={duration_to_str(quality_score['runtime']) if quality_score['runtime'] else '∞'}" if quality_score else "Score=Unknown | Uptime=Unknown | Runtime=Unknown"
         stream_info = f"[Priority={new_source['priority']} | {score_msg}]"
         Log.debug(Label.STREAM, f"{video_name} {stream_info}: Using source for stream creation...", (self.video_type, self.stream_engine))
         return new_source, video_key, video_name, stream_info
@@ -339,11 +339,11 @@ class CreateStream:
     async def _check_mpegts_health(self, video_name: VideoName, stream_info: str, stdout_reader: asyncio.StreamReader, mpegts_health: MPEGTSHealthImpl, healthy_timeout: float) -> None:
         """Tries to read a single packet from stdout to determine if the MPEGTS stream is healthy. If healthy reads into a buffer until MPEGTSStream takes over."""
         try:
-            inital_bytes = await asyncio.wait_for(stdout_reader.readexactly(MPEGTS_PACKET_SIZE), timeout=healthy_timeout)
-            if not inital_bytes:
+            initial_bytes = await asyncio.wait_for(stdout_reader.readexactly(MPEGTS_PACKET_SIZE), timeout=healthy_timeout)
+            if not initial_bytes:
                 raise EOFError("no data received")
             mpegts_health["is_healthy"] = True
-            mpegts_health["buffer"].append(inital_bytes)
+            mpegts_health["buffer"].append(initial_bytes)
         except Exception as e:
             mpegts_health["is_healthy"] = False
             mpegts_health["stopped"].set()
@@ -369,7 +369,7 @@ class CreateStream:
             mpegts_health["is_healthy"] = False
             if not self._selected:
                 error = f"timed out after {healthy_timeout}s" if isinstance(e, asyncio.TimeoutError) else e
-                Log.error(Label.STREAM, f"{video_name} {stream_info}: Error reading from stream for inital buffer - {error}", (self.video_type, self.stream_engine))
+                Log.error(Label.STREAM, f"{video_name} {stream_info}: Error reading from stream for initial buffer - {error}", (self.video_type, self.stream_engine))
         finally:
             mpegts_health["stopped"].set()
 
@@ -435,7 +435,7 @@ class CreateStream:
                     async with self.stream_manager.stream_process_lock:
                         started_at = datetime.now()
                         cast(ProcessInfosMutable, self.stream_manager.processes)[video_key] = {
-                            'process': process, 'is_long_term': False, 'is_preview': is_preview, 'stream_engine': self.stream_engine,
+                            'process': process, 'is_long_term': False, 'is_preview': is_preview, 'stream_engine': self.stream_engine, 'channel_num': self.channel_num,
                             'video_type': VideoType.MPEGTS, 'video_name': video_name, 'provider_alias': provider_alias, 'source_id': source["source_id"],
                             'logical_channel_id': self.logical_channel_id, 'channel_hls_dir': None, 'started_at': started_at, 'stopped_at': None,
                             'stop_reason': None, 'last_access': started_at, 'is_mpegts_active': False, 'mpegts_health': mpegts_health, 'stderr_log_file_obj': stderr_log_file
@@ -445,7 +445,7 @@ class CreateStream:
                     async with self.stream_manager.stream_process_lock:
                         started_at = datetime.now()
                         cast(ProcessInfosMutable, self.stream_manager.processes)[video_key] = {
-                            'process': process, 'is_long_term': False, 'is_preview': is_preview, 'stream_engine': self.stream_engine,
+                            'process': process, 'is_long_term': False, 'is_preview': is_preview, 'stream_engine': self.stream_engine, 'channel_num': self.channel_num,
                             'video_type': VideoType.HLS, 'video_name': video_name, 'provider_alias': provider_alias, 'logical_channel_id': self.logical_channel_id,
                             'source_id': source["source_id"], 'channel_hls_dir': cast(Path, channel_hls_dir), 'started_at': started_at, 'stopped_at': None,
                             'stop_reason': None, 'last_access': started_at, 'is_mpegts_active': None, 'mpegts_health': None, 'stderr_log_file_obj': stderr_log_file

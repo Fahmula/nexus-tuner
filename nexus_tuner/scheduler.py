@@ -1,6 +1,6 @@
 import asyncio
 from datetime import datetime, timedelta
-from typing import Awaitable, Callable, Final, NoReturn, Self
+from typing import Any, Awaitable, Callable, Final, NoReturn, Self
 from nexus_tuner.config import Config
 from nexus_tuner.handler import ChannelHandler
 from nexus_tuner.quality_monitor import QualityMonitor
@@ -8,23 +8,23 @@ from nexus_tuner.utils import DateTimeISO, JobName, JobsDataImpl, Label, Log, re
 
 
 SCHEDULER_TICK_INTERVAL_SECONDS: Final[int] = 60
-BACKUP_TIME: Final[str] = "10:00"
 CLEANUP_TIME: Final[str] = "00:00"
 DISCOVER_TIME: Final[str] = "01:00"
 QUALITY_TIME: Final[str] = "02:00"
+BACKUP_TIME: Final[str] = "05:00"
 
 
 class Job:
     """Represents a scheduled job with a name, schedules, and a function to execute."""
     __slots__ = ('name', 'hour', 'minute', 'func', 'active',)
     
-    def __init__(self, name: JobName, schedule: str, func: Callable[[], Awaitable[None]]) -> None:
+    def __init__(self, name: JobName, schedule: str, func: Callable[[], Awaitable[Any]]) -> None:
         if len(schedule) != 5 or schedule[2] != ":" or not (0 <= int(schedule[:2]) <= 23) or not (0 <= int(schedule[3:]) <= 59):
             raise ValueError(f"Invalid schedule format: {schedule} (expected HH:MM)")
         self.name: JobName = name
         self.hour: int; self.minute: int
         self.hour, self.minute = map(int, schedule.split(":"))
-        self.func: Callable[[], Awaitable[None]] = func
+        self.func: Callable[[], Awaitable[Any]] = func
         self.active: bool = False
 
     async def run(self, config: Config, start_time: datetime, set_last_run: Callable[[JobName, datetime], Awaitable[bool]]) -> bool:

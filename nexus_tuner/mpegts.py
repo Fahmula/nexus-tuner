@@ -169,14 +169,14 @@ class MPEGTSStream:
         except BaseException as e:
             Log.error(Label.STREAM, f"{self.video_name}: Unexpected error - {e}", (VideoType.MPEGTS, self.stream_engine))
             raise
-        finally:  # Don't stop early incase the user reconnects, let the timeout handle it
+        finally:  # Don't stop early in case the user reconnects, let the timeout handle it
             async def bg_cleanup() -> None:
                 Log.debug(Label.STREAM, f"{self.video_name}: Shutting down stream handler...", (VideoType.MPEGTS, self.stream_engine))
                 self.shutdown()
                 self._cleaner.cancel()
                 async with self.stream_manager.stream_process_lock:
                     Log.debug(Label.STREAM, f"{self.video_name}: Marking as inactive.", (VideoType.MPEGTS, self.stream_engine))
-                    cast(ProcessInfoMutable, process_info)["last_access"] = datetime.now() - timedelta(seconds=self.config.segment_prune_timeout)  # Elligible for pruning immediately
+                    cast(ProcessInfoMutable, process_info)["last_access"] = datetime.now() - timedelta(seconds=self.config.segment_prune_timeout)  # Eligible for pruning immediately
                     cast(ProcessInfoMutable, process_info)["is_mpegts_active"] = False
                     self.streams.pop(self.video_key, None)  # Make this atomic with is_mpegts_active
             run_bg(bg_cleanup())
@@ -213,5 +213,5 @@ class MPEGTSStream:
 
     def shutdown(self) -> None:
         """Cancel the stream, cleaning up resources and stopping the writer task."""
-        self._cancelled = True  # Let the stdout reader finish gracefully incase we will reconnect
+        self._cancelled = True  # Let the stdout reader finish gracefully in case we will reconnect
         self._event.set()  # Ensure any waiting readers are woken up

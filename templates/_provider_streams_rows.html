@@ -69,23 +69,29 @@
                             </td>
                             <td class="small">
                                 <div><span>{{ p.stream_engine }}</span></div>
-                                <div class="text-muted">{{ p.video_type }}</div>
+                                <div class="text-muted">{{ p.video_type or '-' }}</div>
                             </td>
                             <td class="small text-center align-middle" style="min-width:0; width:6%;">
                                 <div class="d-flex justify-content-center align-items-center" style="min-height:24px;">
-                                    {% if p.is_long_term %}
-                                        <i class="fas fa-check text-success" aria-hidden="true" title="Healthy"></i>
+                                    {% if p.stream_id %}
+                                        {% if p.is_long_term %}
+                                            <i class="fas fa-check text-success" title="Healthy" aria-hidden="true"></i>
+                                        {% else %}
+                                            <i class="fas fa-clock text-warning" title="Checking..." aria-hidden="true"></i>
+                                        {% endif %}
                                     {% else %}
-                                        <i class="fas fa-clock text-warning" title="Checking..." aria-hidden="true"></i>
+                                        <i class="fas fa-microscope text-info" title="Probing..." aria-hidden="true"></i>
                                     {% endif %}
                                 </div>
                             </td>
                             <td class="small text-center align-middle">
-                                <button class="btn btn-sm btn-outline-danger" title="Stop Stream"
-                                    hx-post="/{{ p.video_type }}/{{ p.stream_id }}/{{ p.stream_engine }}/stop"
-                                    hx-target="closest tr" hx-swap="outerHTML" hx-confirm="Stop this stream?">
-                                    <i class="fas fa-stop"></i>
-                                </button>
+                                {% if p.stream_id %}
+                                    <button class="btn btn-sm btn-outline-danger" title="Stop Stream"
+                                        hx-post="/{{ p.video_type }}/{{ p.stream_id }}/{{ p.stream_engine }}/stop"
+                                        hx-target="closest tr" hx-swap="outerHTML" hx-confirm="Stop this stream?">
+                                        <i class="fas fa-stop"></i>
+                                    </button>
+                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}
