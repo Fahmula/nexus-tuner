@@ -1,3 +1,25 @@
+# [3.0.0-rc.2](https://github.com/Fahmula/nexus-tuner/compare/v3.0.0-rc.1...v3.0.0-rc.2) (2025-10-15)
+
+
+### Bug Fixes
+
+* **async:** ensure streams are stopped properly ([6329bc0](https://github.com/Fahmula/nexus-tuner/commit/6329bc09b6bf6173cec55462224fe21d7e82bf76))
+* **hls:** don't cache segments ([c9203d7](https://github.com/Fahmula/nexus-tuner/commit/c9203d7f344e1b678b3a50d8ca0f0712ad23be3f))
+* **mpegts:** return video key when recreating stream ([befadc7](https://github.com/Fahmula/nexus-tuner/commit/befadc7cca12e34fb2a8cb968801d6b53fa2fa83))
+* **session_monitor:** Ignore inactive MPEGTS sessions ([8a8fe50](https://github.com/Fahmula/nexus-tuner/commit/8a8fe500104c365c65f7644fe3c69b00c1e9893a))
+* **shutdown:** properly handle signals on shutdown ([8b375ec](https://github.com/Fahmula/nexus-tuner/commit/8b375ec95563703b4969995318597c85ab99fc8e))
+* **ui:** keep mapped sources when prefilling while editing ([3c4df01](https://github.com/Fahmula/nexus-tuner/commit/3c4df01378c6a30161223b43dfcf2c4ecbe7fe83))
+* **ui:** prevent modal open from shifting navbar with scrollbar ([f5cad58](https://github.com/Fahmula/nexus-tuner/commit/f5cad58ba43ea0ee77bf5afa04b4f7da6acc11c1))
+
+
+### Features
+
+* **quality:** add relative stream delay to quality metrics ([750dc64](https://github.com/Fahmula/nexus-tuner/commit/750dc640e7375d73e41ba923a7b698fe1a96bc2b))
+* **quality:** add runtime metric ([4e2ac0f](https://github.com/Fahmula/nexus-tuner/commit/4e2ac0f8a71a7856e508571b8e06ab0ef9ce3a66))
+* **stream:** support vlc ([8c6a01a](https://github.com/Fahmula/nexus-tuner/commit/8c6a01a68752270b3d2f07bb4c24d7ade9446abe))
+* **ui:** prefill TVG Logo in edit form ([ed24f9b](https://github.com/Fahmula/nexus-tuner/commit/ed24f9b7845c28fbf6b3a2a03f9a1941d7ae44ba))
+* **ui:** suppport PWA ([f5facd7](https://github.com/Fahmula/nexus-tuner/commit/f5facd7ee17a0e5a7befd1a6ecf4e60eba76f090))
+
 # [3.0.0-rc.1](https://github.com/Fahmula/nexus-tuner/compare/v2.0.0...v3.0.0-rc.1) (2025-08-06)
 
 
