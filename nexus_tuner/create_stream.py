@@ -14,9 +14,9 @@ from nexus_tuner.slots import ProviderSlots
 from nexus_tuner.handler import ChannelHandler
 from nexus_tuner.stream import StreamManager
 from nexus_tuner.utils import (CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL, MPEGTS_CHUNK_READ_TIMEOUT, PROCESS_TERMINATE_INTERVAL, PROCESS_TERMINATE_TIMEOUT,
-                                MPEGTS_PACKET_SIZE, MPEGTS_CHUNK_SIZE, NEW_DEADLINE_NON_BEST, NEXUS_TUNER_USER_AGENT, ChannelNum, MPEGTSHealth, MPEGTSHealthImpl, ProcessInfosMutable, Label, Log,
+                                MPEGTS_PACKET_SIZE, MPEGTS_CHUNK_SIZE, NEW_DEADLINE_NON_BEST, NEXUS_TUNER_USER_AGENT, ChannelMappings, ChannelNum, MPEGTSHealth, MPEGTSHealthImpl, ProcessInfosMutable, Label, Log,
                                 LogicalChannelId, LogicalChannelTitle, PreviewId, Priority, ProviderAlias, QualityScores, QualityScoresImpl, SourceInfo, SourceId, StopReason, StreamEngine, StreamName, TVGDisplayTitle, TVGName, VideoKey, VideoName,
-                                VideoType, create_stream_key, create_stream_name, create_video_key, create_video_name, duration_to_str, get_playlist_path, get_segment_path, is_preview_id, run_bg, sort_sources)
+                                VideoType, create_stream_key, create_stream_name, create_video_key, create_video_name, duration_to_str, get_logical_channel_id_from_preview, get_playlist_path, get_segment_path, is_preview_id, run_bg, sort_sources)
 
 
 async def create_hls_ffmpeg_command(stream_manager: StreamManager, config: Config, input_url: str, video_key: VideoKey, logical_channel_id: LogicalChannelId | PreviewId, video_name: VideoName, stream_info: str) -> tuple[list[str], Path]:
@@ -114,9 +114,9 @@ class CreateStream:
     """
     __slots__ = (
         'config', 'handler', 'stream_manager', 'quality_monitor',
-        'logical_channel_id', 'logical_channel_title', 'channel_num',
-        'stream_name', 'video_type', '_res', '_mutex', '_result_event',
-        '_sources', '_source_names', '_quality_scores', '_remaining_priorities',
+        'logical_channel_id', 'logical_channel_title', 'channel_num', 'actual_logical_channel_id',
+        'stream_name', 'video_type', '_res', '_mutex', '_result_event', 'is_preview',
+        '_sources', '_source_names', '_quality_scores', '_channel_mappings', '_remaining_priorities',
         '_input_sources', '_results', '_selected', '_slots_acquired', '_active_video_keys',
         '_source_quality_messages', '_video_names', '_deadline', 'stream_engine',
         '_worker_tasks', '_supervisor_task',
@@ -133,6 +133,8 @@ class CreateStream:
         self.stream_name: StreamName = create_stream_name(logical_channel_title, channel_num)
         self.video_type: VideoType = video_type
         self.stream_engine: StreamEngine = stream_engine
+        self.is_preview: bool = is_preview_id(logical_channel_id)
+        self.actual_logical_channel_id: LogicalChannelId | None = get_logical_channel_id_from_preview(cast(PreviewId, logical_channel_id)) if self.is_preview else cast(LogicalChannelId, logical_channel_id)
 
         self._res: tuple[Literal[True], VideoKey, VideoName] | tuple[Literal[False], int, str] = (False, 500, f"Stream not created yet")
         self._mutex: asyncio.Lock = asyncio.Lock()
@@ -141,6 +143,7 @@ class CreateStream:
         self._sources: list[SourceInfo] = []
         self._source_names: dict[SourceId, TVGDisplayTitle | TVGName] = {}
         self._quality_scores: QualityScores = QualityScoresImpl({})
+        self._channel_mappings: ChannelMappings | None = None
         self._remaining_priorities: dict[SourceId, Priority] = {}
         self._input_sources: list[SourceInfo] | None = input_sources
 
@@ -179,6 +182,7 @@ class CreateStream:
             return
 
         self._quality_scores = await self.quality_monitor.get_quality_scores()
+        self._channel_mappings = await self.handler.get_mappings_for_logical_channel(self.actual_logical_channel_id) if self.actual_logical_channel_id else None
         self._remaining_priorities = sort_sources(self._sources, self._quality_scores, reverse=True)
 
         all_provider_sources: dict[ProviderAlias, list[SourceInfo]] = {}
@@ -243,7 +247,12 @@ class CreateStream:
         self._video_names[video_key] = video_name
         quality_score = self._quality_scores.get(new_source["source_id"])
         score_msg = f"Score={quality_score['total_score']:.2f} | Uptime={quality_score['uptime']:.0%} | Runtime={duration_to_str(quality_score['runtime']) if quality_score['runtime'] else '∞'}" if quality_score else "Score=Unknown | Uptime=Unknown | Runtime=Unknown"
-        stream_info = f"[Priority={new_source['priority']} | {score_msg}]"
+        if self._channel_mappings and new_source["source_id"] in self._channel_mappings:
+            val = self._channel_mappings[new_source["source_id"]]["offset"]
+            offset = duration_to_str(val) if val is not None else "Unknown"
+        else:
+            offset = "Unknown"
+        stream_info = f"[Priority={new_source['priority']} | {score_msg} | Offset={offset}]"
         Log.debug(Label.STREAM, f"{video_name} {stream_info}: Using source for stream creation...", (self.video_type, self.stream_engine))
         return new_source, video_key, video_name, stream_info
 
@@ -421,8 +430,7 @@ class CreateStream:
             raise
 
         process: asyncio.subprocess.Process | None = None
-        is_preview = is_preview_id(self.logical_channel_id)
-        healthy_timeout = CREATE_STREAM_DEADLINE if is_preview else self.config.process_start_timeout
+        healthy_timeout = CREATE_STREAM_DEADLINE if self.is_preview else self.config.process_start_timeout
         mpegts_health: MPEGTSHealth | None = None
         try:
             async with self._mutex:
@@ -435,7 +443,7 @@ class CreateStream:
                     async with self.stream_manager.stream_process_lock:
                         started_at = datetime.now()
                         cast(ProcessInfosMutable, self.stream_manager.processes)[video_key] = {
-                            'process': process, 'is_long_term': False, 'is_preview': is_preview, 'stream_engine': self.stream_engine, 'channel_num': self.channel_num,
+                            'process': process, 'is_long_term': False, 'is_preview': self.is_preview, 'stream_engine': self.stream_engine, 'channel_num': self.channel_num,
                             'video_type': VideoType.MPEGTS, 'video_name': video_name, 'provider_alias': provider_alias, 'source_id': source["source_id"],
                             'logical_channel_id': self.logical_channel_id, 'channel_hls_dir': None, 'started_at': started_at, 'stopped_at': None,
                             'stop_reason': None, 'last_access': started_at, 'is_mpegts_active': False, 'mpegts_health': mpegts_health, 'stderr_log_file_obj': stderr_log_file
@@ -445,7 +453,7 @@ class CreateStream:
                     async with self.stream_manager.stream_process_lock:
                         started_at = datetime.now()
                         cast(ProcessInfosMutable, self.stream_manager.processes)[video_key] = {
-                            'process': process, 'is_long_term': False, 'is_preview': is_preview, 'stream_engine': self.stream_engine, 'channel_num': self.channel_num,
+                            'process': process, 'is_long_term': False, 'is_preview': self.is_preview, 'stream_engine': self.stream_engine, 'channel_num': self.channel_num,
                             'video_type': VideoType.HLS, 'video_name': video_name, 'provider_alias': provider_alias, 'logical_channel_id': self.logical_channel_id,
                             'source_id': source["source_id"], 'channel_hls_dir': cast(Path, channel_hls_dir), 'started_at': started_at, 'stopped_at': None,
                             'stop_reason': None, 'last_access': started_at, 'is_mpegts_active': None, 'mpegts_health': None, 'stderr_log_file_obj': stderr_log_file

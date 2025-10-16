@@ -734,7 +734,7 @@ class QualityMonitor:
                         return
                     raise
                 finally:
-                    run_bg(self._cleanup_process(process, provider_slots, source_id, video_name))
+                    await run_bg(self._cleanup_process(process, provider_slots, source_id, video_name))
 
             while True:
                 if self.handler.get_pending_stream_count() > 0:
@@ -836,10 +836,11 @@ class QualityMonitor:
                     return False
                 raise
             finally:
-                run_bg(self._cleanup_process(ref_process, ref_provider_slots, ref_source_id, ref_video_name))
+                await run_bg(self._cleanup_process(ref_process, ref_provider_slots, ref_source_id, ref_video_name))
+            max_offset = (loop.time() - t0) + ((OFFSET_CLIP_DURATION + OFFSET_GRACE) * len(other_source_ids))
 
             try:
-                ref_envelope = self._load_and_envelope(ref_audio_path)
+                ref_envelope = await asyncio.to_thread(self._load_and_envelope, ref_audio_path)
             except Exception as e:
                 Log.error(Label.QUALITY, f"{ref_video_name}: Failed to load reference audio - {e}")
                 return False
@@ -848,15 +849,22 @@ class QualityMonitor:
             raw_confidences: dict[tuple[SourceId, int], float] = {}
             for (source_id, round), (video_name, audio_path, start_offset) in clip_infos.items():
                 try:
-                    clip_envelope = self._load_and_envelope(audio_path)
+                    clip_envelope = await asyncio.to_thread(self._load_and_envelope, audio_path)
                 except Exception as e:
                     Log.error(Label.QUALITY, f"{video_name}: Failed to load clip audio - {e}")
                     continue
-                match_time, peak_val = self._match_clip_in_reference(clip_envelope, ref_envelope)
+                match_time, peak_val = await asyncio.to_thread(self._match_clip_in_reference, clip_envelope, ref_envelope)
                 if not math.isfinite(match_time):
                     Log.warn(Label.QUALITY, f"{video_name}: Invalid match time computed - {match_time}")
                     continue
-                raw_offsets[(source_id, round)] = Offset((start_offset - t0) - match_time)
+                raw_offset = Offset((start_offset - t0) - match_time)
+                if peak_val < OFFSET_CONF_THRESH:
+                    Log.warn(Label.QUALITY, f"{video_name}: Low confidence {peak_val:.3f} (min: {OFFSET_CONF_THRESH}) in offset measurement of {raw_offset:.3f}s for clip #{round}, skipping.")
+                    continue
+                if abs(raw_offset) > max_offset:
+                    Log.warn(Label.QUALITY, f"{video_name}: Unreasonable offset measurement of {raw_offset:.3f}s for clip #{round} (worst case should be ±{max_offset:.3f}s), skipping.")
+                    continue
+                raw_offsets[(source_id, round)] = raw_offset
                 raw_confidences[(source_id, round)] = peak_val
 
             best_offsets: dict[SourceId, Offset] = {}
@@ -877,9 +885,6 @@ class QualityMonitor:
                     else:
                         best_offset = raw_offsets[(source_id, 2)]
                         best_confidence = raw_confidences[(source_id, 2)]
-                if best_confidence < OFFSET_CONF_THRESH:
-                    Log.warn(Label.QUALITY, f"{video_names[source_id]}: Low confidence {best_confidence:.3f} (min: {OFFSET_CONF_THRESH}) in offset measurement, skipping.")
-                    continue
                 best_offsets[source_id] = best_offset
                 best_confidences[source_id] = best_confidence
             if not best_offsets:
