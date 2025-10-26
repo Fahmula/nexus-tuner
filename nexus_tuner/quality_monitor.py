@@ -36,6 +36,7 @@ RUNTIME_NORM: Final[int] = 60 * 60 * 12
 BACKGROUND_SLOT_WAIT_INTERVAL: Final[int] = 1
 QUALITY_MONITOR_TIMEOUT: Final[int] = 5
 QUALITY_MONITOR_GRACE: Final[int] = 5
+QUALITY_MONITOR_DELAY: Final[int] = 30
 MAX_HISTORY_PER_SOURCE: Final[int] = 10
 MIN_DAYS_AT_MAX_HISTORY: Final[int] = 7
 MIN_DAYS_AT_NON_MAX_HISTORY: Final[int] = 1
@@ -52,7 +53,8 @@ OFFSET_RETRY_TIMEOUT: Final[int] = 60 * 60
 
 
 class QualityMonitor:
-    __slots__ = ('config', 'handler', 'stream_manager', 'processes', '_running', '_full_providers', '_mutex', 'quality_process_lock', '_quality_scores')
+    __slots__ = ('config', 'handler', 'stream_manager', 'processes', '_running', '_rate_limited',
+                 '_full_providers', '_mutex', 'quality_process_lock', '_quality_scores')
     
     def __init__(self, config: Config, handler: ChannelHandler) -> None:
         self.config: Config = config
@@ -60,6 +62,7 @@ class QualityMonitor:
         self.stream_manager: StreamManager  # Injected after creation
         self.processes: QualityProcessInfos = QualityProcessInfosImpl({})
         self._running: LogicalChannelId | StreamName | Literal["scheduler"] | None = None
+        self._rate_limited: bool = False
         self._full_providers: dict[ProviderAlias, bool] = {}
         self._mutex: asyncio.Lock = asyncio.Lock()
         self.quality_process_lock: asyncio.Lock = asyncio.Lock()
@@ -221,7 +224,11 @@ class QualityMonitor:
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=QUALITY_MONITOR_TIMEOUT + QUALITY_MONITOR_GRACE)
 
             if process.returncode != 0:
-                Log.debug(Label.QUALITY, f"{video_name}: ffprobe failed with code {process.returncode} - {stderr.decode()}".replace(stream_url, "{{stream_url}}").strip())
+                err = stderr.decode()
+                Log.debug(Label.QUALITY, f"{video_name}: ffprobe failed with code {process.returncode} - {err}".replace(stream_url, "{{stream_url}}").strip())
+                if "429 Too Many Requests" in err:
+                    self._rate_limited = True
+                    raise asyncio.CancelledError("Provider is rate limiting requests.")
                 return
             info = json.loads(stdout)
 
@@ -284,6 +291,9 @@ class QualityMonitor:
                     msg = f"{video_name}: Provider {provider_alias} is configured with 0 slots, cannot run probe."
                     Log.warn(Label.QUALITY, msg)
                     raise ValueError(msg)
+                if self._rate_limited:
+                    msg = f"{video_name}: Detected rate limit, cannot run probe."
+                    raise RuntimeError(msg)
                 if not await provider_slots.try_acquire():
                     await self.stream_manager.prune_processes(provider_alias)
                     if self._running != "scheduler" and not await self.stream_manager.is_provider_available_soon(provider_alias):
@@ -370,7 +380,12 @@ class QualityMonitor:
                     return success_count
                 valid_mappings.sort(key=lambda x: x[0])
 
+            to_delay = False
             for _, logical_channel_id, source_ids, stream_name, tvg_logo, channel_num in valid_mappings:
+                if to_delay:
+                    await asyncio.sleep(QUALITY_MONITOR_DELAY)
+                else:
+                    to_delay = True
                 tasks: list[Coroutine[Any, Any, tuple[SourceId, ProbeInfo, str]]] = []
                 for source_id in source_ids:
                     discovered_source = await self.handler.get_discovered_source(source_id)
@@ -403,6 +418,9 @@ class QualityMonitor:
                     continue
 
                 raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+                if self._rate_limited:
+                    Log.warn(Label.QUALITY, "Rate limited by provider, stopping further analysis.")
+                    return success_count
                 stream_infos: list[tuple[SourceId, ProbeInfo, str]] = []
                 for raw_result in raw_results:
                     if isinstance(raw_result, BaseException):
@@ -468,6 +486,7 @@ class QualityMonitor:
             return success_count
         finally:
             self._running = None
+            self._rate_limited = False
             self._full_providers.clear()
 
     async def append_runtime(self, video_name: VideoName, source_id: SourceId, started_at: datetime, stopped_at: datetime, stop_reason: StopReason) -> None:
