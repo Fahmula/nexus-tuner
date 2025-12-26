@@ -10,7 +10,7 @@ FROM base-image AS builder-image
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-RUN apt install --no-install-recommends -y python3.13-venv python3.13-dev build-essential
+RUN apt update && apt install --no-install-recommends -y python3.13-venv python3.13-dev build-essential
 RUN python3.13 -m venv /app/venv
 COPY requirements.txt .
 RUN pip install --no-cache-dir setuptools
@@ -75,7 +75,7 @@ RUN cd "$HOME/ffmpeg_sources" && \
 
 FROM base-image AS runner-image
 
-RUN apt install --no-install-recommends -y iputils-ping curl
+RUN apt update && apt install --no-install-recommends -y iputils-ping curl
 
 # FFmpeg binaries and libraries
 COPY --from=builder-image /root/bin/ /usr/bin/
