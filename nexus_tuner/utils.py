@@ -543,14 +543,14 @@ def run_bg(coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
 
 def create_stream_key(stream_engine: StreamEngine, video_type: VideoType, logical_channel_id: LogicalChannelId | PreviewId) -> StreamKey:
     """Generates a unique key for the stream."""
-    return StreamKey(f"{stream_engine}_{video_type}_{logical_channel_id}")
+    return StreamKey(f"{stream_engine};{video_type};{logical_channel_id}")
 
 
 def create_video_key(stream_key: StreamKey, source_id: SourceId) -> VideoKey:
     """Generates a unique key for the video stream."""
     if source_id in stream_key:
         return VideoKey(stream_key)  # Preview streams use source_id in logical_channel_id, see create_preview_id()
-    return VideoKey(f"{stream_key}_{source_id}")
+    return VideoKey(f"{stream_key};{source_id}")
 
 
 def create_stream_name(logical_channel_title: LogicalChannelTitle, channel_num: ChannelNum | None) -> StreamName:
@@ -568,24 +568,24 @@ def create_video_name(stream_name: StreamName, source_name: TVGDisplayTitle | TV
 def create_preview_id(source_id: SourceId, logical_channel_id: LogicalChannelId | None = None) -> PreviewId:
     """Generates a unique ID for the preview stream."""
     if logical_channel_id:
-        return PreviewId(f"preview_{logical_channel_id}_{source_id}")
-    return PreviewId(f"preview_{source_id}")  # Need to update create_video_key() and preview functions below if changing
+        return PreviewId(f"preview;{logical_channel_id};{source_id}")
+    return PreviewId(f"preview;{source_id}")  # Need to update create_video_key() and preview functions below if changing
 
 
 def get_source_id_from_preview(preview_id: PreviewId) -> SourceId:
     """Extracts the source ID from the preview stream ID."""
-    return SourceId(preview_id.split('_')[-1])
+    return SourceId(preview_id.split(';')[-1])
 
 
 def get_logical_channel_id_from_preview(preview_id: PreviewId) -> LogicalChannelId | None:
     """Extracts the logical channel ID from the preview stream ID, if present."""
-    parts = preview_id.split('_')
+    parts = preview_id.split(';')
     return LogicalChannelId(parts[1]) if len(parts) == 3 else None
 
 
 def is_preview_id(input_id: PreviewId | LogicalChannelId) -> bool:
     """Checks if the given ID is a preview ID."""
-    return input_id.startswith("preview_")
+    return input_id.startswith("preview;")
 
 
 def get_playlist_path(channel_hls_dir: Path) -> Path:

@@ -5,8 +5,10 @@
         <div class="row g-2 align-items-end">
             <div class="col-md-4">
                 <label for="alias" class="form-label visually-hidden">Provider ID</label>
-                <input type="text" class="form-control" id="alias" name="alias" placeholder="Provider ID (e.g., myiptv)"
-                       value="{{ alias if alias is not none else '' }}" required>
+                  <input type="text" class="form-control" id="alias" name="alias" placeholder="Provider ID (e.g., myiptv)"
+                      value="{{ alias if alias is not none else '' }}" required
+                      pattern="^[^;]+$"
+                      title="Alias must not contain semicolons (';').">
             </div>
             <div class="col-md-5">
                 <label for="m3u_url" class="form-label visually-hidden">M3U URL</label>

@@ -547,6 +547,8 @@ async def ui_provider_add() -> Response | str:
         m3u_url = M3UURL(form_data.get("m3u_url", "").strip())
         max_streams_str = form_data.get("max_streams", "")
         try:
+            if ";" in alias:
+                raise ValueError("Alias must not contain semicolons (';').")
             max_streams = MaxStreams(int(max_streams_str))
             if not is_valid_url(m3u_url):
                 raise ValueError(f"Invalid URL format: {m3u_url}")
