@@ -133,6 +133,7 @@ logs
 config
 desktop.ini
 *.json
+!manifest.json
 model
 *.prof
 *.austin

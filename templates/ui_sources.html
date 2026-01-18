@@ -1,0 +1,135 @@
+{% extends "layout.html" %}
+
+{% block title %}Discovered Sources - NexusTuner{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Discovered Sources</h1>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        Filters
+    </div>
+    <div class="card-body">
+        <form method="GET" action="{{ url_for('ui_sources_list') }}" class="row g-2 align-items-center">
+
+            <div class="col-sm-3">
+                <select class="form-select" id="provider_alias_filter" name="provider_alias">
+                    <option value="">All Providers</option>
+                    {% for p_alias in providers %}
+                    <option value="{{ p_alias }}" {% if p_alias==current_provider %}selected{% endif %}>{{ p_alias }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-sm-4">
+                <input type="text" class="form-control" id="name_filter" name="name_filter"
+                    placeholder="Filter by name..." value="{{ current_name_filter }}">
+            </div>
+            <div class="col-sm-2">
+                <select class="form-select" id="per_page_select" name="per_page">
+                    <option value="100" {% if per_page==100 %}selected{% endif %}>100 per page</option>
+                    <option value="250" {% if per_page==250 %}selected{% endif %}>250 per page</option>
+                    <option value="500" {% if per_page==500 %}selected{% endif %}>500 per page</option>
+                    <option value="1000" {% if per_page==1000 %}selected{% endif %}>1000 per page</option>
+                </select>
+            </div>
+
+            <div class="col-sm-3 d-flex gap-2">
+                <button type="submit" class="btn btn-primary w-100"><i class="fas fa-filter"></i> Filter</button>
+                <a href="{{ url_for('ui_sources_list') }}"
+                    class="btn btn-outline-secondary {% if not current_provider and not current_name_filter and per_page == 100 %}d-none{% endif %}"
+                    data-bs-toggle="tooltip" title="Clear Filters">
+                    <i class="fas fa-times"></i>
+                </a>
+            </div>
+
+        </form>
+    </div>
+</div>
+
+
+<div class="table-responsive">
+    <p class="text-muted">
+        Showing {{ sources|length }} sources on this page ({{ total_items }} total matching sources).
+    </p>
+    <table class="table table-striped table-hover table-sm">
+        <thead class="table-light">
+            <tr>
+                <th style="min-width:83px;">TVG Logo</th>
+                <th>TVG Display Title</th>
+                <th>TVG Name</th>
+                <th style="min-width:92px;">TVG Group</th>
+                <th style="min-width:62px;">TVG ID</th>
+                <th>Provider</th>
+                <th>Source ID</th>
+                <th style="width: 5%;">Preview</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% if sources %}
+                {% for source in sources %}
+                    <tr>
+                        <td class="align-middle text-center">
+                            {% if source.tvg_logo %}
+                                <img src="{{ source.tvg_logo }}" alt="logo" style="max-height: 20px; max-width: 40px;"
+                                    onerror="this.style.display='none'" loading="lazy">
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td class="align-middle">{{ source.display_title if source.display_title else '-' }}</td>
+                        <td class="align-middle">{{ source.tvg_name if source.tvg_name else '-' }}</td>
+                        <td class="align-middle">{{ source.group_title if source.group_title else '-' }}</td>
+                        <td class="align-middle text-center">{{ source.tvg_id if source.tvg_id else '-' }}</td>
+                        <td class="align-middle text-center"><span class="badge bg-secondary">{{ source.provider_alias }}</span></td>
+                        <td class="align-middle"><small class="text-muted">{{ source.source_id }}</small></td>
+                        <td class="align-middle text-center">
+                            <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal"
+                                data-bs-target="#previewModal"
+                                hx-get="{{ url_for('ui_player_for_source', source_id=source.source_id) }}"
+                                hx-target="#preview-modal-body" hx-trigger="click"
+                                title="Preview Stream URL for {{ source.display_title }}">
+                                <i class="fas fa-play"></i>
+                            </button>
+                        </td>
+                    </tr>
+                {% endfor %}
+            {% else %}
+                <tr>
+                    <td colspan="8" class="text-center">No source sources found matching your criteria, or no providers
+                        configured/parsed.</td>
+                </tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>
+
+{% if total_pages > 1 %}
+<nav aria-label="Source list navigation" class="mt-4">
+    <ul class="pagination justify-content-center">
+        <li class="page-item {% if current_page <= 1 %}disabled{% endif %}">
+            <a class="page-link"
+                href="{{ url_for('ui_sources_list', page=current_page-1, provider_alias=current_provider, name_filter=current_name_filter, per_page=per_page) }}">
+                « Previous
+            </a>
+        </li>
+
+        <li class="page-item disabled">
+            <span class="page-link">Page {{ current_page }} of {{ total_pages }}</span>
+        </li>
+
+        <li class="page-item {% if current_page >= total_pages %}disabled{% endif %}">
+            <a class="page-link"
+                href="{{ url_for('ui_sources_list', page=current_page+1, provider_alias=current_provider, name_filter=current_name_filter, per_page=per_page) }}">
+                Next »
+            </a>
+        </li>
+    </ul>
+</nav>
+{% endif %}
+
+{% include '_video_preview_modal.html' %}
+
+{% endblock %}

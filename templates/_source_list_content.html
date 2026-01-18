@@ -1,0 +1,261 @@
+<!-- This is the main content that will be swapped into the #source-list-container target -->
+<h6 class="card-subtitle my-2 text-muted">Manage Mappings</h6>
+<p class="small text-muted">
+    Set priority for failover (0=highest, 5=default). Only change if you want to override
+    the quality scores for specific sources based on factors like uptime, runtime, or offset
+    (enabled source order reflects actual stream order).
+</p>
+
+<div class="table-responsive">
+    <table class="table table-sm table-hover">
+        <thead class="table-light">
+            <tr>
+                <th data-bs-toggle="tooltip" title="The TVG Display Title of the source">Source</th>
+                <th style="width: 5%;" data-bs-toggle="tooltip" title="Availability when due for quality analysis">Uptime</th>
+                <th style="width: 5%;" data-bs-toggle="tooltip" title="Average duration played before encountering an issue">Runtime</th>
+                <th style="width: 5%;" data-bs-toggle="tooltip" title="Stream delay relative to the mapped source with the lowest offset">Offset</th>
+                <th style="width: 5%;" data-bs-toggle="tooltip" title="Enable or disable this source mapping">Enable</th>
+                <th style="width: 5%;" data-bs-toggle="tooltip" title="Adjust to override quality metrics">Priority</th>
+                <th style="width: 5%;" data-bs-toggle="tooltip" title="Preview the source stream">Preview</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            {% for source in mapped_sources %}
+            {% set source_metrics = all_source_metrics.get(source.source_id, {}) %}
+            <tr>
+                <td class="align-middle">
+                    <span data-bs-toggle="tooltip" title="{{ source.source_id }}">{{ source.display_title }}</span>
+                    <small class="text-muted">({{ source.provider_alias }})</small>
+                    <span class="badge bg-success ms-2">Mapped</span>
+                    {% if source.source_id in sources_mapped_elsewhere %}
+                        <span class="badge bg-warning ms-2" data-bs-toggle="tooltip" title="Duplicated with channels {{ sources_mapped_elsewhere[source.source_id] }}">
+                            Duplicated {{ sources_mapped_elsewhere[source.source_id] }}
+                        </span>
+                    {% endif %}
+                </td>
+                <td class="align-middle text-center">
+                    {% if source_metrics.uptime is defined and source_metrics.uptime is not none %}
+                        {% set uptime_val = source_metrics.uptime|int %}
+                        {% if uptime_val >= 75 %}
+                            <span class="badge bg-success" data-bs-toggle="tooltip"
+                            title="Availability when due for quality analysis">{{ uptime_val }}%</span>
+                        {% elif uptime_val >= 50 %}
+                            <span class="badge bg-warning" data-bs-toggle="tooltip"
+                            title="Availability when due for quality analysis">{{ uptime_val }}%</span>
+                        {% elif uptime_val >= 25 %}
+                            <span class="badge bg-orange" data-bs-toggle="tooltip"
+                            title="Availability when due for quality analysis">{{ uptime_val }}%</span>
+                        {% else %}
+                            <span class="badge bg-danger" data-bs-toggle="tooltip"
+                            title="Availability when due for quality analysis">{{ uptime_val }}%</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="badge bg-secondary" data-bs-toggle="tooltip"
+                        title="Availability when due for quality analysis">N/A</span>
+                    {% endif %}
+                </td>
+                <td class="align-middle text-center">
+                    {% if source_metrics.runtime is defined and source_metrics.runtime is not none %}
+                        {% set runtime_str = source_metrics.runtime|duration_to_str %}
+                        {% if source_metrics.runtime >= 8 * 60 * 60 %}
+                            <span class="badge bg-success" data-bs-toggle="tooltip"
+                            title="Average duration played before encountering an issue">{{ runtime_str }}</span>
+                        {% elif source_metrics.runtime >= 4 * 60 * 60 %}
+                            <span class="badge bg-warning" data-bs-toggle="tooltip"
+                            title="Average duration played before encountering an issue">{{ runtime_str }}</span>
+                        {% elif source_metrics.runtime >= 1 * 60 * 60 %}
+                            <span class="badge bg-orange" data-bs-toggle="tooltip"
+                            title="Average duration played before encountering an issue">{{ runtime_str }}</span>
+                        {% else %}
+                            <span class="badge bg-danger" data-bs-toggle="tooltip"
+                            title="Average duration played before encountering an issue">{{ runtime_str }}</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="badge bg-success" data-bs-toggle="tooltip"
+                        title="Average duration played before encountering an issue">&infin;</span>
+                    {% endif %}
+                </td>
+                <td class="align-middle text-center">
+                    {% if source_metrics.offset is defined and source_metrics.offset is not none %}
+                        {% set offset_str = source_metrics.offset|duration_to_str %}
+                        {% if source_metrics.offset <= 10 %}
+                            <span class="badge bg-success" data-bs-toggle="tooltip"
+                            title="Stream delay relative to the mapped source with the lowest offset">{{ offset_str }}</span>
+                        {% elif source_metrics.offset <= 30 %}
+                            <span class="badge bg-warning" data-bs-toggle="tooltip"
+                            title="Stream delay relative to the mapped source with the lowest offset">{{ offset_str }}</span>
+                        {% elif source_metrics.offset <= 60 %}
+                            <span class="badge bg-orange" data-bs-toggle="tooltip"
+                            title="Stream delay relative to the mapped source with the lowest offset">{{ offset_str }}</span>
+                        {% else %}
+                            <span class="badge bg-danger" data-bs-toggle="tooltip"
+                            title="Stream delay relative to the mapped source with the lowest offset">{{ offset_str }}</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="badge bg-secondary" data-bs-toggle="tooltip"
+                        title="Stream delay relative to the mapped source with the lowest offset">N/A</span>
+                    {% endif %}
+                </td>
+                <td class="align-middle text-center">
+                    <input class="form-check-input" type="checkbox" name="mapping_source_id" value="{{ source.source_id }}" checked>
+                </td>
+                <td class="align-middle text-center">
+                    <input type="number" class="form-control form-control-sm" name="priority_{{ source.source_id }}"
+                        value="{{ source_metrics.priority|default(5) }}" min="0" max="10" required>
+                </td>
+                <td class="align-middle text-center">
+                    <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal"
+                        data-bs-target="#previewModal"
+                        hx-get="{{ url_for('ui_player_for_source', source_id=source.source_id, logical_channel_id=channel.logical_channel_id) }}"
+                        hx-target="#preview-modal-body" hx-trigger="click"
+                        title="Preview Stream URL for {{ source.display_title }}">
+                        <i class="fas fa-play"></i>
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+
+        <tbody>
+            {% for source in unmapped_sources_for_page %}
+            {% set source_metrics = all_source_metrics.get(source.source_id, {}) %}
+            <tr>
+                <td class="align-middle">
+                    <span data-bs-toggle="tooltip" title="{{ source.source_id }}">{{ source.display_title }}</span>
+                    <small class="text-muted">({{ source.provider_alias }})</small>
+                    {% if source.source_id in sources_mapped_elsewhere %}
+                        <span class="badge bg-primary ms-2" data-bs-toggle="tooltip" title="Already mapped to channels {{ sources_mapped_elsewhere[source.source_id] }}">
+                            In Use {{ sources_mapped_elsewhere[source.source_id] }}
+                        </span>
+                    {% endif %}
+                </td>
+                <td class="align-middle text-center">
+                    {% if source_metrics.uptime is defined and source_metrics.uptime is not none %}
+                        {% set uptime_val = source_metrics.uptime|int %}
+                        {% if uptime_val >= 75 %}
+                            <span class="badge bg-success" data-bs-toggle="tooltip"
+                            title="Availability when due for quality analysis">{{ uptime_val }}%</span>
+                        {% elif uptime_val >= 50 %}
+                            <span class="badge bg-warning" data-bs-toggle="tooltip"
+                            title="Availability when due for quality analysis">{{ uptime_val }}%</span>
+                        {% elif uptime_val >= 25 %}
+                            <span class="badge bg-orange" data-bs-toggle="tooltip"
+                            title="Availability when due for quality analysis">{{ uptime_val }}%</span>
+                        {% else %}
+                            <span class="badge bg-danger" data-bs-toggle="tooltip"
+                            title="Availability when due for quality analysis">{{ uptime_val }}%</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="badge bg-secondary" data-bs-toggle="tooltip"
+                        title="Availability when due for quality analysis">N/A</span>
+                    {% endif %}
+                </td>
+                <td class="align-middle text-center">
+                    {% if source_metrics.runtime is defined and source_metrics.runtime is not none %}
+                        {% set runtime_str = source_metrics.runtime|duration_to_str %}
+                        {% if source_metrics.runtime >= 8 * 60 * 60 %}
+                            <span class="badge bg-success" data-bs-toggle="tooltip"
+                            title="Average duration played before encountering an issue">{{ runtime_str }}</span>
+                        {% elif source_metrics.runtime >= 4 * 60 * 60 %}
+                            <span class="badge bg-warning" data-bs-toggle="tooltip"
+                            title="Average duration played before encountering an issue">{{ runtime_str }}</span>
+                        {% elif source_metrics.runtime >= 1 * 60 * 60 %}
+                            <span class="badge bg-orange" data-bs-toggle="tooltip"
+                            title="Average duration played before encountering an issue">{{ runtime_str }}</span>
+                        {% else %}
+                            <span class="badge bg-danger" data-bs-toggle="tooltip"
+                            title="Average duration played before encountering an issue">{{ runtime_str }}</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="badge bg-success" data-bs-toggle="tooltip"
+                        title="Average duration played before encountering an issue">&infin;</span>
+                    {% endif %}
+                </td>
+                <td class="align-middle text-center">
+                    {% if source_metrics.offset is defined and source_metrics.offset is not none %}
+                        {% set offset_str = source_metrics.offset|duration_to_str %}
+                        {% if source_metrics.offset <= 10 %}
+                            <span class="badge bg-success" data-bs-toggle="tooltip"
+                            title="Stream delay relative to the mapped source with the lowest offset">{{ offset_str }}</span>
+                        {% elif source_metrics.offset <= 30 %}
+                            <span class="badge bg-warning" data-bs-toggle="tooltip"
+                            title="Stream delay relative to the mapped source with the lowest offset">{{ offset_str }}</span>
+                        {% elif source_metrics.offset <= 60 %}
+                            <span class="badge bg-orange" data-bs-toggle="tooltip"
+                            title="Stream delay relative to the mapped source with the lowest offset">{{ offset_str }}</span>
+                        {% else %}
+                            <span class="badge bg-danger" data-bs-toggle="tooltip"
+                            title="Stream delay relative to the mapped source with the lowest offset">{{ offset_str }}</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="badge bg-secondary" data-bs-toggle="tooltip"
+                        title="Stream delay relative to the mapped source with the lowest offset">N/A</span>
+                    {% endif %}
+                </td>
+                <td class="align-middle text-center">
+                    <input class="form-check-input" type="checkbox" name="mapping_source_id" value="{{ source.source_id }}">
+                </td>
+                <td class="align-middle text-center">
+                    <input type="number" class="form-control form-control-sm" name="priority_{{ source.source_id }}"
+                        value="{{ source_metrics.priority|default(5) }}" min="0" max="10" required>
+                </td>
+                <td class="align-middle text-center">
+                    <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal"
+                        data-bs-target="#previewModal"
+                        hx-get="{{ url_for('ui_player_for_source', source_id=source.source_id, logical_channel_id=channel.logical_channel_id) }}"
+                        hx-target="#preview-modal-body" hx-trigger="click"
+                        title="Preview Stream URL for {{ source.display_title }}">
+                        <i class="fas fa-play"></i>
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+
+            {% if filter_query is not none and not unmapped_sources_for_page and not mapped_sources %}
+            <tr>
+                <td colspan="6" class="text-center text-muted fst-italic py-3">No sources found matching your criteria.
+                </td>
+            </tr>
+            {% elif not mapped_sources and filter_query is none %}
+            <tr>
+                <td colspan="6" class="text-center text-muted fst-italic py-3">
+                    Type in the "Display Name" field on the left to automatically find matching sources,
+                    or use the search bar above to search all available sources.
+                </td>
+            </tr>
+            {% endif %}
+        </tbody>
+    </table>
+
+    <p class="text-muted small mt-2">
+        Showing {{ unmapped_sources_for_page|length }} of {{ total_unmapped_sources }} total unmapped matching
+        sources.
+    </p>
+    {% if total_pages > 1 %}
+    <div class="alert alert-warning small py-1 mb-2 text-center">
+        <i class="fas fa-exclamation-triangle me-1"></i>
+        <strong>Warning:</strong> Navigating to another page will remove any selected and unsaved mappings.
+    </div>
+    <nav aria-label="Suggestions navigation" class="mt-2">
+        <ul class="pagination justify-content-center">
+            <li class="page-item {% if current_page <= 1 %}disabled{% endif %}">
+                <a class="page-link"
+                    hx-get="{{ url_for('ui_logical_channel_form', logical_channel_id=channel.logical_channel_id, page=current_page-1, search_query=search_query) }}"
+                    hx-target="#source-list-container" hx-push-url="true"
+                    hx-include="[name='logical_channel_id'], [name='logical_channel_title'], [name='search_query']">«
+                    Previous</a>
+            </li>
+            <li class="page-item disabled"><span class="page-link">Page {{ current_page }} of {{ total_pages }}</span>
+            </li>
+            <li class="page-item {% if current_page >= total_pages %}disabled{% endif %}">
+                <a class="page-link"
+                    hx-get="{{ url_for('ui_logical_channel_form', logical_channel_id=channel.logical_channel_id, page=current_page+1, search_query=search_query) }}"
+                    hx-target="#source-list-container" hx-push-url="true"
+                    hx-include="[name='logical_channel_id'], [name='logical_channel_title'], [name='search_query']">Next
+                    »</a>
+            </li>
+        </ul>
+    </nav>
+    {% endif %}
+</div>

@@ -1,10 +1,23 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="h-100">
+
 <head>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#212529">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="NexusTuner">
+    <link rel="apple-touch-icon" href="/icon-192.png">
+    <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    <link rel="icon" href="/icon-192.png" sizes="32x32" type="image/png">
+    <link rel="icon" href="/icon-192.png" sizes="16x16" type="image/png">
+    <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="htmx-config" content='{"logLevel": "debug"}'>
-    <title>{% block title %}NexusStream{% endblock %}</title>
+    <meta name="robots" content="noindex, nofollow">
+    <title>{% block title %}NexusTuner{% endblock %}</title>
 
     <script>
         // Immediately-invoked function to set the theme on initial load to prevent FOUC.
@@ -25,21 +38,69 @@
     </script>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"
-          integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
+        integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css"
-          integrity="sha512-z3gLpd7yknf1YoNbCzqRKc4qyor8gaKU1qmn+CShxbuBusANI9QpRohGBreCFkKxLhei6S9CQXFEbbKuqLg0DA=="
-          crossorigin="anonymous" referrerpolicy="no-referrer" />
+        integrity="sha512-z3gLpd7yknf1YoNbCzqRKc4qyor8gaKU1qmn+CShxbuBusANI9QpRohGBreCFkKxLhei6S9CQXFEbbKuqLg0DA=="
+        crossorigin="anonymous" referrerpolicy="no-referrer" />
     <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <style>
-        body { padding-top: 4.5rem; }
-        .htmx-indicator { display: none; }
-        .htmx-request .htmx-indicator { display: inline; }
-        .htmx-request.htmx-indicator { display: inline; }
-        .table-responsive { margin-top: 1rem; }
-        .card { margin-bottom: 1.5rem; }
+        :root {
+            --scrollbar-width: calc(100vw - 100%);
+            --navbar-height: 3.2rem;
+            --status-bar-height: 0.5rem;
+            --total-header-height: calc(var(--navbar-height) + var(--status-bar-height));
+        }
 
-         /* Custom Orange Badge Style --- */
+        body {
+            padding-top: calc(var(--total-header-height) + env(safe-area-inset-top));
+        }
+
+        /* Fill the status bar area with navbar color */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: env(safe-area-inset-top);
+            background-color: #212529;
+            z-index: 1040;
+        }
+
+        .navbar {
+            padding-top: env(safe-area-inset-top);
+            width: 100vw;
+            /* Prevent scrollbar jump */
+            left: 0;
+            right: 0;
+        }
+
+        .navbar .container-fluid {
+            padding-right: calc(var(--bs-gutter-x, 0.75rem) + var(--scrollbar-width));
+        }
+
+        .htmx-indicator {
+            display: none;
+        }
+
+        .htmx-request .htmx-indicator {
+            display: inline;
+        }
+
+        .htmx-request.htmx-indicator {
+            display: inline;
+        }
+
+        .table-responsive {
+            margin-top: 1rem;
+        }
+
+        .card {
+            margin-bottom: 1.5rem;
+        }
+
+        /* Custom Orange Badge Style --- */
         .bg-orange {
             background-color: #fd7e14 !important;
             color: #fff !important;
@@ -47,35 +108,149 @@
 
         /* Custom styles for the top status bar */
         #provider-status-bar {
-            padding: 0.5rem 0;
-            background-color: var(--bs-body-bg); /* Match body background */
+            padding: 0.25rem 0;
+            background-color: var(--bs-body-bg);
+            /* Match body background */
             border-bottom: 1px solid var(--bs-border-color-translucent);
-            position: sticky;
-            top: 4.5rem; /* Height of the fixed navbar */
-            z-index: 1020; /* Below navbar (1030) but above other content */
+            position: fixed;
+            top: calc(var(--navbar-height) + env(safe-area-inset-top));
+            /* Height of the fixed navbar */
+            z-index: 1020;
+            /* Below navbar (1030) but above other content */
+            width: 100vw;
+            /* Prevent scrollbar jump */
+            left: 0;
+            right: 0;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        #provider-status-bar .container-fluid {
+            padding-right: calc(var(--bs-gutter-x, 0.75rem) + var(--scrollbar-width));
         }
 
         /* --- Theme Toggle Button Icons --- */
-        #theme-toggle-button .fa-sun { display: none; }
-        #theme-toggle-button .fa-moon { display: inline-block; }
+        #theme-toggle-button .fa-sun {
+            display: none;
+        }
 
-        [data-bs-theme="dark"] #theme-toggle-button .fa-sun { display: inline-block; }
-        [data-bs-theme="dark"] #theme-toggle-button .fa-moon { display: none; }
+        #theme-toggle-button .fa-moon {
+            display: inline-block;
+        }
+
+        [data-bs-theme="dark"] #theme-toggle-button .fa-sun {
+            display: inline-block;
+        }
+
+        [data-bs-theme="dark"] #theme-toggle-button .fa-moon {
+            display: none;
+        }
+
+        /* --- Dashboard Button Spinners --- */
+        #dashboard-reload-container,
+        #dashboard-backup-container {
+            position: relative;
+            display: inline-block;
+        }
+
+        #dashboard-reload-container.htmx-request #dashboard-reload-button,
+        #dashboard-backup-container.htmx-request #dashboard-backup-button {
+            visibility: hidden;
+        }
+
+        #dashboard-reload-spinner,
+        #dashboard-backup-spinner {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            pointer-events: none;
+        }
+
+        #dashboard-reload-container.htmx-request #dashboard-reload-spinner,
+        #dashboard-backup-container.htmx-request #dashboard-backup-spinner {
+            display: flex !important;
+            pointer-events: auto;
+        }
+
+        /* --- Analyze Button Spinner --- */
+        #analyze-button-container {
+            position: relative;
+            display: inline-block;
+        }
+
+        #analyze-button-container.htmx-request #analyze-button {
+            visibility: hidden;
+        }
+
+        #analyze-spinner {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            pointer-events: none;
+        }
+
+        #analyze-button-container.htmx-request #analyze-spinner {
+            display: flex !important;
+            pointer-events: auto;
+        }
 
         /* --- Custom Dark Mode Overrides --- */
+
+        /* Badges */
+        [data-bs-theme="dark"] .badge.bg-warning {
+            background-color: #ffc107aa !important;
+            color: #f8f9fa !important;
+        }
+
+        [data-bs-theme="dark"] .badge.bg-orange {
+            background-color: #fd7e14aa !important;
+            color: #f8f9fa !important;
+        }
+
+        /* Table header cells in dark mode */
+        [data-bs-theme="dark"] thead.table-light th,
+        [data-bs-theme="dark"] thead.table-light td {
+            background-color: #2b3035 !important;
+            color: var(--bs-body-color) !important;
+        }
+
         /* Style for the "Quick Actions" box */
         [data-bs-theme="dark"] .bg-white {
             background-color: var(--bs-body-bg) !important;
         }
 
-        /* Override dashboard card colors for dark mode */
-        [data-bs-theme="dark"] .card.bg-primary,
-        [data-bs-theme="dark"] .card.bg-success,
-        [data-bs-theme="dark"] .card.bg-info,
+        /* Dashboard card colors for dark mode */
+        [data-bs-theme="dark"] .card.bg-primary {
+            background-color: #0d6efd80 !important;
+            border-color: #0d6efd !important;
+            color: #fff !important;
+        }
+
+        [data-bs-theme="dark"] .card.bg-success {
+            background-color: #19875480 !important;
+            border-color: #198754 !important;
+            color: #fff !important;
+        }
+
+        [data-bs-theme="dark"] .card.bg-info {
+            background-color: #0dcaf080 !important;
+            border-color: #0dcaf0 !important;
+            color: #fff !important;
+        }
+
         [data-bs-theme="dark"] .card.bg-warning {
-            background-color: var(--bs-tertiary-bg) !important;
-            border-color: var(--bs-border-color-translucent) !important;
-            color: var(--bs-body-color) !important; /* Overrides .text-white */
+            background-color: #ffc10780 !important;
+            border-color: #ffc107 !important;
+            color: #212529 !important;
         }
 
         /* Style card headers for a slightly different look */
@@ -83,59 +258,134 @@
         [data-bs-theme="dark"] .card.bg-success .card-header,
         [data-bs-theme="dark"] .card.bg-info .card-header,
         [data-bs-theme="dark"] .card.bg-warning .card-header {
-            background-color: var(--bs-secondary-bg);
-            color: var(--bs-emphasis-color);
+            background-color: rgba(0, 0, 0, 0.15);
+            color: inherit;
+        }
+
+        .modal-dialog {
+            margin-top: max(1.75rem, env(safe-area-inset-top));
+        }
+
+        /* Prevent modal from removing scrollbar */
+        body.modal-open {
+            padding-right: 0 !important;
+            overflow: auto !important;
+        }
+
+        /* Ensure backdrop still works properly */
+        .modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 1050;
+            width: 100vw;
+            height: 100vh;
+            background-color: #000;
+        }
+
+        /* Prevent Bootstrap from adding padding to fixed elements */
+        .modal-open .navbar,
+        .modal-open #provider-status-bar {
+            padding-right: calc(var(--bs-gutter-x, 0.75rem) + var(--scrollbar-width)) !important;
+        }
+
+        /* Override Bootstrap's modal padding calculations */
+        .modal-open .fixed-top,
+        .modal-open .fixed-bottom,
+        .modal-open .is-fixed,
+        .modal-open .sticky-top {
+            padding-right: 0 !important;
+        }
+
+        /* Ensure the navbar and status bar themselves don't get extra padding */
+        .modal-open .navbar,
+        .modal-open #provider-status-bar {
+            padding-right: 0 !important;
+        }
+
+        #modal-logs .modal-dialog {
+            height: calc(100% - env(safe-area-inset-top));
+            margin: env(safe-area-inset-top) auto 0;
+            max-width: 95vw;
+            align-items: stretch;
+        }
+
+        #modal-logs .modal-content {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            border-radius: 0;
+        }
+
+        #modal-logs .modal-header,
+        #modal-logs .modal-footer {
+            flex: 0 0 auto;
+        }
+
+        #modal-logs .modal-body {
+            flex: 1 1 auto;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            padding: 0.75rem;
+        }
+
+        #modal-logs pre {
+            flex: 1 1 auto;
+            min-height: 0;
+            margin: 0;
+            overflow-y: auto;
+            max-height: none !important;
         }
     </style>
 </head>
-<body>
+
+<body class="d-flex flex-column h-100">
     <nav class="navbar navbar-expand-md navbar-dark fixed-top bg-dark">
         <div class="container-fluid">
-            <a class="navbar-brand" href="{{ url_for('ui_main_dashboard') }}">NexusStream</a>
+            <a class="navbar-brand" href="{{ url_for('ui_main_dashboard') }}">
+                <img src="/icon-512.png" alt="NexusTuner" height="32" class="d-inline-block align-text-top">
+            </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse"
-                    aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation">
+                aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarCollapse">
                 <ul class="navbar-nav me-auto mb-2 mb-md-0">
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'ui_main_dashboard' %}active{% endif %}" aria-current="page" href="{{ url_for('ui_main_dashboard') }}">Dashboard</a>
+                        <a class="nav-link {% if request.endpoint == 'ui_main_dashboard' %}active{% endif %}"
+                            aria-current="page" href="{{ url_for('ui_main_dashboard') }}">Dashboard</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'ui_providers_manage' %}active{% endif %}" href="{{ url_for('ui_providers_manage') }}">Providers</a>
+                        <a class="nav-link {% if request.endpoint == 'ui_providers_manage' %}active{% endif %}"
+                            href="{{ url_for('ui_providers_manage') }}">Providers</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'ui_source_services_list' %}active{% endif %}" href="{{ url_for('ui_source_services_list') }}">Source Services</a>
+                        <a class="nav-link {% if request.endpoint == 'ui_sources_list' %}active{% endif %}"
+                            href="{{ url_for('ui_sources_list') }}">Sources</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'ui_logical_channels_list' or request.endpoint == 'ui_logical_channel_edit' or request.endpoint == 'ui_logical_channel_add' %}active{% endif %}" href="{{ url_for('ui_logical_channels_list') }}">Logical Channels</a>
+                        <a class="nav-link {% if request.endpoint == 'ui_logical_channels_list' or request.endpoint == 'ui_logical_channel_edit' or request.endpoint == 'ui_logical_channel_add' %}active{% endif %}"
+                            href="{{ url_for('ui_logical_channels_list') }}">Logical Channels</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link"
-                        href="#"
-                        hx-get="/ui/logs/modal"
-                        hx-target="#modal-log-content"
-                        data-bs-toggle="modal"
-                        data-bs-target="#modal-logs">
-                        Logs
+                        <a class="nav-link" href="#" hx-get="/ui/logs/modal/100" hx-target="#modal-log-content"
+                            data-bs-toggle="modal" data-bs-target="#modal-logs">
+                            Logs
                         </a>
                     </li>
                 </ul>
                 <div class="d-flex align-items-center">
-                    <!-- Dark Mode Toggle Button -->
-                    <button class="btn btn-outline-light me-2" type="button" id="theme-toggle-button" title="Toggle theme">
+                    <button class="btn btn-outline-light me-2" type="button" id="theme-toggle-button"
+                        title="Toggle theme">
                         <i class="fas fa-moon"></i>
                         <i class="fas fa-sun"></i>
                     </button>
-
-                    <form class="d-flex" role="search"
-                          hx-post="{{ url_for('reload_configuration') }}"
-                          hx-target="#flash-messages-container"
-                          hx-swap="innerHTML"
-                          hx-indicator="#reload-indicator">
+                    <form class="d-flex" role="search" hx-post="{{ url_for('reload_configuration') }}"
+                        hx-target="#flash-messages-container" hx-swap="innerHTML"
+                        hx-vals='{"update_providers": "true", "force_discover_sources": "false"}'>
                         <button class="btn btn-outline-light" type="submit">
                             <i class="fas fa-sync-alt"></i> Reload Config
-                            <span id="reload-indicator" class="htmx-indicator spinner-border spinner-border-sm ms-1" role="status" aria-hidden="true"></span>
                         </button>
                     </form>
                 </div>
@@ -143,18 +393,16 @@
         </div>
     </nav>
 
-    </nav>
+    <a href="{{ url_for('ui_providers_manage') }}" class="text-decoration-none">
+        <div class="container-fluid" id="provider-status-bar" hx-get="{{ url_for('ui_provider_status') }}"
+            hx-trigger="load, every 1s" hx-swap="innerHTML settle:0ms" hx-sync="this:replace" role="button">
+            <span class="text-muted small text-center d-block">Loading provider status...</span>
+        </div>
+    </a>
 
-    <div class="container-fluid"
-         id="provider-status-bar"
-         hx-get="{{ url_for('ui_provider_status') }}"
-         hx-trigger="load, every 1s"
-         hx-swap="innerHTML">
-        <span class="text-muted small">Loading provider status...</span>
-    </div>
-
-    <main class="container mt-4 mb-5">
-        <div id="flash-messages-container" hx-trigger="flashMessagesUpdated from:body" hx-get="{{ url_for('ui_flash_messages') }}" hx-swap="innerHTML">
+    <main class="container mt-4 mb-5 flex-shrink-0">
+        <div id="flash-messages-container" hx-trigger="flashMessagesUpdated from:body"
+            hx-get="{{ url_for('ui_flash_messages') }}" hx-swap="innerHTML">
             {% include "_flash_messages.html" %}
         </div>
         {% block content %}{% endblock %}
@@ -162,19 +410,46 @@
 
     <footer class="footer mt-auto py-3 bg-body-tertiary border-top">
         <div class="container text-center">
-            <span class="text-muted">NexusStream © {{ now.year }}</span>
+            <span class="text-muted">NexusTuner v{{ app_version }} © {{ now.year }}</span>
         </div>
     </footer>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"
-            integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL"
-            crossorigin="anonymous"></script>
     <script>
-        document.body.addEventListener('htmx:afterSwap', function(event) {
-            // Re-initialize Bootstrap tooltips after an HTMX swap
-            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-            tooltipTriggerList.map(function (tooltipTriggerEl) {
-              return new bootstrap.Tooltip(tooltipTriggerEl);
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').then(registration => {
+                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                }, err => {
+                    console.log('ServiceWorker registration failed: ', err);
+                });
+            });
+        }
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL"
+        crossorigin="anonymous"></script>
+    <script>
+        document.body.addEventListener('htmx:afterSwap', function (event) {
+            document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (tooltipEl) {
+                if (!tooltipEl.hasAttribute('data-tooltip-initialized')) {
+                    new bootstrap.Tooltip(tooltipEl, {
+                        trigger: 'hover focus'
+                    });
+                    tooltipEl.setAttribute('data-tooltip-initialized', 'true');
+                }
+            });
+        });
+
+        // Ensure tooltips are initialized for elements present on initial page load
+        document.addEventListener('DOMContentLoaded', function () {
+            document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (tooltipEl) {
+                if (!tooltipEl.hasAttribute('data-tooltip-initialized')) {
+                    new bootstrap.Tooltip(tooltipEl, {
+                        trigger: 'hover focus'
+                    });
+                    tooltipEl.setAttribute('data-tooltip-initialized', 'true');
+                }
             });
         });
 
@@ -190,7 +465,8 @@
     </script>
     {% block extra_js %}{% endblock %}
     <div id="modal-logs" class="modal fade" tabindex="-1" aria-labelledby="modal-logs-label" aria-hidden="true">
-        <div id="modal-log-content" class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" role="document">
+        <div id="modal-log-content" class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable"
+            role="document">
             <!-- HTMX will load the modal's content here -->
             <div class="modal-content">
                 <div class="modal-body">
@@ -200,4 +476,5 @@
         </div>
     </div>
 </body>
+
 </html>

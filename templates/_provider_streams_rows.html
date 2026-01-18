@@ -1,0 +1,108 @@
+<tr id="provider-streams-row-{{ provider.alias | replace(' ', '-') }}"
+    class="provider-streams-row"
+    hx-get="{{ url_for('ui_provider_streams_row', alias=provider.alias) }}"
+    hx-trigger="every 1s"
+    hx-swap="outerHTML">
+    <td colspan="4" class="p-0 border-top-0 position-relative">
+        <div class="p-3 bg-body-tertiary">
+            <div class="streams-table-wrapper" id="streams-wrapper-{{ provider.alias | replace(' ', '-') }}">
+                <table class="table table-sm table-striped mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Channel</th>
+                            <th>Quality</th>
+                            <th>Started</th>
+                            <th>Active</th>
+                            <th>Engine</th>
+                            <th class="text-center">Healthy</th>
+                            <th class="text-center" style="width:9rem;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if provider.alias in processes %}
+                        {% for p in processes[provider.alias] %}
+                        <tr>
+                            <td>
+                                <div class="d-flex gap-2 align-items-center">
+                                    {% if p.logical_channel_id %}
+                                        <a href="/ui/logical-channels/form/{{ p.logical_channel_id }}"
+                                            class="text-decoration-none text-reset d-flex gap-2 align-items-center w-100"
+                                            title="Edit Logical Channel {{ p.logical_channel_id }}">
+                                            {% if p.tvg_logo %}
+                                                <img src="{{ p.tvg_logo }}" alt="{{ p.source_title }} logo"
+                                                    style="max-height:24px; max-width:40px;" class="rounded">
+                                            {% endif %}
+                                            <div class="small lh-sm w-100" style="min-width:0;">
+                                                <div class="fw-semibold text-truncate">{{ p.source_title }}
+                                                </div>
+                                                <div class="text-muted">{{ p.channel_num or '-' }}</div>
+                                            </div>
+                                        </a>
+                                    {% else %}
+                                        {% if p.tvg_logo %}
+                                            <img src="{{ p.tvg_logo }}" alt="" style="max-height:24px; max-width:40px;" class="rounded">
+                                        {% endif %}
+                                            <div class="small lh-sm w-100" style="min-width:0;">
+                                                <div class="fw-semibold text-truncate">{{ p.source_title }}</div>
+                                                <div class="text-muted">{{ p.channel_num or '-' }}</div>
+                                            </div>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td class="small" title="Parsed from Quality Monitor">
+                                {% if p.width and p.height %}
+                                <div>{{ p.width|round|int }}x{{ p.height|round|int }}{% if p.framerate %}@{{
+                                    p.framerate|round|int}}fps{% endif %}</div>
+                                {% else %}
+                                <div>--</div>
+                                {% endif %}
+                                <div class="text-muted">{% if p.bitrate %}{{ (p.bitrate/1000)|round|int }} kbps{% else %}--{% endif %}
+                                </div>
+                            </td>
+                            <td class="small">
+                                <div>{{ p.started_at.split('T')[-1][:8] }}</div>
+                                <div class="text-muted">{{ p.started_at.split('T')[0] }}</div>
+                            </td>
+                            <td class="small">
+                                <div title="Runtime"><span>{{ p.runtime }}</span></div>
+                                <div class="text-muted" title="Last Access">{{ p.last_access }}</div>
+                            </td>
+                            <td class="small">
+                                <div><span>{{ p.stream_engine }}</span></div>
+                                <div class="text-muted">{{ p.video_type or '-' }}</div>
+                            </td>
+                            <td class="small text-center align-middle" style="min-width:0; width:6%;">
+                                <div class="d-flex justify-content-center align-items-center" style="min-height:24px;">
+                                    {% if p.stream_id %}
+                                        {% if p.is_long_term %}
+                                            <i class="fas fa-check text-success" title="Healthy" aria-hidden="true"></i>
+                                        {% else %}
+                                            <i class="fas fa-clock text-warning" title="Checking..." aria-hidden="true"></i>
+                                        {% endif %}
+                                    {% else %}
+                                        <i class="fas fa-microscope text-info" title="Probing..." aria-hidden="true"></i>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td class="small text-center align-middle">
+                                {% if p.stream_id %}
+                                    <button class="btn btn-sm btn-outline-danger" title="Stop Stream"
+                                        hx-post="/{{ p.video_type }}/{{ p.stream_id }}/{{ p.stream_engine }}/stop"
+                                        hx-target="closest tr" hx-swap="outerHTML" hx-confirm="Stop this stream?">
+                                        <i class="fas fa-stop"></i>
+                                    </button>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        {% else %}
+                        <tr>
+                            <td colspan="7" class="text-center text-muted fst-italic py-2">No active streams.</td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </td>
+</tr>

@@ -54,7 +54,14 @@ jobs:
           node-version: 'lts/*'
 
       - name: Install Semantic Release plugins
-        run: npm install semantic-release @semantic-release/commit-analyzer @semantic-release/release-notes-generator @semantic-release/changelog @semantic-release/github @semantic-release/git
+        run: |
+          npm install semantic-release \
+            @semantic-release/commit-analyzer \
+            @semantic-release/release-notes-generator \
+            @semantic-release/changelog \
+            @semantic-release/github \
+            @semantic-release/git \
+            @semantic-release/exec
 
       - name: Semantic Release
         id: semantic
@@ -79,6 +86,9 @@ jobs:
     steps:
       - name: Set up repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
       - name: Convert GITHUB_REPOSITORY to lowercase
         run: echo "IMAGE_NAME=$(echo $GITHUB_REPOSITORY | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 

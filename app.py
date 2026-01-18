@@ -1,814 +1,1050 @@
 """
-The main Flask application file for NexusStream.
+The main Quart application file for NexusTuner.
 
-This file initializes the Flask app and its components (Config, ChannelHandler, 
+This file initializes the Quart app and its async components (Config, ChannelHandler, 
 StreamManager, GhostSessionMonitor) and defines all the web routes for:
-- Serving the master M3U playlist.
-- Handling HLS streaming requests (playlists and segments).
-- HDHomeRun endpoints.
+- Serving the main M3U playlist.
+- Handling HLS and MPEGTS streaming requests asynchronously.
+- HDHomeRun emulation endpoints.
 - Providing a web-based user interface (UI) for configuration and management.
 - A manual reload endpoint.
 """
 
-import json
-import os
+from collections import deque
 import signal
 import sys
-import time
+from types import FrameType
+if sys.version_info < (3, 13):
+    raise RuntimeError("NexusTuner requires Python 3.13 or higher.")
+
+import asyncio
+import aiofiles.os
+import json
 import math
-from datetime import datetime, UTC
-from collections import deque
-from typing import Any, Generator
+import os
+from datetime import UTC, datetime, timedelta
+from typing import AsyncGenerator, Dict, Final, cast
 
-from flask import (Flask, Response, abort, flash, redirect, render_template,
-                   request, send_from_directory, url_for)
+from quart import Quart, Response, abort, flash, redirect, render_template, request, url_for
+from quart import send_from_directory  # type: ignore
+from werkzeug.wrappers import Response as WerkzeugResponse
+from werkzeug.datastructures import ImmutableMultiDict
 
-from nexus_stream.config import Config
-from nexus_stream.create_stream import CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL, MPEGTS_PACKET_SIZE, MPEGTS_PACKETS_PER_CHUNK, CreateStream, VideoType, sort_sources
-from nexus_stream.handler import ChannelHandler, DEFAULT_PRIORITY
-from nexus_stream.quality_monitor import QualityMonitor
-from nexus_stream.session_monitor import GhostSessionMonitor
-from nexus_stream.stream import StreamManager
+from nexus_tuner.config import Config
+from nexus_tuner.create_stream import CreateStream
+from nexus_tuner.handler import ChannelHandler
+from nexus_tuner.mpegts import MPEGTSStream
+from nexus_tuner.quality_monitor import QualityMonitor
+from nexus_tuner.session_monitor import GhostSessionMonitor
+from nexus_tuner.stream import StreamManager
+from nexus_tuner.scheduler import Scheduler
+from nexus_tuner.utils import (Log, LogicalChannelFormDetails, PreviewId, ProcessInfoMutable, Runtime, StreamEngine, StopReason, Uptime, VideoKey, background_tasks, CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL,
+                                DEFAULT_PRIORITY, M3UURL, NEXUS_TUNER_PORT, NEXUS_TUNER_VERSION, ChannelNum, DiscoveredSource,
+                                Label, LogicalChannelId, LogicalChannelInfo, LogicalChannelInfoWithId, LogicalChannelMetrics, LogicalChannelTitle, MaxStreams, 
+                                PercentDisplay, Priority, ProviderAlias, ProviderStatus, QualityScores, SourceInfo, SourceMappingInfoWithId, SourceMetrics,
+                                SourceId, TVGGroupTitle, TVGId, TVGLogo, VideoType, create_preview_id, create_stream_key, create_stream_name, duration_to_str, get_source_id_from_preview, is_valid_url, run_bg, sort_sources)
 
 # --- Constants ---
-PLAYLIST_POLL_INTERVAL = 0.2   # Seconds to wait between checking for a new playlist
-UI_SEARCH_MIN_CHARS = 3        # Minimum characters for a UI search
-UI_SEARCH_MAX_RESULTS = 50     # Max results to return in a UI search
+PLAYLIST_POLL_INTERVAL: Final[float] = 0.2         # Seconds to wait between checking for a new playlist
+HIGHEST_PRIORITY_SOURCES_NUM: Final[int] = 8       # Maximum number of sources to consider for quality metrics
+NUM_SOURCES_PER_PAGE: Final[int] = 100             # Number of sources to display per page in the UI
+MULTI_SEARCH_QUERY_DELIMITER: Final[str] = " OR "  # Delimiter for multi-word search queries
 
 # --- App Initialization ---
-app = Flask(__name__)
+app = Quart(__name__)
 app.secret_key = os.urandom(24)
 
-try:
-    config = Config()
-except Exception as e:
-    print(f"FATAL: Could not initialize configuration: {e}")
-    exit(1)
-
-try:
-    handler = ChannelHandler(config)
-    stream_manager = StreamManager(config, handler)
-    GhostSessionMonitor(config, handler, stream_manager)
-    quality_monitor = QualityMonitor(config, handler)
-except ValueError as e:
-    # A fatal error during startup should be logged and cause an exit
-    config.log_message(f"FATAL: Could not initialize application due to a configuration error: {e}", level="FATAL")
-    exit(2)
-except Exception as e:
-    config.log_message(f"FATAL: An unexpected error occurred during application startup: {e}", level="FATAL")
-    exit(3)
+config: Config
+handler: ChannelHandler
+stream_manager: StreamManager
+ghost_monitor: GhostSessionMonitor | None
+quality_monitor: QualityMonitor
+scheduler: Scheduler
 
 
-def calculate_channel_uptime(channel: dict[str, Any], mapped_services: list[dict[str, Any]], all_quality_scores: dict[str, dict[str, float]]) -> None:
-    """Calculates uptime metrics for a channel based on its mapped services."""
-    uptime_scores: list[float] = []
-    if mapped_services:
-        for service_object in mapped_services[:8]:  # Assuming 2s to test a stream, 16s is the max time clients will wait
-            service_id = service_object.get('source_service_id')
-            if not service_id:
-                continue
-            
-            raw_uptime = all_quality_scores.get(service_id, {}).get('uptime')
-            if raw_uptime is not None:
-                uptime_scores.append(raw_uptime)
+@app.before_serving
+async def startup() -> None:
+    """
+    Asynchronous startup function. Initializes all core components and starts background tasks.
+    This is the standard Quart pattern for handling async setup.
+    """
+    global config, handler, stream_manager, ghost_monitor, quality_monitor, scheduler
+    try:
+        config = await Config.create()
+        handler = await ChannelHandler.create(config)
+        quality_monitor = await QualityMonitor.create(config, handler)
+        handler.quality_monitor = quality_monitor
+        stream_manager = await StreamManager.create(config, handler, quality_monitor)
+        quality_monitor.stream_manager = stream_manager
+        ghost_monitor = await GhostSessionMonitor.create(config, handler, stream_manager)
+        scheduler = await Scheduler.create(config, handler, quality_monitor)
+        Log.info(Label.SERVER, f"Started on {config.nexus_url}")
+    except BaseException as e:
+        if Log.initialized:
+            Log.critical(Label.SERVER, f"Could not initialize application: {e}")
+        print(f"FATAL: Could not initialize application - {e}", file=sys.stderr)
+        sys.exit(1)
 
-    if uptime_scores:
-        # METRIC 1: Lowest Uptime (Weakest Link)
-        lowest_raw = min(uptime_scores)
-        channel['lowest_uptime'] = int(lowest_raw * 100)
+    global prev_sigterm_handler, prev_sigint_handler, prev_sighup_handler, prev_sigquit_handler
+    prev_sigterm_handler = signal.signal(signal.SIGTERM, handle_signal)
+    prev_sigint_handler = signal.signal(signal.SIGINT, handle_signal)
+    prev_sighup_handler = signal.signal(signal.SIGHUP, handle_signal)
+    prev_sigquit_handler = signal.signal(signal.SIGQUIT, handle_signal)
 
-        # METRIC 2: Health (Overall Uptime with Failover)
-        # This calculates 1 - (Prob of A failing * Prob of B failing * ...)
-        # We use math.prod for a clean way to multiply all items in a list.
-        prob_all_services_fail = math.prod([(1 - score) for score in uptime_scores])
-        overall_health_raw = 1 - prob_all_services_fail
-        channel['health_score'] = int(overall_health_raw * 100)
+    app.jinja_env.filters["duration_to_str"] = duration_to_str  # type: ignore
 
-    else:
-        # If no scores exist, set both metrics to None
-        channel['lowest_uptime'] = None
-        channel['health_score'] = None
+
+prev_sigterm_handler = signal.getsignal(signal.SIGTERM)
+prev_sigint_handler = signal.getsignal(signal.SIGINT)
+prev_sighup_handler = signal.getsignal(signal.SIGHUP)
+prev_sigquit_handler = signal.getsignal(signal.SIGQUIT)
+
+
+def handle_signal(signum: int, frame: FrameType | None) -> None:
+    """Handles termination signals to gracefully shut down the application."""
+    sig = signal.Signals(signum)
+    Log.info(Label.SERVER, f"Received {sig.name}, shutting down NexusTuner v{NEXUS_TUNER_VERSION}...")
+    for mpegts_stream in MPEGTSStream.streams.values():
+        mpegts_stream.shutdown()  # We need to close any active connections for @app.after_serving to trigger
+    if sig == signal.SIGTERM and callable(prev_sigterm_handler):
+        prev_sigterm_handler(sig, frame)
+    elif sig == signal.SIGINT and callable(prev_sigint_handler):
+        prev_sigint_handler(sig, frame)
+    elif sig == signal.SIGHUP and callable(prev_sighup_handler):
+        prev_sighup_handler(sig, frame)
+    elif sig == signal.SIGQUIT and callable(prev_sigquit_handler):
+        prev_sigquit_handler(sig, frame)
+
+
+@app.after_serving
+async def shutdown() -> None:
+    """Handles graceful shutdown of the application."""
+    if "scheduler" in globals():
+        scheduler.shutdown()
+    if "stream_manager" in globals():
+        await stream_manager.stop_processes(StopReason.SHUTDOWN)
+    if "config" in globals():
+        await config.cleanup_tmp_dir()
+    await asyncio.gather(*background_tasks, return_exceptions=True)
+
+
+async def calculate_channel_metrics(mapped_sources: list[SourceMappingInfoWithId], all_quality_scores: QualityScores) -> LogicalChannelMetrics:
+    """Calculates uptime metrics for a channel."""
+    sort_sources(mapped_sources, all_quality_scores, reverse=False)
+    uptime_scores: list[Uptime] = []
+    runtime_scores: list[Runtime] = []
+    for mapped_source in mapped_sources[:HIGHEST_PRIORITY_SOURCES_NUM]:
+        quality_score = all_quality_scores.get(mapped_source["source_id"])
+        if not quality_score:
+            continue
+        uptime_scores.append(quality_score["uptime"])
+        if quality_score["runtime"]:
+            runtime_scores.append(quality_score["runtime"])
+
+    discovered_mappings = 0
+    for source in mapped_sources:
+        if await handler.get_discovered_source(source["source_id"]):
+            discovered_mappings += 1
+    return LogicalChannelMetrics({
+        "health_score": PercentDisplay(int((1 - math.prod([(1 - score) for score in uptime_scores])) * 100)) if uptime_scores else None,
+        "lowest_uptime": PercentDisplay(int(min(uptime_scores) * 100)) if uptime_scores else None,
+        "lowest_runtime": min(runtime_scores) if runtime_scores else None,
+        "enabled_mappings": len(mapped_sources),
+        "discovered_mappings": discovered_mappings,
+    })
+
+def filter_sources(raw_query: str, discovered_source: DiscoveredSource) -> bool:
+    """Filters sources based on a query."""
+    tvg_name = discovered_source["tvg_name"].lower()
+    display_title = discovered_source["display_title"].lower()
+    for raw_q in raw_query.split(MULTI_SEARCH_QUERY_DELIMITER):
+        words = raw_q.strip().lower().split()
+        if all(word in tvg_name or word in display_title for word in words):
+            return True
+    return False
+
+
+async def calculate_logical_channel_form_details(*, logical_channel_id: LogicalChannelId | None, search_query: str | None, filter_query: str | None, current_page: int) -> LogicalChannelFormDetails:
+    all_quality_scores = await quality_monitor.get_quality_scores()
+    current_mappings = await handler.get_channel_mappings_for_ui(logical_channel_id) if logical_channel_id else []
+    channel_metrics = await calculate_channel_metrics(current_mappings, all_quality_scores)
+
+    all_discovered_sources = await handler.get_discovered_sources_for_ui()
+    all_sources_map = {s['source_id']: s for s in all_discovered_sources}
+
+    mapped_sources: list[DiscoveredSource] = []
+    all_mapped_source_ids: set[SourceId] = set()
+    all_source_metrics: dict[SourceId, SourceMetrics] = {}
+    for mapping in current_mappings:
+        source_id = mapping['source_id']
+        all_mapped_source_ids.add(source_id)
+        if source_id in all_sources_map:
+            source_details = all_sources_map[source_id].copy()
+            mapped_sources.append(source_details)
+            raw_uptime = all_quality_scores.get(source_id, {}).get('uptime')
+            raw_runtime = all_quality_scores.get(source_id, {}).get('runtime')
+            all_source_metrics[source_id] = SourceMetrics({
+                "priority": mapping["priority"],
+                "uptime": PercentDisplay(int(raw_uptime * 100)) if raw_uptime is not None else None,
+                "runtime": raw_runtime if raw_runtime else None,
+                "offset": mapping["offset"],
+            })
+    
+    unmapped_sources: list[DiscoveredSource] = []
+    if filter_query and search_query:
+        for discovered_source in all_discovered_sources:
+            if discovered_source['source_id'] not in all_mapped_source_ids and filter_sources(search_query, discovered_source):
+                unmapped_sources.append(discovered_source)
+                source_id = discovered_source['source_id']
+                raw_uptime = all_quality_scores.get(source_id, {}).get('uptime')
+                raw_runtime = all_quality_scores.get(source_id, {}).get('runtime')
+                all_source_metrics[source_id] = SourceMetrics({
+                    "priority": Priority(DEFAULT_PRIORITY),
+                    "uptime": PercentDisplay(int(raw_uptime * 100)) if raw_uptime is not None else None,
+                    "runtime": raw_runtime if raw_runtime else None,
+                    "offset": None,
+                })
+
+    total_unmapped_sources = len(unmapped_sources)
+    total_pages = math.ceil(total_unmapped_sources / NUM_SOURCES_PER_PAGE) if NUM_SOURCES_PER_PAGE > 0 else 1
+    if current_page < 1:
+        current_page = 1
+    elif current_page > total_pages and total_pages > 0:
+        current_page = total_pages
+    start_index = (current_page - 1) * NUM_SOURCES_PER_PAGE
+    unmapped_sources_for_page = unmapped_sources[start_index:start_index + NUM_SOURCES_PER_PAGE]
+
+    return LogicalChannelFormDetails(
+        channel_metrics=channel_metrics,
+        all_source_metrics=all_source_metrics,
+        mapped_sources=mapped_sources,
+        unmapped_sources_for_page=unmapped_sources_for_page,
+        total_unmapped_sources=total_unmapped_sources,
+        total_pages=total_pages,
+        current_page=current_page
+    )
 
 
 @app.context_processor
-def inject_now() -> dict[str, datetime]:
-    """Injects the current UTC time into all templates for display purposes."""
-    return {'now': datetime.now(UTC)}
+def inject_global_vars() -> Dict[str, datetime | str]:
+    """Injects global variables into the context of all templates."""
+    return {
+        'now': datetime.now(UTC),
+        'app_version': NEXUS_TUNER_VERSION
+    }
 
 
-# --- Core Streaming and Playlist Endpoints ---
+# --- Streaming Endpoints ---
+
 
 @app.route(f'/{VideoType.MPEGTS}/<string:logical_channel_id>')
-def serve_mpegts_stream(logical_channel_id: str) -> Response:
-    """Serves a channel stream using MPEG-TS format."""
+async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_response: bool = True) -> Response | VideoKey:
+    """Serves a channel stream using MPEGTS format.
+    If stream_response is True, it returns a generator that the client connects to, otherwise it simply creates the stream
+    and returns the video key for later use.
+    """
     added_pending_stream = False
-    end_time = time.monotonic() + CREATE_STREAM_DEADLINE
+    loop = asyncio.get_running_loop()
+    end_time = loop.time() + CREATE_STREAM_DEADLINE
+    stream_engine = config.stream_engine
+    stream_key = create_stream_key(stream_engine, VideoType.MPEGTS, logical_channel_id)
     try:
-        while not handler.add_pending_stream(logical_channel_id, VideoType.MPEGTS):
-            if time.monotonic() > end_time:
-                msg = f"[{request.method} {request.path}] Exceeded timeout while waiting for earlier request for MPEGTS {logical_channel_id} to complete."
-                config.log_message(msg, level="ERROR")
+        while not await handler.add_pending_stream(stream_key):
+            if loop.time() > end_time:
+                msg = f"Exceeded timeout while waiting for earlier request for {stream_key} to complete."
+                Log.error(Label.SERVER, msg, (VideoType.MPEGTS, stream_engine))
                 abort(503, msg)
-            time.sleep(CREATE_STREAM_POLL_INTERVAL)
+            await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
         added_pending_stream = True
 
-        logical_channel = handler.get_logical_channel_by_id(logical_channel_id)
+        logical_channel = await handler.get_logical_channel_by_id(logical_channel_id)
         if not logical_channel:
-            msg = f"[{request.method} {request.path}] Logical channel {logical_channel_id} not found for MPEGTS."
-            config.log_message(msg, level="ERROR")
+            msg = f"Logical channel {logical_channel_id} not found for MPEGTS."
+            Log.error(Label.SERVER, msg, (VideoType.MPEGTS, stream_engine))
             abort(404, msg)
-        logical_channel_name = str(logical_channel['display_name'])
+        logical_channel_title = logical_channel['logical_channel_title']
+        channel_num = logical_channel['channel_num']
 
-        lc_id_processes = stream_manager.get_ffmpeg_processes_from_logical_id(logical_channel_id, video_type=VideoType.MPEGTS, long_term_only=True)
+        lc_id_processes = await stream_manager.get_processes_from_logical_id(logical_channel_id, video_type=VideoType.MPEGTS, stream_engine=stream_engine, long_term_only=True)
         if len(lc_id_processes):
             video_key, p_info = lc_id_processes.popitem()
+            video_name = p_info['video_name']
             if p_info['is_mpegts_active']:
-                config.log_message(f"[{request.method} {request.path}] NexusStream does not currently support multiple concurrent MPEGTS streams for the same logical channel ID. Your media server should be reusing its existing request for logical channel '{logical_channel_name}' with key '{video_key}'.", level="ERROR")
-                abort(503, f"Another MPEGTS stream for logical channel '{logical_channel_name}' is already active. Please try again later.")
+                Log.info(Label.SERVER, f"{video_name}: Client connecting to shared stream.", (VideoType.MPEGTS, stream_engine))
+            else:
+                Log.info(Label.SERVER, f"{video_name}: Client reconnected to stream.", (VideoType.MPEGTS, stream_engine))
         else:
-            res = CreateStream(config, handler, stream_manager, quality_monitor, logical_channel_id, logical_channel_name, VideoType.MPEGTS).result()
-            if isinstance(res, tuple):
-                code = res[0]
-                msg = f"[{request.method} {request.path}] {res[1]}"
-                config.log_message(msg, level="ERROR")
-                abort(code, msg)
-            video_key = res
+            create_stream_obj = await CreateStream.create(config, handler, stream_manager, quality_monitor, logical_channel_id, logical_channel_title, channel_num, VideoType.MPEGTS, stream_engine)
+            res = await create_stream_obj.result()
+            match res[0]:
+                case True:
+                    video_key, video_name = res[1:]
+                case False:
+                    code, msg = res[1:]
+                    Log.error(Label.SERVER, msg, (VideoType.MPEGTS, stream_engine))
+                    abort(code, msg)
 
-        process_info = stream_manager.get_ffmpeg_process_info(video_key)
-        if not process_info:
-            msg = f"[{request.method} {request.path}] Internal error: MPEGTS FFmpeg process not found for logical channel '{logical_channel_name}' with key '{video_key}'."
-            config.log_message(msg, level="ERROR")
-            abort(500, msg)
+        if not stream_response:
+            Log.info(Label.SERVER, f"{video_name}: Recreated stream.", (VideoType.MPEGTS, stream_engine))
+            return video_key
 
-        def stream_generator() -> Generator[bytes, None, None]:
-            process_info["is_mpegts_active"] = True
-            stdout = process_info["process"].stdout
-            chunk_size = MPEGTS_PACKET_SIZE * MPEGTS_PACKETS_PER_CHUNK
+        async def stream_generator() -> AsyncGenerator[bytes, None]:
+            async def recreate_stream() -> Response | VideoKey:
+                return await serve_mpegts_stream(logical_channel_id, stream_response=False)
+            try:
+                mpegts_stream, reader_id = await MPEGTSStream.register(config, stream_manager, logical_channel_id, video_key, video_name, stream_engine, recreate_stream)
+            except Exception as e:
+                msg = f"{video_name}: Failed to register stream - {e}"
+                Log.error(Label.SERVER, msg, (VideoType.MPEGTS, stream_engine))
+                abort(500, msg)
+
             try:
                 while True:
-                    chunk = stdout.read(chunk_size)
-                    if not chunk:
-                        break
-                    yield chunk
-            finally:  # Don't stop early incase the user reconnects, let the timeout handle it
-                config.log_message(f"Client disconnected from MPEGTS stream for '{logical_channel_name}' with key '{video_key}'.")
-                with stream_manager.stream_process_lock:
-                    process_info["last_access"] = datetime.now()
-                    process_info["is_mpegts_active"] = False
+                    yield await mpegts_stream.read(reader_id)
+            except asyncio.CancelledError as e:
+                Log.info(Label.SERVER, f"{video_name}: Client #{reader_id} disconnected from stream.", (VideoType.MPEGTS, None))
+            except BaseException as e:
+                Log.error(Label.SERVER, f"{video_name}: Client #{reader_id} unexpected error in stream - {e}", (VideoType.MPEGTS, None))
+                raise
+            finally:
+                mpegts_stream.unregister(reader_id)
 
         response = Response(stream_generator(), mimetype='video/mp2t')
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
+        response.timeout = None
         return response
     finally:
         if added_pending_stream:
-            handler.remove_pending_stream(logical_channel_id, video_type=VideoType.MPEGTS)
+            await handler.remove_pending_stream(stream_key)
 
-@app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/playlist.m3u8')
-def serve_hls_playlist(logical_channel_id: str, logical_channel_name: str | None = None, sources: list[dict[str, Any]] | None = None) -> Response:
-    """
-    Serves the HLS playlist for a channel.
-    
-    This is the primary entry point for a client starting a stream. It triggers
-    the StreamManager to start the FFmpeg process if it's not already running.
-    It then waits for the playlist file to become available before serving it.
-    """
-    stream_manager.record_video_access(logical_channel_id, VideoType.HLS)
+
+@app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/<string:stream_engine>/playlist.m3u8')
+async def serve_hls_playlist(logical_channel_id: LogicalChannelId | PreviewId, stream_engine: StreamEngine, logical_channel_title: LogicalChannelTitle | None = None, channel_num: ChannelNum | None = None, sources: list[SourceInfo] | None = None) -> Response:
+    """Serves the HLS playlist for a channel."""
+    run_bg(stream_manager.record_video_access(logical_channel_id, VideoType.HLS, stream_engine))
     added_pending_stream = False
-    end_time = time.monotonic() + CREATE_STREAM_DEADLINE
+    loop = asyncio.get_running_loop()
+    end_time = loop.time() + CREATE_STREAM_DEADLINE
+    stream_key = create_stream_key(stream_engine, VideoType.HLS, logical_channel_id)
     try:
-        while not handler.add_pending_stream(logical_channel_id, VideoType.HLS):
-            if time.monotonic() > end_time:
-                msg = f"[{request.method} {request.path}] Exceeded timeout while waiting for earlier request for HLS {logical_channel_id} to complete."
-                config.log_message(msg, level="ERROR")
+        while not await handler.add_pending_stream(stream_key):
+            if loop.time() > end_time:
+                msg = f"Exceeded timeout while waiting for earlier request for {stream_key} to complete."
+                Log.error(Label.SERVER, msg, (VideoType.HLS, stream_engine))
                 abort(503, msg)
-            time.sleep(CREATE_STREAM_POLL_INTERVAL)
+            await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
         added_pending_stream = True
 
-        if logical_channel_name is None:
-            logical_channel = handler.get_logical_channel_by_id(logical_channel_id)
+        if logical_channel_title is None:
+            logical_channel = await handler.get_logical_channel_by_id(cast(LogicalChannelId, logical_channel_id))
             if not logical_channel:
-                msg = f"[{request.method} {request.path}] Logical channel {logical_channel_id} not found for HLS."
-                config.log_message(msg, level="ERROR")
+                msg = f"Logical channel {logical_channel_id} not found for HLS."
+                Log.error(Label.SERVER, msg, (VideoType.HLS, stream_engine))
                 abort(404, msg)
-            logical_channel_name = str(logical_channel['display_name'])
-
-        lc_id_processes = stream_manager.get_ffmpeg_processes_from_logical_id(logical_channel_id, video_type=VideoType.HLS, long_term_only=True)
-        if len(lc_id_processes):
-            video_key = lc_id_processes.popitem()[0]
+            logical_channel_title = logical_channel['logical_channel_title']
+            channel_num = logical_channel['channel_num']
         else:
-            res = CreateStream(config, handler, stream_manager, quality_monitor, logical_channel_id, logical_channel_name, VideoType.HLS, sources).result()
-            if isinstance(res, tuple):
-                code = res[0]
-                msg = f"[{request.method} {request.path}] {res[1]}"
-                config.log_message(msg, level="ERROR")
-                abort(code, msg)
-            video_key = res
+            channel_num = channel_num
 
-        playlist_path = stream_manager.get_hls_playlist_path(video_key)
+        lc_id_processes = await stream_manager.get_processes_from_logical_id(logical_channel_id, video_type=VideoType.HLS, stream_engine=stream_engine, long_term_only=True)
+        if len(lc_id_processes):
+            video_key, p_info = lc_id_processes.popitem()
+            video_name = p_info['video_name']
+        else:
+            create_stream_obj = await CreateStream.create(config, handler, stream_manager, quality_monitor, logical_channel_id, logical_channel_title, channel_num, VideoType.HLS, stream_engine, sources)
+            res = await create_stream_obj.result()
+            match res[0]:
+                case True:
+                    video_key, video_name = res[1:]
+                case False:
+                    code, msg = res[1:]
+                    Log.error(Label.SERVER, msg, (VideoType.HLS, stream_engine))
+                    abort(code, msg)
+
+        playlist_path = await stream_manager.get_hls_playlist_path(video_key)
         if not playlist_path:
-            msg = f"[{request.method} {request.path}] Internal error: HLS playlist path not found for logical channel '{logical_channel_name}' with key '{video_key}'."
-            config.log_message(msg, level="ERROR")
+            msg = f"{video_name}: Internal error: HLS playlist path not found."
+            Log.error(Label.SERVER, msg, (VideoType.HLS, stream_engine))
             abort(500, msg)
 
-        end_time = time.monotonic() + config.ffmpeg_start_timeout
-        while time.monotonic() < end_time:
-            with stream_manager.stream_process_lock:
-                if video_key not in stream_manager.ffmpeg_processes or stream_manager.ffmpeg_processes[video_key]['process'].poll() is not None:
-                    msg = f"[{request.method} {request.path}] HLS FFmpeg process for '{logical_channel_name}' with key '{video_key}' terminated unexpectedly while waiting for playlist."
-                    config.log_message(msg, level="ERROR")
-                    stream_manager.stop_ffmpeg_process(video_key, logical_channel_name)
-                    abort(503, msg)
+        end_time = loop.time() + config.process_start_timeout
+        while loop.time() < end_time:
+            to_cleanup = False
+            async with stream_manager.stream_process_lock:
+                if video_key not in stream_manager.processes:
+                    to_cleanup = True
+                elif stream_manager.processes[video_key]['process'].returncode is not None:
+                    to_cleanup = True
+                    if not stream_manager.processes[video_key]["stop_reason"]:
+                        cast(ProcessInfoMutable, stream_manager.processes[video_key])["stopped_at"] = datetime.now()
+                        cast(ProcessInfoMutable, stream_manager.processes[video_key])["stop_reason"] = StopReason.ERROR
+                        Log.debug(Label.STREAM, f"{video_name}: Updated stopped timestamp with {StopReason.ERROR}.", (VideoType.HLS, stream_engine))
+            if to_cleanup:
+                msg = f"{video_name}: Process terminated unexpectedly."
+                Log.error(Label.SERVER, msg, (VideoType.HLS, stream_engine))
+                await stream_manager.stop_process(video_key)
+                abort(503, msg)
 
-            if playlist_path.exists() and playlist_path.stat().st_size > 0:
+            if await aiofiles.os.path.exists(playlist_path) and (await aiofiles.os.stat(playlist_path)).st_size > 0:
                 try:
-                    response = send_from_directory(str(playlist_path.parent), playlist_path.name, mimetype="application/vnd.apple.mpegurl")
+                    response = await send_from_directory(str(playlist_path.parent), playlist_path.name, mimetype="application/vnd.apple.mpegurl")
                     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
                     response.headers["Pragma"] = "no-cache"
                     response.headers["Expires"] = "0"
                     return response
                 except Exception as e:
-                    msg = f"[{request.method} {request.path}] Error serving HLS playlist {playlist_path}: {e}"
-                    config.log_message(msg, level="ERROR")
+                    msg = f"{video_name}: Error serving HLS playlist {playlist_path} - {e}"
+                    Log.error(Label.SERVER, msg, (VideoType.HLS, stream_engine))
                     abort(500, msg)
-            time.sleep(PLAYLIST_POLL_INTERVAL)
+            await asyncio.sleep(PLAYLIST_POLL_INTERVAL)
 
-        msg = f"[{request.method} {request.path}] HLS playlist for logical channel '{logical_channel_name}' with key '{video_key}' was not available after {config.ffmpeg_start_timeout} seconds."
-        config.log_message(msg, level="ERROR")
+        msg = f"{video_name}: HLS playlist was not available after {config.process_start_timeout} seconds."
+        Log.error(Label.SERVER, msg, (VideoType.HLS, stream_engine))
         abort(408, msg)
     finally:
         if added_pending_stream:
-            handler.remove_pending_stream(logical_channel_id, video_type=VideoType.HLS)
+            await handler.remove_pending_stream(stream_key)
 
 
-@app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/preview.m3u8')
-def serve_hls_preview(logical_channel_id: str) -> Response:
-    """Serves a preview HLS playlist for a channel."""
-    source_service_id = logical_channel_id.replace("preview_", "")
-    source_service = handler.discovered_source_services.get(source_service_id, None)
+@app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/<string:stream_engine>/<path:segment_filename>')
+async def serve_hls_segment(logical_channel_id: LogicalChannelId, stream_engine: StreamEngine, segment_filename: str) -> Response:
+    """Serves an HLS video segment (.ts file)."""
+    run_bg(stream_manager.record_video_access(logical_channel_id, VideoType.HLS, stream_engine, segment_filename=segment_filename))
+    if not segment_filename.endswith(".ts") or ".." in segment_filename:
+        Log.error(Label.SERVER, f"Invalid segment filename for channel '{logical_channel_id}': {segment_filename}", (VideoType.HLS, None))
+        abort(400, f"Invalid segment filename for channel '{logical_channel_id}': {segment_filename}")
     
-    if not source_service:
-        msg = f"[{request.method} {request.path}] Preview requested for non-existent source service ID {source_service}."
-        config.log_message(msg, level="ERROR")
+    segment_path = await stream_manager.get_hls_segment_path(logical_channel_id, VideoType.HLS, stream_engine, segment_filename)
+    if not segment_path or not await aiofiles.os.path.isfile(segment_path):
+        Log.error(Label.SERVER, f"HLS segment not found for channel '{logical_channel_id}' with filename '{segment_filename}'.", (VideoType.HLS, None))
+        abort(404, f"HLS segment not found for channel '{logical_channel_id}'")
+
+    response = await send_from_directory(str(segment_path.parent), segment_path.name, mimetype="video/mp2t")
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
+@app.route("/ui/source-preview/<path:source_id>")
+async def ui_player_for_source(source_id: SourceId, logical_channel_id: LogicalChannelId | None = None) -> str:
+    lc_id_from_qs = request.args.get("logical_channel_id")
+    if lc_id_from_qs:
+        logical_channel_id = LogicalChannelId(lc_id_from_qs)
+    preview_id = create_preview_id(source_id, logical_channel_id)
+    if logical_channel_id:
+        logical_channel = await handler.get_logical_channel_by_id(logical_channel_id)
+        channel_num = logical_channel['channel_num'] if logical_channel else None
+    else:
+        channel_num = None
+    discovered_source = await handler.get_discovered_source(source_id)
+    if not discovered_source:
+        msg = f"Source ID '{source_id}' not found for preview."
+        Log.error(Label.SERVER, msg)
+        await flash(msg, "error")
+        abort(404, msg)
+    source_name = discovered_source["display_title"] or discovered_source["tvg_name"] or "Preview"
+    tvg_logo = discovered_source["tvg_logo"]
+    stream_engine = config.stream_engine
+    playlist_url = url_for('serve_hls_preview', preview_id=preview_id, stream_engine=stream_engine, channel_num=channel_num)
+    return await render_template("_video_player_modal.html", playlist_url=playlist_url, preview_id=preview_id, stream_engine=stream_engine, source_id=source_id, source_name=source_name, tvg_logo=tvg_logo)
+
+
+@app.route(f'/{VideoType.HLS}/<string:preview_id>/<string:stream_engine>/preview.m3u8')
+async def serve_hls_preview(preview_id: PreviewId, stream_engine: StreamEngine, channel_num: ChannelNum | None = None) -> Response:
+    """Serves a preview HLS playlist for a channel."""
+    ch_num_from_qs = request.args.get("channel_num")
+    if ch_num_from_qs:
+        channel_num = ChannelNum(ch_num_from_qs)
+    source_id = get_source_id_from_preview(preview_id)
+    discovered_source = await handler.get_discovered_source(source_id)
+
+    if not discovered_source:
+        msg = f"Preview requested for non-existent source ID {source_id}."
+        Log.error(Label.SERVER, msg, (VideoType.HLS, None))
         abort(404, msg)
 
-    priority = DEFAULT_PRIORITY
-    for channels in handler.channel_mappings_data_from_json.values():
-        for channel in channels:
-            if channel['source_service_id'] == source_service_id:
-                priority = channel['priority']
-                break
-
-    sources: list[dict[str, Any]] = [{
-        'source_service_id': source_service['id'],
-        'priority': priority,
-        'provider_alias': source_service['provider_alias'],
-        'actual_stream_url': source_service['actual_stream_url']
+    sources: list[SourceInfo] = [{
+        'source_id': source_id,
+        'priority': await handler.get_source_priority(source_id) or Priority(DEFAULT_PRIORITY),
+        'provider_alias': discovered_source['provider_alias'],
+        'stream_url': discovered_source['stream_url']
     }]
 
-    logical_channel_name = source_service.get('original_display_name_extinf', source_service.get('original_tvg_name', 'Preview'))
-
-    return serve_hls_playlist(logical_channel_id, logical_channel_name=logical_channel_name, sources=sources)
+    return await serve_hls_playlist(preview_id, stream_engine, logical_channel_title=LogicalChannelTitle('Preview'), channel_num=channel_num, sources=sources)
 
 
-@app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/<path:segment_filename>')
-def serve_hls_segment(logical_channel_id: str, segment_filename: str) -> Response:
-    """Serves an HLS video segment (.ts file)."""
-    stream_manager.record_video_access(logical_channel_id, VideoType.HLS)
-    if not segment_filename.endswith(".ts") or ".." in segment_filename:
-        msg = f"[{request.method} {request.path}] Invalid segment filename: {segment_filename}"
-        config.log_message(msg, level="ERROR")
-        abort(400, msg)
-    
-    segment_path = stream_manager.get_hls_segment_path(logical_channel_id, VideoType.HLS, segment_filename)
-    if not segment_path:
-        msg = f"[{request.method} {request.path}] HLS segment path not found for logical channel '{logical_channel_id}' and segment '{segment_filename}'."
-        config.log_message(msg, level="ERROR")
-        abort(404, msg)
-    if not segment_path.is_file():
-        msg = f"[{request.method} {request.path}] HLS segment file not found for logical channel '{logical_channel_id}' and segment '{segment_path}'."
-        config.log_message(msg, level="ERROR")
-        abort(404, msg)
-
-    return send_from_directory(str(segment_path.parent), segment_path.name, mimetype="video/mp2t")
-
-
-@app.route("/<string:video_type>/<string:logical_channel_id>/stop", methods=["POST"])
-def stop_stream(video_type: str, logical_channel_id: str) -> Response:
+@app.route("/<string:video_type>/<string:logical_channel_id>/<string:stream_engine>/stop", methods=["POST"])
+async def stop_stream(video_type: VideoType, logical_channel_id: LogicalChannelId, stream_engine: StreamEngine) -> Response:
     """Stops the stream for a logical channel."""
-    stream_manager.stop_ffmpeg_processes_with_logical_channel_id(logical_channel_id, VideoType(video_type))
+    if video_type == VideoType.MPEGTS:
+        for mpegts_stream in MPEGTSStream.streams.values():
+            if mpegts_stream.logical_channel_id == logical_channel_id and mpegts_stream.stream_engine == stream_engine:
+                mpegts_stream.shutdown()
+    await stream_manager.stop_processes_with_logical_channel_id(logical_channel_id, video_type, stream_engine, StopReason.MANUAL)
     return Response(status=204)
 
 
 @app.route("/playlist.m3u")
-def serve_master_playlist() -> Response:
-    """Serves the master M3U playlist for clients."""
-    return Response(handler.master_m3u_content, mimetype="application/x-mpegurl")
-
-
-@app.route("/reload", methods=["POST"])
-def reload_configuration() -> Response:
-    """Triggers a full reload of all configurations and channel data."""
-    config.log_message("Received request to reload configuration via UI.", level="INFO")
-    try:
-        handler.reload_handler_config(update_providers=True)
-        flash("Configuration and source services reloaded successfully!", "success")
-    except Exception as e:
-        config.log_message(f"An error occurred during manual reload: {e}", level="ERROR")
-        flash(f"An error occurred during reload: {e}", "error")
-    response = Response(render_template("_flash_messages.html"))
-    response.headers["HX-Trigger"] = "flashMessagesUpdated"
-    return response
-
-
-@app.route("/ui/flash-messages")
-def ui_flash_messages() -> str:
-    """Renders just the flash messages partial for HTMX updates."""
-    return render_template("_flash_messages.html")
+async def serve_main_playlist() -> Response:
+    """Serves the main M3U playlist for clients."""
+    return Response(await handler.get_main_m3u_playlist(), mimetype="application/x-mpegurl")
 
 
 # --- UI Endpoints ---
 
+
 @app.route("/")
 @app.route("/ui")
-def ui_main_dashboard() -> str:
+async def ui_main_dashboard() -> str:
     """Renders the main dashboard page."""
-    return render_template("ui_dashboard.html",
-                           provider_count=len(handler.providers_data_from_json),
-                           discovered_services_count=len(handler.discovered_source_services),
-                           logical_channels_count=len(handler.logical_channels_data_from_json))
+    return await render_template("ui_dashboard.html",
+                           provider_count=await handler.get_num_providers(),
+                           discovered_sources_count=await handler.get_num_discovered_sources(),
+                           logical_channels_count=await handler.get_num_logical_channels())
 
-@app.route("/ui/logical-channels")
-def ui_logical_channels_list() -> str:
-    """Renders the list of all configured logical channels."""
-    channels = handler.get_all_logical_channels_for_ui()
-    all_quality_scores = quality_monitor.get_quality_scores()
 
-    for channel in channels:
-        mapped_services = handler.get_mappings_for_logical_channel(channel['logical_channel_id'])
-        sort_sources(mapped_services, all_quality_scores, reverse=False)
-        calculate_channel_uptime(channel, mapped_services, all_quality_scores)
+@app.route("/ui/flash-messages")
+async def ui_flash_messages() -> str:
+    """Renders just the flash messages partial for HTMX updates."""
+    return await render_template("_flash_messages.html")
 
-    return render_template("ui_logical_channels.html", channels=channels, handler=handler)
 
-@app.route("/ui/logical-channels/form/", methods=["GET", "POST"])
-@app.route("/ui/logical-channels/form/<string:logical_channel_id>", methods=["GET", "POST"])
-def ui_logical_channel_form(logical_channel_id: str | None = None):
-    """Handles adding/editing a logical channel and its mappings in a unified form."""
-    if request.method == "POST":
-        # Get the ID from the form, which could be empty for new channels
-        submitted_id = request.form.get("logical_channel_id")
-        is_update = bool(submitted_id)
-
-        lc_data = {
-            "display_name": request.form.get("display_name", "").strip(),
-            "channel_num": request.form.get("channel_num", "").strip(),
-            "group_title": request.form.get("group_title", "Uncategorized").strip(),
-            "tvg_id": request.form.get("tvg_id", "").strip(),
-            "tvg_logo": request.form.get("tvg_logo", "").strip()
-        }
-
-        if not lc_data['display_name'] or not lc_data['channel_num']:
-            flash("Display Name and Channel Number are required.", "error")
-            # Re-render form with user's data; need to reconstruct the page state
-            return redirect(request.url)
-
-        mappings_to_save = []
-        service_ids_to_map = request.form.getlist('mapping_service_id')
-        for service_id_str in service_ids_to_map:
-            try:
-                mappings_to_save.append({
-                    'source_service_id': service_id_str,
-                    'priority': int(request.form.get(f"priority_{service_id_str}", '5'))
-                })
-            except (ValueError, TypeError):
-                flash(f"Skipping a mapping with invalid priority (service_id: '{service_id_str}').", "warning")
-
-        if is_update:  # This is an UPDATE of an existing channel
-            handler.update_logical_channel(submitted_id, lc_data)
-            handler.update_mappings_for_logical_channel(submitted_id, mappings_to_save)
-            flash(f"Channel '{lc_data['display_name']}' and its mappings updated successfully.", "success")
-            handler.reload_handler_config(update_providers=False)
-            return redirect(url_for('ui_logical_channel_form', logical_channel_id=submitted_id))
-        else:  # This is a CREATE for a new channel
-            new_id = handler.add_logical_channel(lc_data)
-            if new_id:
-                if mappings_to_save:
-                    handler.update_mappings_for_logical_channel(new_id, mappings_to_save)
-                flash(f"Channel '{lc_data['display_name']}' created successfully.", "success")
-                handler.reload_handler_config(update_providers=False)
-                return redirect(url_for('ui_logical_channel_form', logical_channel_id=new_id))
-            else:
-                flash("Error creating channel. A channel with that number may already exist.", "error")
-                return render_template("ui_logical_channel_form.html", channel=lc_data)
-
-    # --- GET Request Handling ---
-    # Check if this is an HTMX request targeting the service list (for search or pagination)
-    is_htmx_service_list_request = (
-        request.headers.get('HX-Request') and 
-        request.headers.get('HX-Target') == 'service-list-container'
-    )
-
-    # 1. Load the main channel object if we are editing
-    channel = {}
-    predefined_channel: dict[str, str] = {}
-    if logical_channel_id:
-        channel = handler.get_logical_channel_by_id(logical_channel_id)
-        if not channel:
-            flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "error")
-            return redirect(url_for('ui_logical_channels_list'))
-        predefined_channel = handler.find_matching_predefined_channel(channel['display_name'], channel['channel_num'])
-    # Priority 1: An explicit search query from the user (e.g., typing in the box).
-    search_query = request.args.get('search_query')
-
-    # Priority 2: If no explicit search, and it's the initial page load for an
-    # existing channel, use the channel's name as the default search term.
-    if search_query is None and not is_htmx_service_list_request and logical_channel_id:
-        if predefined_channel.get('names'):
-            search_query = " OR ".join(predefined_channel['names'])
-        else:
-            search_query = predefined_channel.get('title', channel.get('display_name'))
-
-    filter_query = search_query.strip().lower() if search_query else None
-
-    # 3. Prepare data for the service list
-    unmapped_suggestions = []
-    mapped_services: list[dict[str, Any]] = []
-    page = request.args.get('page', 1, type=int)
-    per_page = 100
-
-    # Load all services and mappings
-    all_services = handler.get_all_discovered_source_services_for_ui()
-    all_quality_scores = quality_monitor.get_quality_scores()
-    other_mappings:dict[str, list[dict[str, Any]]] = handler.channel_mappings_data_from_json.copy()
-    current_mappings = other_mappings.pop(logical_channel_id, []) if logical_channel_id else []
-    sort_sources(current_mappings, all_quality_scores, reverse=False)
-    services_mapped_elsewhere: set[str] = {mapping['source_service_id'] for mappings in other_mappings.values() for mapping in mappings}
-    all_services_map = {s['id']: s for s in all_services}
-
-    all_mapped_service_ids: set[str] = set()
-    for mapping in current_mappings:
-        service_id = mapping['source_service_id']
-        all_mapped_service_ids.add(service_id)
-        if service_id in all_services_map:
-            service_details = all_services_map[service_id].copy()
-            service_details['priority'] = mapping['priority']
-            raw_score = all_quality_scores.get(service_id, {}).get('uptime', None)
-            service_details['uptime'] = int(raw_score * 100) if raw_score is not None else None
-            mapped_services.append(service_details)
-    calculate_channel_uptime(channel, current_mappings, all_quality_scores)
-
-    # Populate unmapped suggestions ONLY if there is a filter query.
-    if filter_query:
-        for service in all_services:
-            # Check if the service is NOT already mapped
-            if service['id'] not in all_mapped_service_ids:
-                # Check if it matches the user's filter/search criteria
-                if handler.filter_sources(search_query, service):
-                    service_id = service['id']
-                    raw_score = all_quality_scores.get(service_id, {}).get('uptime', None)
-                    service['uptime'] = int(raw_score * 100) if raw_score is not None else None
-                    unmapped_suggestions.append(service)
-
-    # Paginate the results
-    total_unmapped_items = len(unmapped_suggestions)
-    total_pages = math.ceil(total_unmapped_items / per_page) if per_page > 0 else 1
-    if page > total_pages and total_pages > 0: page = total_pages
-    if page < 1: page = 1
-    start_index = (page - 1) * per_page
-    unmapped_suggestions_for_page = unmapped_suggestions[start_index:start_index + per_page]
-
-    # 4. Determine which template to render
-    template_to_render = "_service_list_content.html" if is_htmx_service_list_request else "ui_logical_channel_form.html"
-
-    return render_template(
-        template_to_render,
-        channel=channel,
-        unmapped_suggestions_for_page=unmapped_suggestions_for_page,
-        mapped_services=mapped_services,
-        services_mapped_elsewhere=services_mapped_elsewhere,
-        current_page=page,
-        total_pages=total_pages,
-        total_unmapped_items=total_unmapped_items,
-        search_query=search_query, 
-        filter_query=filter_query,
-    )
-
-@app.route("/ui/source-services")
-def ui_source_services_list() -> str:
-    """Renders a filterable list of all discovered source services."""
-    
-    per_page = request.args.get('per_page', 100, type=int)
-    if per_page not in [100, 250, 500, 1000]:
-        per_page = 100
-
-    page = request.args.get('page', 1, type=int)
-
-    services_unfiltered = handler.get_all_discovered_source_services_for_ui()
-    providers = sorted(list(set(s['provider_alias'] for s in services_unfiltered)))
-
-    filter_provider = request.args.get('provider_alias', '')
-    filter_name = request.args.get('name_filter', '').lower()
-
-    services_filtered = services_unfiltered
-    if filter_provider:
-        services_filtered = [s for s in services_filtered if s['provider_alias'] == filter_provider]
-    if filter_name:
-        services_filtered = [s for s in services_filtered if filter_name in s.get('original_tvg_name', '').lower() or filter_name in s.get('original_display_name_extinf', '').lower()]
-
-    total_items = len(services_filtered)
-    total_pages = math.ceil(total_items / per_page)
-    
-    start_index = (page - 1) * per_page
-    end_index = start_index + per_page
-    
-    services_for_page = services_filtered[start_index:end_index]
-    services_for_page = services_filtered[start_index:end_index]
-
-    return render_template("ui_source_services.html",
-                           services=services_for_page,
-                           providers=providers,
-                           current_provider=filter_provider,
-                           current_name_filter=filter_name,
-                           current_page=page,
-                           total_pages=total_pages,
-                           total_items=total_items,
-                           per_page=per_page)
+@app.route("/ui/provider-status")
+async def ui_provider_status() -> str:
+    statuses = await handler.get_provider_stream_status()
+    active_streams = sum(status['active_streams'] for status in statuses.values())
+    max_total_streams = sum(status['max_streams'] for status in statuses.values())
+    return await render_template("_provider_status_bar.html", active_streams=active_streams, max_total_streams=max_total_streams)
 
 
 @app.route("/ui/providers", methods=["GET"])
-def ui_providers_manage() -> str:
-    """Renders the provider management page."""
-    all_providers = handler.get_all_providers_for_ui()
+async def ui_providers_manage() -> str:
+    all_providers = sorted((await handler.get_provider_stream_status()).values(), key=lambda p: p['alias'])
+    all_processes = await stream_manager.get_process_statuses()
+    return await render_template("ui_providers.html", providers=all_providers, processes=all_processes)
 
-    return render_template("ui_providers.html", providers=all_providers)
 
+@app.route("/ui/providers/streams/<string:alias>")
+async def ui_provider_streams_row(alias: ProviderAlias) -> str:
+    providers = await handler.get_provider_stream_status()
+    provider = providers.get(alias)
+    if not provider:
+        abort(404)
+    all_processes = await stream_manager.get_process_statuses()
+    return await render_template("_provider_streams_rows.html",
+                                 provider=provider,
+                                 processes=all_processes)
 
-# --- HTMX Partial Routes ---
 
 @app.route("/ui/providers/add", methods=["GET", "POST"])
-def ui_provider_add() -> Response | str:
-    """Handles adding a new provider or rendering the add form."""
+async def ui_provider_add() -> Response | str:
     if request.method == "POST":
-        alias = request.form.get("alias", "").strip()
-        url = request.form.get("url", "").strip()
-        max_streams_str = request.form.get("max_concurrent_streams", "1")
-        
+        form_data = cast(ImmutableMultiDict[str, str], await request.form)  # type: ignore
+        alias = ProviderAlias(form_data.get("alias", "").strip())
+        m3u_url = M3UURL(form_data.get("m3u_url", "").strip())
+        max_streams_str = form_data.get("max_streams", "")
         try:
-            max_streams = int(max_streams_str)
-            new_provider_object = handler.add_provider(alias, url, max_streams)
-            if new_provider_object:
-                flash(f"Provider '{alias}' added successfully.", "success")
-
-                all_providers = handler.get_all_providers_for_ui()
-
-                table_body_html = render_template("_providers_table_body.html", providers=all_providers)
-
-                form_removal_html = '<div id="add-provider-form-wrapper" hx-swap-oob="true"></div>'
-
-                response = Response(table_body_html + form_removal_html)
-                response.headers["HX-Trigger"] = "flashMessagesUpdated"
-                return response
-            else:
-                flash(f"Failed to add provider '{alias}'.", "error")
-                response = Response(render_template("_provider_add_form.html", alias=alias, url=url, max_concurrent_streams=max_streams_str))
+            if ";" in alias:
+                raise ValueError("Alias must not contain semicolons (';').")
+            max_streams = MaxStreams(int(max_streams_str))
+            if not is_valid_url(m3u_url):
+                raise ValueError(f"Invalid URL format: {m3u_url}")
+            if not await handler.add_provider(alias, m3u_url, max_streams):
+                raise ValueError(f"Failed to add provider '{alias}'.")
+            Log.info(Label.SERVER, f"Provider '{alias}' added with max streams {max_streams}.")
+            await flash(f"Provider '{alias}' added successfully, use 'Reload Providers & Sources' on the dashboard to discover sources.", "success")
+            all_providers = sorted((await handler.get_provider_stream_status()).values(), key=lambda p: p['alias'])
+            table_body_html = await render_template("_providers_table_body.html", providers=all_providers)
+            form_removal_html = '<div id="add-provider-form-wrapper" hx-swap-oob="true"></div>'
+            response = Response(table_body_html + form_removal_html)
         except ValueError as e:
-            flash(str(e), "error")
-            response = Response(render_template("_provider_add_form.html", alias=alias, url=url, max_concurrent_streams=max_streams_str))
-        
+            msg = f"Failed to add provider '{alias}': {e}"
+            Log.error(Label.SERVER, msg)
+            await flash(msg, "error")
+            response = Response(await render_template("_provider_add_form.html", alias=alias, m3u_url=m3u_url, max_streams=max_streams_str))
         response.headers["HX-Trigger"] = "flashMessagesUpdated"
+        response.headers["HX-Refresh"] = "true"
         return response
-    else: # GET request
-        return render_template("_provider_add_form.html")
+    return await render_template("_provider_add_form.html")
 
 
 @app.route("/ui/providers/edit/<string:alias>", methods=["GET", "PUT"])
-def ui_provider_edit(alias: str) -> str:
-    """Handles editing a provider."""
-    providers = handler.get_all_providers_for_ui()
-    for provider in providers:
-        if provider['alias'] == alias:
-            break
+async def ui_provider_edit(alias: ProviderAlias) -> Response | str:
+    provider = (await handler.get_provider_stream_status()).get(alias)
     if not provider:
-        flash(f"Provider '{alias}' not found.", "error")
-        return "" # HTMX will remove the row if not found
+        return ""
 
     if request.method == "GET":
-        if request.args.get('cancel'):
-            # This is a CANCEL request. Find the provider and return the display row.
-            if provider:
-                return render_template("_provider_row.html", provider=provider)
-            else:
-                return ""
-        
-        return render_template("_provider_edit_form.html", provider=provider)
-    
-    elif request.method == "PUT":
-        url = request.form.get("url", "").strip()
-        max_streams_str = request.form.get("max_concurrent_streams", "1")
-        
-        try:
-            max_streams = int(max_streams_str)
-            if handler.update_provider(alias, url, max_streams):
-                flash(f"Provider '{alias}' updated successfully.", "success")
-                # Return the updated row for HTMX to swap
-                updated_provider_data = {
-                    "alias": alias,
-                    "url": url,
-                    "max_concurrent_streams": max_streams,
-                    "active_streams":  handler.get_provider_stream_status()[alias]['active']
-                }
-                response = Response(render_template("_provider_row.html", provider=updated_provider_data))
-            else:
-                flash(f"Failed to update provider '{alias}'.", "error")
-                response = Response(render_template("_provider_edit_form.html", provider={
-                    "alias": alias, "url": url, "max_concurrent_streams": max_streams_str,
-                    "active_streams":  handler.get_provider_stream_status()[alias]['active']
-                }))
-        except ValueError as e:
-            flash(str(e), "error")
-            response = Response(render_template("_provider_edit_form.html", provider={
-                "alias": alias, "url": url, "max_concurrent_streams": max_streams_str,
-                "active_streams":  handler.get_provider_stream_status()[alias]['active']
-            }))
-        
-        response.headers["HX-Trigger"] = "flashMessagesUpdated"
-        return response
+        if request.args.get('cancel') == 'true':
+            return await render_template("_provider_row.html", provider=provider)
+        return await render_template("_provider_edit_form.html", provider=provider)
 
-
-@app.route("/ui/providers/delete/<string:alias>", methods=["DELETE"])
-def ui_provider_delete(alias: str) -> tuple[str, int]:
-    """Handles deleting a provider."""
+    form_data = cast(ImmutableMultiDict[str, str], await request.form)  # type: ignore
+    m3u_url = M3UURL(form_data.get("m3u_url", "").strip())
+    max_streams_str = form_data.get("max_streams", "")
     try:
-        if handler.delete_provider(alias):
-            flash(f"Provider '{alias}' deleted successfully.", "success")
-            response = Response("", 200) # HTMX will remove the element
-        else:
-            flash(f"Failed to delete provider '{alias}'.", "error")
-            response = Response("", 400) # Indicate failure to HTMX
+        max_streams = MaxStreams(int(max_streams_str))
+        if not is_valid_url(m3u_url):
+            raise ValueError(f"Invalid URL format: {m3u_url}")
+        if not await handler.update_provider(alias, m3u_url, max_streams):
+            raise ValueError(f"Failed to update provider '{alias}'.")
+        Log.info(Label.SERVER, f"Provider '{alias}' updated with max streams {max_streams}.")
+        await flash(f"Provider '{alias}' updated successfully, use 'Reload Providers & Sources' on the dashboard to re-discover sources.", "success")
+        updated_provider_data = ProviderStatus({**provider, "m3u_url": m3u_url, "max_streams": max_streams})
+        response = Response(await render_template("_provider_row.html", provider=updated_provider_data))
     except ValueError as e:
-        flash(str(e), "error")
-        response = Response("", 400) # Indicate failure to HTMX
-    
+        msg = f"Failed to update provider '{alias}': {e}"
+        Log.error(Label.SERVER, msg)
+        await flash(msg, "error")
+        response = Response(await render_template("_provider_edit_form.html", provider={**provider, "m3u_url": m3u_url, "max_streams": max_streams_str}))
     response.headers["HX-Trigger"] = "flashMessagesUpdated"
     return response
 
 
-@app.route("/ui/provider-status")
-def ui_provider_status() -> str:
-    """Renders the provider stream status bar partial."""
-    active, max_total = handler.get_total_stream_status_for_ui()
-    return render_template("_provider_status_bar.html",
-                           active_streams=active,
-                           max_total_streams=max_total)
+@app.route("/ui/providers/delete/<string:alias>", methods=["DELETE"])
+async def ui_provider_delete(alias: ProviderAlias) -> Response:
+    try:
+        if not await handler.delete_provider(alias):
+            raise ValueError(f"Failed to delete provider '{alias}'.")
+        Log.info(Label.SERVER, f"Provider '{alias}' deleted successfully.")
+        await flash(f"Provider '{alias}' deleted successfully, use 'Reload Providers & Sources' on the dashboard to re-discover sources.", "success")
+        response = Response("", 200)
+    except ValueError as e:
+        msg = f"Failed to delete provider '{alias}': {e}"
+        Log.error(Label.SERVER, msg)
+        await flash(msg, "error")
+        response = Response("", 400)
+    response.headers["HX-Trigger"] = "flashMessagesUpdated"
+    response.headers["HX-Refresh"] = "true"
+    return response
+
+
+@app.route("/ui/sources")
+async def ui_sources_list() -> str:
+    per_page = request.args.get('per_page', NUM_SOURCES_PER_PAGE, type=int)
+    page = request.args.get('page', 1, type=int)
+    sources_unfiltered = await handler.get_discovered_sources_for_ui()
+    providers = sorted(list(set(s['provider_alias'] for s in sources_unfiltered)))
+    filter_provider = request.args.get('provider_alias', '')
+    filter_name = request.args.get('name_filter', '').lower()
+    sources_filtered = [s for s in sources_unfiltered if (not filter_provider or s['provider_alias'] == filter_provider) and (not filter_name or filter_name in s["tvg_name"].lower() or filter_name in s["display_title"].lower())]
+    total_items = len(sources_filtered)
+    total_pages = math.ceil(total_items / per_page)
+    sources_for_page = sources_filtered[(page - 1) * per_page:page * per_page]
+    return await render_template("ui_sources.html", sources=sources_for_page, providers=providers, current_provider=filter_provider, current_name_filter=filter_name, current_page=page, total_pages=total_pages, total_items=total_items, per_page=per_page)
+
+
+@app.route("/ui/logical-channels")
+async def ui_logical_channels_list() -> str:
+    """Renders the list of all configured logical channels."""
+    channels = await handler.get_logical_channels_for_ui()
+    all_quality_scores = await quality_monitor.get_quality_scores()
+
+    all_channel_metrics: dict[LogicalChannelId, LogicalChannelMetrics] = {}
+    for channel in channels:
+        mapped_sources = await handler.get_channel_mappings_for_ui(channel['logical_channel_id'])
+        all_channel_metrics[channel["logical_channel_id"]] = await calculate_channel_metrics(mapped_sources, all_quality_scores)
+
+    return await render_template("ui_logical_channels.html", channels=channels, all_channel_metrics=all_channel_metrics)
+
+
+@app.route("/ui/logical-channels/delete/<string:logical_channel_id>", methods=["POST"])
+async def ui_logical_channel_delete(logical_channel_id: LogicalChannelId) -> Response | WerkzeugResponse:
+    channel = await handler.get_logical_channel_by_id(logical_channel_id)
+    if channel:
+        stream_name = create_stream_name(channel['logical_channel_title'], channel['channel_num'])
+        if await handler.delete_logical_channel(logical_channel_id):
+            msg = f"{stream_name}: Deleted successfully."
+            Log.info(Label.SERVER, msg)
+            await flash(msg, "success")
+            await handler.reload_handler_config()
+        else:
+            msg = f"{stream_name}: Failed to delete."
+            Log.error(Label.SERVER, msg)
+            await flash(msg, "error")
+    else:
+        msg = f"Logical Channel with ID '{logical_channel_id}' not found for deletion."
+        Log.error(Label.SERVER, msg)
+        await flash(msg, "warning")
+    return redirect(url_for('ui_logical_channels_list'))
+
+
+@app.route("/ui/logical-channels/form/", methods=["GET", "POST"])
+@app.route("/ui/logical-channels/form/<string:logical_channel_id>", methods=["GET", "POST"])
+async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = None) -> Response | WerkzeugResponse | str:
+    """Handles adding/editing a logical channel and its mappings."""
+    if request.method == "POST":
+        form_data = cast(ImmutableMultiDict[str, str], await request.form)  # type: ignore
+
+        logical_channel_title: LogicalChannelTitle = LogicalChannelTitle(form_data.get("logical_channel_title", "").strip())
+        channel_num: ChannelNum = ChannelNum(form_data.get("channel_num", "").strip())
+        group_title: TVGGroupTitle = TVGGroupTitle(form_data.get("group_title", "Uncategorized").strip())
+        tvg_id: TVGId = TVGId(form_data.get("tvg_id", "").strip())
+        tvg_logo: TVGLogo = TVGLogo(form_data.get("tvg_logo", "").strip())
+
+        if not logical_channel_title or not channel_num:
+            msg = "Display Name and Channel Number are required."
+            Log.error(Label.SERVER, msg)
+            await flash(msg, "error")
+            return redirect(request.url)
+        try:
+            int(channel_num)
+        except ValueError:
+            msg = f"Channel Number must be a valid integer, received: {channel_num}"
+            Log.error(Label.SERVER, msg)
+            await flash(msg, "error")
+            return redirect(request.url)
+        submitted_id = form_data.get("logical_channel_id", "")
+        logical_channel_id = LogicalChannelId(submitted_id) if submitted_id else None
+
+        source_ids: list[SourceId] = [SourceId(source_id) for source_id in form_data.getlist('mapping_source_id')]
+        prev_mappings = await handler.get_mappings_for_logical_channel(logical_channel_id) if logical_channel_id else None
+        mappings_to_save: list[SourceMappingInfoWithId] = []
+        for source_id in source_ids:
+            try:
+                mappings_to_save.append(SourceMappingInfoWithId({
+                    'source_id': source_id,
+                    'priority': Priority(int(form_data.get(f"priority_{source_id}", DEFAULT_PRIORITY))),
+                    'offset': prev_mappings.get(source_id, {}).get('offset') if prev_mappings else None,
+                }))
+            except (ValueError, TypeError):
+                msg = f"Skipping mapping with invalid priority for source '{source_id}'."
+                Log.warn(Label.SERVER, msg)
+                await flash(msg, "warning")
+        sort_sources(mappings_to_save, await quality_monitor.get_quality_scores(), reverse=False)
+
+        if not tvg_logo:
+            for mapping in mappings_to_save:
+                discovered_source = await handler.get_discovered_source(mapping['source_id'])
+                if discovered_source and discovered_source['tvg_logo']:
+                    tvg_logo = discovered_source['tvg_logo']
+                    break
+
+        stream_name = create_stream_name(logical_channel_title, channel_num)
+        if logical_channel_id:
+            lc_data: LogicalChannelInfo = {
+                "logical_channel_title": logical_channel_title,
+                "channel_num": channel_num,
+                "group_title": group_title,
+                "tvg_id": tvg_id,
+                "tvg_logo": tvg_logo,
+            }
+            if not await handler.update_logical_channel(logical_channel_id, lc_data):
+                await flash(f"{stream_name}: Failed to update.", "error")
+                return redirect(request.url)
+            if await handler.update_mappings_for_logical_channel(logical_channel_id, mappings_to_save):
+                msg = f"{stream_name}: Updated with {len(mappings_to_save)} mappings."
+                Log.info(Label.SERVER, msg)
+                await flash(msg, "success")
+            else:
+                msg = f"{stream_name}: Updated info but failed to update {len(mappings_to_save)} mappings."
+                Log.warn(Label.SERVER, msg)
+                await flash(msg, "warning")
+            await handler.reload_handler_config()
+            return redirect(url_for('ui_logical_channel_form', logical_channel_id=logical_channel_id))
+        else:
+            lc_data: LogicalChannelInfo = {
+                "logical_channel_title": logical_channel_title,
+                "channel_num": channel_num,
+                "group_title": group_title,
+                "tvg_id": tvg_id,
+                "tvg_logo": tvg_logo,
+            }
+            new_id = await handler.add_logical_channel(lc_data)
+            if not new_id:
+                await flash(f"{stream_name}: Failed to create channel.", "error")
+                return redirect(request.url)
+            if mappings_to_save:
+                if await handler.update_mappings_for_logical_channel(new_id, mappings_to_save):
+                    msg = f"{stream_name}: Created with {len(mappings_to_save)} mappings."
+                    Log.info(Label.SERVER, msg)
+                    await flash(msg, "success")
+                else:
+                    msg = f"{stream_name}: Created but failed to add {len(mappings_to_save)} mappings."
+                    Log.warn(Label.SERVER, msg)
+                    await flash(msg, "warning")
+            else:
+                msg = f"{stream_name}: Created with no mappings."
+                Log.info(Label.SERVER, msg)
+                await flash(msg, "success")
+            await handler.reload_handler_config()
+            return redirect(url_for('ui_logical_channel_form', logical_channel_id=new_id))
+
+    # --- GET Request Handling ---
+
+    is_htmx_source_list_request = (request.headers.get('HX-Request') and request.headers.get('HX-Target') == 'source-list-container')
+    channel: LogicalChannelInfoWithId | None = None
+    if logical_channel_id:
+        channel = await handler.get_logical_channel_with_id(logical_channel_id)
+        if not channel:
+            msg = f"Logical Channel with ID '{logical_channel_id}' not found."
+            Log.error(Label.SERVER, msg)
+            await flash(msg, "error")
+            return redirect(url_for('ui_logical_channels_list'))
+    
+    search_query = request.args.get('search_query')
+    if channel and search_query is None and not is_htmx_source_list_request:
+        predefined_channel = handler.find_matching_predefined_channel(channel['logical_channel_title'], channel['channel_num'])
+        if predefined_channel:
+            search_query = MULTI_SEARCH_QUERY_DELIMITER.join(predefined_channel['aliases']) if predefined_channel["aliases"] else predefined_channel["title"]
+    filter_query = search_query.strip().lower() if search_query else None
+    logical_channel_form_details = await calculate_logical_channel_form_details(
+        logical_channel_id=logical_channel_id,
+        search_query=search_query,
+        filter_query=filter_query,
+        current_page=request.args.get('page', 1, type=int),
+    )
+
+    template_to_render = "_source_list_content.html" if is_htmx_source_list_request else "ui_logical_channel_form.html"
+    return await render_template(
+        template_to_render,
+        channel=channel,
+        channel_metrics=logical_channel_form_details["channel_metrics"],
+        all_source_metrics=logical_channel_form_details["all_source_metrics"],
+        unmapped_sources_for_page=logical_channel_form_details["unmapped_sources_for_page"],
+        mapped_sources=logical_channel_form_details["mapped_sources"],
+        sources_mapped_elsewhere=await handler.get_sources_mapped_elsewhere(logical_channel_id),
+        current_page=logical_channel_form_details["current_page"],
+        total_pages=logical_channel_form_details["total_pages"],
+        total_unmapped_sources=logical_channel_form_details["total_unmapped_sources"],
+        search_query=search_query,
+        filter_query=filter_query,
+    )
+
 
 @app.route("/ui/channels/populate-from-suggestion")
-def ui_channel_populate_from_suggestion():
+async def ui_channel_populate_from_suggestion() -> str:
     """
     Called when a user clicks a channel suggestion.
     Returns multiple OOB fragments to:
     1. Populate the channel details form.
-    2. Populate the service mapping card with pre-filtered results.
+    2. Populate the source mapping card with pre-filtered results.
     3. Clear the suggestion dropdown.
     """
-    prefilled_data = {
-        'display_name': request.args.get('title', ''),
+    prefilled_data: dict[str, str] = {
+        'logical_channel_id': request.args.get('logical_channel_id', ''),
+        'logical_channel_title': request.args.get('title', ''),
         'channel_num': request.args.get('num', ''),
         'group_title': request.args.get('group', 'Uncategorized'),
-        'tvg_logo': ''
     }
-    # This becomes the main response, targeting #form-content-wrapper
-    form_html = render_template("_logical_channel_form_fields.html", channel=prefilled_data)
+    form_html = await render_template("_logical_channel_form_fields.html", channel=prefilled_data)
+    logical_channel_id = LogicalChannelId(prefilled_data['logical_channel_id']) or None
 
-    # 2. Pre-filter services based on the suggested name
-    filter_query = prefilled_data['display_name'].strip().lower()
-    all_services = handler.get_all_discovered_source_services_for_ui()
-    services_mapped_elsewhere: set[str] = {mapping['source_service_id'] for mappings in handler.channel_mappings_data_from_json.values() for mapping in mappings}
-    unmapped_suggestions: list[dict[str, Any]] = []
-
-    search_query = prefilled_data['display_name']
-    for channel_list in handler.predefined_channel_list.values():
+    search_query = prefilled_data['logical_channel_title']
+    for group, channel_list in handler.copy_channel_list_data().items():
         for pre_channel in channel_list:
-            if search_query == pre_channel.get('title'):  # Only need this check since we are populating this
-                search_query = " OR ".join(pre_channel.get('names', []))
-                break
-    
-    if filter_query:
-        for service in all_services:
-            if handler.filter_sources(search_query, service):
-                unmapped_suggestions.append(service)
-
-    # 3. Paginate the pre-filtered results
-    page = 1
-    per_page = 100
-    total_unmapped_items = len(unmapped_suggestions)
-    total_pages = math.ceil(total_unmapped_items / per_page) if per_page > 0 else 1
-    unmapped_suggestions_for_page = unmapped_suggestions[:per_page]
-
-    # 4. OOB swap to update the entire service mapping card, now with data.
-    search_card_html = render_template(
-        "_service_mapping_card.html",
+            if prefilled_data['logical_channel_title'] != pre_channel["title"]:
+                continue
+            if prefilled_data['channel_num'] != pre_channel["num"]:
+                continue
+            if prefilled_data['group_title'] != group:
+                continue
+            search_query = MULTI_SEARCH_QUERY_DELIMITER.join(pre_channel["aliases"])
+            break
+    filter_query = prefilled_data['logical_channel_title'].strip().lower()
+    logical_channel_form_details = await calculate_logical_channel_form_details(
+        logical_channel_id=logical_channel_id,
         search_query=search_query,
-        channel={},
-        unmapped_suggestions_for_page=unmapped_suggestions_for_page,
-        mapped_services=[], # New channel has no mapped services
-        services_mapped_elsewhere=services_mapped_elsewhere,
-        current_page=page,
-        total_pages=total_pages,
-        total_unmapped_items=total_unmapped_items,
-        filter_query=filter_query
+        filter_query=filter_query,
+        current_page=1,
     )
-    oob_search_card = f'<div id="service-mapping-section" hx-swap-oob="innerHTML">{search_card_html}</div>'
 
-    # 5. OOB swap to clear the suggestion dropdown
-    clear_suggestions_html = '<div id="suggestion-box" hx-swap-oob="true"></div>'
-    
-    return form_html + oob_search_card + clear_suggestions_html
+    search_card_html = await render_template(
+        "_source_mapping_card.html",
+        channel=(await handler.get_logical_channel_with_id(logical_channel_id) or {}) if logical_channel_id else {},
+        channel_metrics=logical_channel_form_details["channel_metrics"],
+        all_source_metrics=logical_channel_form_details["all_source_metrics"],
+        unmapped_sources_for_page=logical_channel_form_details["unmapped_sources_for_page"],
+        mapped_sources=logical_channel_form_details["mapped_sources"],
+        sources_mapped_elsewhere=await handler.get_sources_mapped_elsewhere(logical_channel_id),
+        current_page=logical_channel_form_details["current_page"],
+        total_pages=logical_channel_form_details["total_pages"],
+        total_unmapped_sources=logical_channel_form_details["total_unmapped_sources"],
+        search_query=search_query,
+        filter_query=filter_query,
+    )
+    oob_search_card = f'<div id="source-mapping-section" hx-swap-oob="innerHTML">{search_card_html}</div>'
+    clear_title_suggestions_html = '<div id="channel-title-suggestion-box" hx-swap-oob="true"></div>'
+    clear_num_suggestions_html = '<div id="channel-num-suggestion-box" hx-swap-oob="true"></div>'
+
+    return form_html + oob_search_card + clear_title_suggestions_html + clear_num_suggestions_html
+
 
 @app.route("/ui/channels/suggest", methods=["GET"])
-def ui_channel_suggest() -> str:
-    """Provides channel suggestions based on user input for the display_name field."""
-    query = request.args.get('display_name', '')
-    if len(query) < 2:
-        return "" # Return empty to clear suggestions
-    suggestions = handler.search_predefined_channels(query)
-    return render_template("_channel_suggestions.html", suggestions=suggestions)
-
-
-@app.route("/ui/logical-channels/delete/<string:logical_channel_id>", methods=["POST"])
-def ui_logical_channel_delete(logical_channel_id: str) -> Response:
-    """Handles the deletion of a logical channel and its mappings."""
-    channel = handler.get_logical_channel_by_id(logical_channel_id)
-    if channel:
-        if handler.delete_logical_channel(logical_channel_id):
-            flash(f"Logical Channel '{channel['display_name']}' deleted.", "success")
-            handler.reload_handler_config(update_providers=False)
-        else:
-            flash(f"Error deleting logical channel '{channel['display_name']}'.", "error")
+async def ui_channel_suggest() -> str:
+    if len(query := request.args.get('logical_channel_title', '')):
+        suggestions = handler.search_predefined_channel_names(query)
+    elif len(query := request.args.get('channel_num', '')) > 0:
+        suggestions = handler.search_predefined_channel_nums(query)
     else:
-        flash(f"Logical Channel with ID '{logical_channel_id}' not found.", "warning")
-    return redirect(url_for('ui_logical_channels_list'))
+        return ""
+    return await render_template("_channel_suggestions.html", logical_channel_id=request.args.get('logical_channel_id'), suggestions=suggestions)
 
-@app.route("/ui/logs/modal")
-def ui_logs_modal():
-    """Renders the inner content for the log viewer modal."""
-    log_lines = []
-    log_file_path = config.logs_dir / 'app.log'
+
+@app.route("/ui/logical-channels/analyze-mappings/<string:logical_channel_id>", methods=["POST"])
+async def ui_analyze_mappings(logical_channel_id: LogicalChannelId) -> Response:
+    """Analyzes the mappings for a logical channel."""
+    channel = await handler.get_logical_channel_by_id(logical_channel_id)
+    if not channel:
+        msg = f"Logical Channel with ID '{logical_channel_id}' not found for analysis."
+        Log.error(Label.SERVER, msg)
+        await flash(msg, "error")
+        response = Response("", 404)
+        response.headers["HX-Refresh"] = "true"
+        response.headers["HX-Trigger"] = "flashMessagesUpdated"
+        return response
+    stream_name = create_stream_name(channel['logical_channel_title'], channel['channel_num'])
+    sources = await handler.get_channel_mappings_for_ui(logical_channel_id)
+    if not sources:
+        msg = f"{stream_name}: No mappings found."
+        Log.info(Label.SERVER, msg)
+        await flash(msg, "info")
+        response = Response("", 204)
+        response.headers["HX-Refresh"] = "true"
+        response.headers["HX-Trigger"] = "flashMessagesUpdated"
+        return response
+
+    res = await quality_monitor.analyze_mapped_sources(logical_channel_id)
+    if res == 1:
+        msg = f"{stream_name}: Quality analysis completed for {len(sources)} mapping(s) but failed to measure relative offset."
+        Log.warn(Label.SERVER, msg)
+        await flash(msg, "warning")
+        response = Response("", 202)
+        response.headers["HX-Refresh"] = "true"
+        response.headers["HX-Trigger"] = "flashMessagesUpdated"
+        return response
+    elif res == 0:
+        msg = f"{stream_name}: Failed to analyze mappings."
+        Log.error(Label.SERVER, msg)
+        await flash(msg, "error")
+        response = Response("", 500)
+        response.headers["HX-Refresh"] = "true"
+        response.headers["HX-Trigger"] = "flashMessagesUpdated"
+        return response
+    elif isinstance(res, str):
+        msg = f"{stream_name}: Quality analysis already in progress for {res}."
+        Log.warn(Label.SERVER, msg)
+        await flash(msg, "warning")
+        response = Response("", 409)
+        response.headers["HX-Refresh"] = "true"
+        response.headers["HX-Trigger"] = "flashMessagesUpdated"
+        return response
+
+    await flash(f"{stream_name}: Quality analysis completed for {len(sources)} mapping(s)", "success")
+    response = Response("", 200)
+    response.headers["HX-Refresh"] = "true"
+    response.headers["HX-Trigger"] = "flashMessagesUpdated"
+    return response
+
+
+@app.route("/ui/logical-channels/remove-dead-mappings/<string:logical_channel_id>", methods=["DELETE"])
+async def ui_remove_dead_mappings(logical_channel_id: LogicalChannelId) -> Response:
+    """Removes dead mappings from logical channels."""
+    channel = await handler.get_logical_channel_by_id(logical_channel_id)
+    if not channel:
+        msg = f"Logical Channel with ID '{logical_channel_id}' not found for dead mapping removal."
+        Log.error(Label.SERVER, msg)
+        await flash(msg, "error")
+        response = Response("", 404)
+        response.headers["HX-Refresh"] = "true"
+        response.headers["HX-Trigger"] = "flashMessagesUpdated"
+        return response
+    stream_name = create_stream_name(channel['logical_channel_title'], channel['channel_num'])
+    discovered_mappings: list[SourceMappingInfoWithId] = []
+    removed_count = 0
+    for source in await handler.get_channel_mappings_for_ui(logical_channel_id):
+        if await handler.get_discovered_source(source['source_id']):
+            discovered_mappings.append(source)
+        else:
+            if not await quality_monitor.remove_source(source['source_id']):
+                msg = f"{stream_name}: Failed to remove dead source {source['source_id']} from quality monitor."
+                Log.error(Label.SERVER, msg)
+                await flash(msg, "error")
+                response = Response("", 500)
+                response.headers["HX-Refresh"] = "true"
+                response.headers["HX-Trigger"] = "flashMessagesUpdated"
+                return response
+            removed_count += 1
+    if not await handler.update_mappings_for_logical_channel(logical_channel_id, discovered_mappings):
+        msg = f"{stream_name}: Failed to update mappings after removing dead sources."
+        Log.error(Label.SERVER, msg)
+        await flash(msg, "error")
+        response = Response("", 500)
+        response.headers["HX-Refresh"] = "true"
+        response.headers["HX-Trigger"] = "flashMessagesUpdated"
+        return response
+
+    if removed_count > 0:
+        msg = f"{stream_name}: Removed {removed_count} dead mapping(s)."
+        Log.info(Label.SERVER, msg)
+        await flash(msg, "success")
+    else:
+        msg = f"{stream_name}: No dead mappings found to remove."
+        Log.info(Label.SERVER, msg)
+        await flash(msg, "info")
+
+    response = Response("", 200)
+    response.headers["HX-Refresh"] = "true"
+    response.headers["HX-Trigger"] = "flashMessagesUpdated"
+    return response
+
+
+@app.route("/ui/logs/modal/<int:num_lines>")
+async def ui_logs_modal(num_lines: int) -> str:
+    prev_date = datetime.now() - timedelta(days=1)
+    if num_lines < 1:
+        num_lines = 1
+    log_lines: list[str] = []
+    verbose_log_path = config.logs_dir / Log.LOG_FILE_NAME_VERBOSE
     try:
-        with open(log_file_path, 'r') as f:
-            # Efficiently read the last 200 lines of the file
-            log_lines = list(deque(f, 200))
-    except FileNotFoundError:
-        log_lines = [f"Error: Log file not found at '{log_file_path}'."]
+        async with aiofiles.open(verbose_log_path, 'r') as f:
+            log_lines = list(deque(await f.readlines(), maxlen=num_lines))
+        while len(log_lines) < num_lines:
+            prev_verbose_log_path = verbose_log_path.with_name(f"{Log.LOG_FILE_NAME_VERBOSE}.{prev_date.strftime('%Y-%m-%d')}")
+            if not prev_verbose_log_path.exists():
+                break
+            async with aiofiles.open(prev_verbose_log_path, 'r') as f:
+                log_lines = list(deque(await f.readlines() + log_lines, maxlen=num_lines))
+            if len(log_lines) >= num_lines:
+                break
+            prev_date -= timedelta(days=1)
+    except FileNotFoundError as e:
+        log_lines = [f"Error: Log file not found in '{config.logs_dir}' - {e}"]
     except Exception as e:
         log_lines = [f"An error occurred while reading the log file: {e}"]
-
-    return render_template("_logs_modal_content.html", log_lines=log_lines)
-
-
-@app.route("/ui/service-preview/<path:service_id>")
-def ui_player_for_service(service_id: str) -> str:
-    """
-    Returns an HTML fragment containing an HLS.js video player configured
-    to play a specific source service.
-    """
-    source_service = handler.discovered_source_services.get(service_id)
-    if not source_service:
-        flash(f"Error source service ID not found.", "error")
-    service_name = source_service.get('original_display_name_extinf', source_service.get('original_tvg_name', 'Preview') )
-    logical_channel_id = f"preview_{service_id}"
-    playlist_url = url_for('serve_hls_preview', logical_channel_id=logical_channel_id)
-
-    return render_template("_video_player_modal.html", 
-                           playlist_url=playlist_url, logical_channel_id=logical_channel_id, service_name=service_name)
+    return await render_template("_logs_modal_content.html", log_lines=log_lines, num_lines=num_lines)
 
 
 # --- HDHomeRun Emulation Endpoints ---
 
+
 @app.route('/discover.json')
-def hdhomerun_discover() -> Response:
+async def hdhomerun_discover() -> Response:
     """Emulates HDHomeRun device discovery API endpoint."""
+    
     response_dict: dict[str, str | int] = {
-        "FriendlyName": "NexusStream",
-        "DeviceAuth": "nexus-stream",
-        "ModelNumber": "2.0.0",
-        "FirmwareName": "nexus-stream_2.0.0",
-        "FirmwareVersion": "2.0.0",
+        "FriendlyName": "NexusTuner",
+        "DeviceAuth": "nexus-tuner",
+        "ModelNumber": NEXUS_TUNER_VERSION,
+        "FirmwareName": f"nexus-tuner_{NEXUS_TUNER_VERSION}",
+        "FirmwareVersion": NEXUS_TUNER_VERSION,
         "DeviceID": "12345678",
-        "Manufacturer": "nexus-stream",
+        "Manufacturer": "nexus-tuner",
         "BaseURL": f"{config.nexus_url}",
         "LineupURL": f"{config.nexus_url}/lineup.json",
-        "TunerCount": sum(status["max"] for status in handler.get_provider_stream_status().values())
+        "TunerCount": sum(p["max_streams"] for p in (await handler.get_provider_stream_status()).values())
     }
     return Response(json.dumps(response_dict), mimetype="application/json")
 
 
 @app.route('/lineup_status.json')
-def hdhomerun_lineup_status() -> Response:
+async def hdhomerun_lineup_status() -> Response:
     """Returns the status of the lineup."""
     response_dict: dict[str, int | str | list[str]] = {
-        "ScanInProgress": 1 if handler.is_loading() else 0,
+        "ScanInProgress": 0,
         "ScanPossible": 0,
         "Source": "Cable",
         "SourceList": ["Cable"]
@@ -817,39 +1053,121 @@ def hdhomerun_lineup_status() -> Response:
 
 
 @app.route('/lineup.json')
-def hdhomerun_lineup() -> Response:
+async def hdhomerun_lineup() -> Response:
     """Returns the channel lineup in HDHomeRun format."""
     lineup: list[dict[str, str | int]] = []
-    quality_scores = quality_monitor.get_quality_scores()
-    for channel in handler.logical_channels_data_from_json:
-        channel_number = channel.get('channel_num', '')
+    quality_scores = await quality_monitor.get_quality_scores()
+    for channel in await handler.get_logical_channels_for_ui():
+        channel_number = channel["channel_num"]
         if not channel_number:
             continue
         is_hd = 1
-        for mapping in handler.channel_mappings_data_from_json.get(channel['logical_channel_id'], []):
-            if quality_scores.get(mapping['source_service_id'], {}).get('height', 0) >= 720:
+        for mapping in await handler.get_channel_mappings_for_ui(channel['logical_channel_id']):
+            if quality_scores.get(mapping['source_id'], {}).get('height', 0) >= 720:
                 break
         else:
             is_hd = 0
         lineup.append({
             "GuideNumber": channel_number,
-            "GuideName": channel.get('display_name', channel_number),
+            "GuideName": channel["logical_channel_title"],
             "HD": is_hd,
             "URL": f"{config.nexus_url}/{VideoType.MPEGTS}/{channel['logical_channel_id']}"
         })
     return Response(json.dumps(lineup), mimetype="application/json")
 
 
-def signal_handler(signum: int, _: object) -> None:
-    """Handles signals"""
-    config.log_message(f"Received {signal.Signals(signum).name}, exiting...", level="INFO")
-    stream_manager.stop_ffmpeg_processes()
-    config.clean_up_hls_segments()
-    sys.exit(0)
+# --- PWA Endpoints ---
 
 
-signal.signal(signal.SIGTERM, signal_handler)
-signal.signal(signal.SIGINT, signal_handler)
-signal.signal(signal.SIGHUP, signal_handler)
+@app.route('/manifest.json')
+async def serve_manifest() -> Response:
+    """Serves the web app manifest file."""
+    return await send_from_directory("public", "manifest.json", mimetype="application/json")
+
+
+@app.route('/sw.js')
+async def serve_service_worker() -> Response:
+    """Serves the service worker JavaScript file."""
+    return await send_from_directory("public", "sw.js", mimetype="application/javascript")
+
+
+@app.route('/icon-<int:size>.png')
+async def serve_icon(size: int) -> Response:
+    """Serves the app icon in various sizes."""
+    return await send_from_directory("public", f"icon-{size}.png", mimetype="image/png")
+
+
+@app.route('/favicon.ico')
+async def serve_favicon() -> Response:
+    """Serves the favicon.ico file."""
+    return await send_from_directory("public", "favicon.ico", mimetype="image/x-icon")
+
+
+@app.route('/screenshots/<path:filename>')
+async def serve_screenshot(filename: str) -> Response:
+    """Serves screenshots from the public directory."""
+    return await send_from_directory("public/screenshots", filename, mimetype="image/png")
+
+
+# --- Miscellaneous Endpoints ---
+
+
+@app.route("/reload", methods=["POST"])
+async def reload_configuration() -> Response:
+    """Triggers a full reload of all configurations and channel data."""
+    form_data = cast(ImmutableMultiDict[str, str], await request.form)  # type: ignore
+    update_providers = form_data.get("update_providers", "false").lower() == "true"
+    force_discover_sources = form_data.get("force_discover_sources", "false").lower() == "true"
+
+    Log.info(Label.SERVER, f"Received request to reload configuration via UI with params={{update_providers={update_providers}, force_discover_sources={force_discover_sources}}}")
+    try:
+        await handler.reload_handler_config(update_providers=update_providers, force_discover_sources=force_discover_sources)
+        await quality_monitor.reload_quality_scores()
+        if force_discover_sources:
+            await flash("Successfully reloaded configuration and refreshed discovered sources!", "success")
+        else:
+            await flash("Successfully reloaded configuration!", "success")
+    except Exception as e:
+        msg = f"An error occurred during manual reload: {e}"
+        Log.error(Label.SERVER, msg)
+        await flash(msg, "error")
+
+    response = Response("")
+    response.headers["HX-Trigger"] = "flashMessagesUpdated"
+    response.headers["HX-Refresh"] = "true"
+    return response
+
+
+@app.route("/backup", methods=["POST"])
+async def backup_configuration() -> Response:
+    """Triggers an backup of the current configuration files."""
+    try:
+        backup_path = await config.backup_config(scheduled=False)
+        if backup_path:
+            await flash(f"Backup created successfully at {backup_path}", "success")
+        else:
+            await flash("Failed to create backup.", "error")
+    except Exception as e:
+        msg = f"An error occurred during backup: {e}"
+        Log.error(Label.SERVER, msg)
+        await flash(msg, "error")
+
+    response = Response("")
+    response.headers["HX-Trigger"] = "flashMessagesUpdated"
+    return response
+
+
+@app.route('/ping')
+async def ping() -> Response:
+    """Simple endpoint to check if the server is running."""
+    return Response(status=200)
+
+
+@app.route('/robots.txt')
+async def serve_robots_txt() -> Response:
+    """Serves the robots.txt file."""
+    return await send_from_directory("public", "robots.txt", mimetype="text/plain")
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=config.nexus_port, debug=True, use_reloader=False)
+    app.run(host="0.0.0.0", port=NEXUS_TUNER_PORT, use_reloader=False)

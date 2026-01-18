@@ -14,6 +14,9 @@
             Active Streams: {{ active_streams }} / {{ max_total_streams }}
         </span>
     {% else %}
-        <span class="text-muted small">No providers configured.</span>
+        {% set badge_class="bg-secondary" %}
+        <span class="badge {{ badge_class }}" title="Total active streams across all providers">
+            Active Streams: {{ active_streams }} / {{ max_total_streams }}
+        </span>
     {% endif %}
 </div>

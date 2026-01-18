@@ -1,18 +1,15 @@
-{# File: templates/_video_player_modal.html #}
-
 <div class="mb-2">
-    <p class="mb-1"><strong>Previewing:</strong> {{ service_name }}</p>
     <p class="text-muted small">This will use a provider stream slot. The stream will stop automatically when you close this modal.</p>
 </div>
 
-<video id="preview-video-player" class="w-100" controls muted autoplay></video>
+<video id="preview-video-player" class="w-100" controls autoplay></video>
 
 <div id="player-status" class="alert alert-info mt-2 small p-2" role="alert">
     Initializing player...
 </div>
 
 <div id="stream-control" class="d-none">
-    <button id="stop-stream-btn" hx-post="/hls/{{ logical_channel_id }}/stop"
+    <button id="stop-stream-btn" hx-post="/hls/{{ preview_id }}/{{ stream_engine }}/stop"
         hx-trigger="click" hx-swap="none">Stop Stream</button>
 </div>
 
@@ -22,9 +19,29 @@
         const video = document.getElementById('preview-video-player');
         const statusDiv = document.getElementById('player-status');
         const src = '{{ playlist_url }}';
-        const logicalChannelId = '{{ logical_channel_id }}';
+        const previewId = '{{ preview_id }}';
         const stopStreamBtn = document.getElementById('stop-stream-btn');
         let hls = null;
+
+        const modalLogoEl = document.getElementById('previewModalLogo');
+        const tvgLogo = '{{ tvg_logo }}';
+        if (modalLogoEl) {
+            if (tvgLogo) {
+                modalLogoEl.src = tvgLogo;
+                modalLogoEl.style.display = '';
+            } else {
+                modalLogoEl.src = '';
+                modalLogoEl.style.display = 'none';
+            }
+        }
+        const modalTitleTextEl = document.getElementById('previewModalTitleText');
+        if (modalTitleTextEl) {
+            modalTitleTextEl.textContent = '{{ source_name }}';
+        }
+        const modalSourceIdEl = document.getElementById('previewModalSourceId');
+        if (modalSourceIdEl) {
+            modalSourceIdEl.textContent = '(' + '{{ source_id }}' + ')';
+        }
 
         // Set up modal close event listener
         // This finds the parent modal and sets up the listener
@@ -37,6 +54,16 @@
                     if (modal_hidden) return;
                     modal_hidden = true;
                     console.log("Modal hidden event triggered");
+                    if (modalLogoEl) {
+                        modalLogoEl.src = '';
+                        modalLogoEl.style.display = 'none';
+                    }
+                    if (modalTitleTextEl) {
+                        modalTitleTextEl.textContent = 'Stream Preview';
+                    }
+                    if (modalSourceIdEl) {
+                        modalSourceIdEl.textContent = '';
+                    }
                     destroyPreviewPlayer();
                 });
             } else {
@@ -65,7 +92,7 @@
                         console.error('Fatal HLS.js error:', data.type, data.details);
                         statusDiv.className = 'alert alert-danger mt-2 small p-2';
                         statusDiv.innerHTML = `<i class="fas fa-exclamation-triangle"></i> <strong>Error:</strong> ${data.details}`;
-                        switch(data.type) {
+                        switch (data.type) {
                             case Hls.ErrorTypes.NETWORK_ERROR:
                                 hls.startLoad();
                                 break;
@@ -103,7 +130,7 @@
             video.pause();
             video.removeAttribute('src');
             video.load();
-            console.log("Stopping stream for logical channel:", logicalChannelId);
+            console.log("Stopping stream for preview:", previewId);
             stopStreamBtn.click();
         }
         window.destroyPreviewPlayer = destroyPreviewPlayer;

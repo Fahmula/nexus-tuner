@@ -1,6 +1,6 @@
 {% extends "layout.html" %}
 
-{% block title %}NexusStream Dashboard{% endblock %}
+{% block title %}NexusTuner Dashboard{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
@@ -14,17 +14,19 @@
             <div class="card-body">
                 <h5 class="card-title display-4">{{ provider_count }}</h5>
                 <p class="card-text">Configured M3U source providers.</p>
-                <a href="{{ url_for('ui_providers_manage') }}" class="btn btn-light btn-sm">Manage Providers <i class="fas fa-arrow-circle-right"></i></a>
+                <a href="{{ url_for('ui_providers_manage') }}" class="btn btn-light btn-sm">Manage Providers <i
+                        class="fas fa-arrow-circle-right"></i></a>
             </div>
         </div>
     </div>
     <div class="col-md-4">
         <div class="card text-white bg-success mb-3">
-            <div class="card-header">Discovered Services</div>
+            <div class="card-header">Discovered Sources</div>
             <div class="card-body">
-                <h5 class="card-title display-4">{{ discovered_services_count }}</h5>
-                <p class="card-text">Total raw services found across all providers.</p>
-                <a href="{{ url_for('ui_source_services_list') }}" class="btn btn-light btn-sm">View Services <i class="fas fa-arrow-circle-right"></i></a>
+                <h5 class="card-title display-4">{{ discovered_sources_count }}</h5>
+                <p class="card-text">Total raw sources found across all providers.</p>
+                <a href="{{ url_for('ui_sources_list') }}" class="btn btn-light btn-sm">View Sources <i
+                        class="fas fa-arrow-circle-right"></i></a>
             </div>
         </div>
     </div>
@@ -34,7 +36,8 @@
             <div class="card-body">
                 <h5 class="card-title display-4">{{ logical_channels_count }}</h5>
                 <p class="card-text">User-defined channels for client M3U.</p>
-                <a href="{{ url_for('ui_logical_channels_list') }}" class="btn btn-light btn-sm">Manage Logical Channels <i class="fas fa-arrow-circle-right"></i></a>
+                <a href="{{ url_for('ui_logical_channels_list') }}" class="btn btn-light btn-sm">Manage Logical Channels
+                    <i class="fas fa-arrow-circle-right"></i></a>
             </div>
         </div>
     </div>
@@ -44,19 +47,41 @@
     <h4>Quick Actions</h4>
     <hr>
     <p>
-        <button class="btn btn-secondary"
-                hx-post="{{ url_for('reload_configuration') }}"
-                hx-target="#flash-messages-container"
-                hx-swap="afterbegin"
-                data-bs-toggle="tooltip" data-bs-placement="top" title="Reloads provider M3Us, re-parses services, and rebuilds the client M3U."
-                hx-indicator="#dashboard-reload-indicator">
-            <i class="fas fa-sync-alt"></i> Full Reload (Providers & M3U)
-            <span id="dashboard-reload-indicator" class="htmx-indicator spinner-border spinner-border-sm ms-1" role="status" aria-hidden="true"></span>
+    <div id="dashboard-reload-container" class="d-inline-block mb-2">
+        <button id="dashboard-reload-button" class="btn btn-secondary" hx-post="{{ url_for('reload_configuration') }}"
+            hx-target="#flash-messages-container" hx-swap="afterbegin"
+            hx-vals='{"update_providers": "true", "force_discover_sources": "true"}' data-bs-toggle="tooltip"
+            data-bs-placement="top" title="Reloads provider M3Us, re-parses sources, and rebuilds the client M3U."
+            hx-indicator="#dashboard-reload-container">
+            <i class="fas fa-sync-alt"></i> Reload Providers & Sources
         </button>
+        <div id="dashboard-reload-spinner" class="htmx-indicator d-flex align-items-center btn btn-secondary">
+            <div class="spinner-border spinner-border-sm me-2" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <span>Reloading...</span>
+        </div>
+    </div>
+
+    <div id="dashboard-backup-container" class="d-inline-block mb-2">
+        <button id="dashboard-backup-button" class="btn btn-secondary" hx-post="{{ url_for('backup_configuration') }}"
+            hx-target="#flash-messages-container" hx-swap="afterbegin" data-bs-toggle="tooltip" data-bs-placement="top"
+            title="Creates a backup of your current configuration." hx-indicator="#dashboard-backup-container">
+            <i class="fas fa-save"></i> Backup Config
+        </button>
+        <div id="dashboard-backup-spinner" class="htmx-indicator d-flex align-items-center btn btn-secondary">
+            <div class="spinner-border spinner-border-sm me-2" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <span>Backing up...</span>
+        </div>
+    </div>
     </p>
     <p class="text-muted small">
-        Use the "Reload Config" button in the top navigation for a quicker reload of JSON configurations and M3U generation without re-parsing all provider M3Us (if only logical channel definitions or mappings changed).
-        The button above performs a more thorough refresh including fetching all provider M3Us.
+        Use the "Reload Config" button in the top navigation for a quicker reload of JSON configurations and M3U
+        generation without re-parsing all provider M3Us.
+        The button above performs a more thorough refresh including fetching all provider M3Us and re-discovering all
+        sources ahead of schedule.
     </p>
 </div>
 
@@ -67,7 +92,7 @@
     // Initialize Bootstrap tooltips
     var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
     var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-      return new bootstrap.Tooltip(tooltipTriggerEl)
+        return new bootstrap.Tooltip(tooltipTriggerEl)
     })
 </script>
 {% endblock %}

@@ -1,0 +1,38 @@
+<div class="card">
+    <div class="card-header">
+        Map Sources to "<span id="channel-name-header">{{ channel.logical_channel_title or 'New Channel'
+            }}</span>"
+        {% if channel_metrics.discovered_mappings != channel_metrics.enabled_mappings %}
+        <button class="btn btn-sm btn-danger ms-2 float-end"
+            hx-delete="{{ url_for('ui_remove_dead_mappings', logical_channel_id=channel.logical_channel_id) }}"
+            hx-target="#source-list-container">
+            <i class="fas fa-trash-alt"></i> Remove Dead Mappings ({{ channel_metrics.enabled_mappings -
+            channel_metrics.discovered_mappings }})
+        </button>
+        {% endif %}
+    </div>
+    <div class="card-body">
+
+        <div id="source-search-wrapper">
+            <p class="small text-muted">
+                If your channel wasn't pre-defined or you want a different filter, use the search below (tip: separate
+                multiple search
+                phrases with OR, e.g., "Title OR 3 Word Title OR Other Title"):
+            </p>
+            <div class="input-group mb-3">
+                <input type="search" class="form-control" id="source-search-input" name="search_query"
+                    value="{{ search_query or '' }}" placeholder="Search all available sources..."
+                    hx-get="{{ url_for('ui_logical_channel_form', logical_channel_id=channel.logical_channel_id) }}"
+                    hx-trigger="keyup changed delay:500ms, search" hx-target="#source-list-container"
+                    hx-indicator="#search-spinner">
+                <span id="search-spinner" class="input-group-text htmx-indicator">
+                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                </span>
+            </div>
+        </div>
+
+        <div id="source-list-container">
+            {% include '_source_list_content.html' %}
+        </div>
+    </div>
+</div>

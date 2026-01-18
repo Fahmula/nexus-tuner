@@ -1,22 +1,27 @@
 <div id="form-content-wrapper">
     <div class="mb-3" style="position: relative;">
-        <label for="display_name" class="form-label">Display Name</label>
-        <input type="text" class="form-control" id="display_name" name="display_name"
-            value="{{ channel.display_name if channel else '' }}" required
-            {# SIMPLIFIED: Only targets its own suggestion box now. #}
-            hx-get="{{ url_for('ui_channel_suggest') }}"
-            hx-trigger="input changed delay:500ms, search"
-            hx-target="#suggestion-box"
-            hx-indicator="#search-indicator"
-            autocomplete="off">
-        <div class="form-text">Start typing to search for a pre-defined channel. <span id="search-indicator" class="htmx-indicator spinner-border spinner-border-sm"></span></div>
-        <div id="suggestion-box" class="list-group mt-1 position-absolute" style="z-index: 1000; width: 100%;"></div>
+        <label for="logical_channel_title" class="form-label">Channel Title</label>
+        <input type="text" class="form-control" id="logical_channel_title" name="logical_channel_title"
+            value="{{ channel.logical_channel_title if channel else '' }}" required
+            hx-get="{{ url_for('ui_channel_suggest', logical_channel_id=channel.logical_channel_id if channel else None) }}"
+            hx-trigger="input changed delay:100ms, search" hx-target="#channel-title-suggestion-box"
+            hx-indicator="#search-indicator" autocomplete="off">
+        <div class="form-text">Start typing to search for a pre-defined channel. <span id="search-indicator"
+            class="htmx-indicator spinner-border spinner-border-sm"></span></div>
+        <div id="channel-title-suggestion-box" class="list-group mt-1 position-absolute" style="z-index: 1000; width: 100%;"></div>
     </div>
 
-    <div class="mb-3">
+    <div class="mb-3" style="position: relative;">
         <label for="channel_num" class="form-label">Channel Number</label>
         <input type="text" class="form-control" id="channel_num" name="channel_num"
-            value="{{ channel.channel_num if channel else '' }}" required>
+            value="{{ channel.channel_num if channel else '' }}" required
+            hx-get="{{ url_for('ui_channel_suggest', logical_channel_id=channel.logical_channel_id if channel else None) }}"
+            hx-trigger="input changed delay:100ms, search" hx-target="#channel-num-suggestion-box"
+            hx-indicator="#channel-num-search-indicator" autocomplete="off">
+        <div class="form-text">Start typing to search for a pre-defined channel. <span id="channel-num-search-indicator"
+            class="htmx-indicator spinner-border spinner-border-sm"></span></div>
+        <div id="channel-num-suggestion-box" class="list-group mt-1 position-absolute" style="z-index: 1000; width: 100%;">
+        </div>
     </div>
 
     <div class="mb-3">
@@ -25,13 +30,58 @@
             value="{{ channel.group_title if channel else 'Uncategorized' }}">
     </div>
     <div class="mb-3">
-        <label for="tvg_id" class="form-label">EPG ID (tvg-id) (Optional)</label>
+        <label for="tvg_id" class="form-label">TVG ID (Optional)</label>
         <input type="text" class="form-control" id="tvg_id" name="tvg_id"
             value="{{ channel.tvg_id if channel else '' }}">
     </div>
     <div class="mb-3">
-        <label for="tvg_logo" class="form-label">Logo URL (Optional)</label>
-        <input type="url" class="form-control" id="tvg_logo" name="tvg_logo"
-            value="{{ channel.tvg_logo if channel else '' }}">
+        <div class="d-flex align-items-center gap-2">
+            <label for="tvg_logo" class="form-label mb-0">Logo URL (Optional)</label>
+    
+            <img id="tvg_logo_preview" src=""
+                data-initial-src="{{ channel.tvg_logo if channel and channel.tvg_logo else '' }}" alt="logo" class="d-none"
+                style="max-height:20px; max-width:40px; object-fit:contain;" onerror="this.classList.add('d-none')"
+                loading="lazy">
+        </div>
+    
+        <div class="mt-2">
+            <input type="url" class="form-control" id="tvg_logo" name="tvg_logo"
+                value="{{ channel.tvg_logo if channel else '' }}">
+        </div>
+    
+        <div class="form-text">Leave blank to use the first logo available starting with the highest priority source.</div>
     </div>
 </div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const input = document.getElementById('tvg_logo');
+        const preview = document.getElementById('tvg_logo_preview');
+        if (!input || !preview) return;
+
+        const LOAD_DELAY = 300;
+        let timer = null;
+
+        function schedulePreviewLoad() {
+            clearTimeout(timer);
+            timer = setTimeout(() => {
+                const url = input.value.trim();
+                if (!url) {
+                    preview.classList.add('d-none');
+                    preview.src = '';
+                    return;
+                }
+                preview.src = url;
+                preview.classList.remove('d-none');
+            }, LOAD_DELAY);
+        }
+        input.addEventListener('input', schedulePreviewLoad);
+        input.addEventListener('keydown', () => clearTimeout(timer));
+
+        const initial = preview.dataset.initialSrc || input.value || '';
+        if (initial.trim()) {
+            preview.src = initial.trim();
+            preview.classList.remove('d-none');
+        }
+    });
+</script>

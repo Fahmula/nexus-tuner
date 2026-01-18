@@ -1,6 +1,6 @@
 {% for s in suggestions %}
 <a href="#" class="list-group-item list-group-item-action"
-   hx-get="{{ url_for('ui_channel_populate_from_suggestion', num=s.num, title=s.title, group=s.group) }}"
+   hx-get="{{ url_for('ui_channel_populate_from_suggestion', logical_channel_id=logical_channel_id, num=s.num, title=s.title, group=s.group) }}"
    hx-target="#form-content-wrapper"
    hx-swap="innerHTML">
    <strong>{{ s.title }}</strong> <small class="text-muted">({{ s.num }} - {{ s.group }})</small>

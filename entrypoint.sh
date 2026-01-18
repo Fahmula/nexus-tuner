@@ -15,7 +15,7 @@ run_signal_aware() {
     pid_to_kill=$$
 }
 
-run_signal_aware gunicorn -w 1 --threads 4 -b "0.0.0.0:${NEXUS_PORT}" app:app
+run_signal_aware uvicorn app:app --workers 1 --log-level warning --host 0.0.0.0 --port "${NEXUS_PORT}"
 exit_code=$?
 
 echo "Exiting with code ${exit_code}"
