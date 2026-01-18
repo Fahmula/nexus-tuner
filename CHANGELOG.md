@@ -1,5 +1,16 @@
 # [3.0.0](https://github.com/Fahmula/nexus-tuner/compare/v2.0.0...v3.0.0) (2026-01-18)
 
+### ⚠️ Breaking Changes
+
+* **core:** migrate streaming engine from a threading-based model to a fully asynchronous architecture
+
+### Features
+
+* **async:** introduce asynchronous configuration, logging, and slot management
+* **stream:** support multiple stream types, including MPEG-TS
+* **ui:** improve stream control, visibility, and interaction flows
+* **core:** refactor application structure and update dependencies for improved maintainability and performance
+
 # [3.0.0-rc.2](https://github.com/Fahmula/nexus-tuner/compare/v3.0.0-rc.1...v3.0.0-rc.2) (2025-10-15)
 
 
