@@ -1,3 +1,10 @@
+## [3.0.1](https://github.com/Fahmula/nexus-tuner/compare/v3.0.0...v3.0.1) (2026-01-18)
+
+
+### Bug Fixes
+
+* **changelog:** add v3.0.0 release notes ([7fc350a](https://github.com/Fahmula/nexus-tuner/commit/7fc350a5771397f2851597593bd0f05b76feb540))
+
 # [3.0.0](https://github.com/Fahmula/nexus-tuner/compare/v2.0.0...v3.0.0) (2026-01-18)
 
 ### ⚠️ Breaking Changes
