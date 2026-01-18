@@ -1,3 +1,5 @@
+# [3.0.0](https://github.com/Fahmula/nexus-tuner/compare/v2.0.0...v3.0.0) (2026-01-18)
+
 # [3.0.0-rc.2](https://github.com/Fahmula/nexus-tuner/compare/v3.0.0-rc.1...v3.0.0-rc.2) (2025-10-15)
 
 
