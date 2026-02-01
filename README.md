@@ -94,6 +94,7 @@ Here are all the available environment variables:
 | :------------------------------------- | :------------------------------------------------------------------------------------------------------ | :------------------------------------ |
 | **`NEXUS_CONFIG_DIR`** (Required)      | The directory where `NexusTuner` will store its configuration files.                                    | `/path/to/config/folder/nexus-tuner`  |
 | **`NEXUS_URL`** (Required)             | The full URL of your `NexusTuner` instance, without the port. Used for UI and building playlist URLs.   | `http://192.168.1.100`                |
+| **`NEXUS_STREAM_ENGINE`** (Required)   | The stream processing engine to use. Options are `ffmpeg` or `vlc`.                                     | `ffmpeg`                              |
 | **`NEXUS_FFMPEG_PATH`** (Required)     | The path to the FFmpeg executable on your system. Used for processing streams.                          | `/usr/bin/ffmpeg`                     |
 | `NEXUS_VLC_PATH`                       | The path to the VLC executable on your system. Used for processing streams.                             | `/usr/bin/vlc`                        |
 | `NEXUS_PORT`                           | The internal port the application listens on.                                                           | `4040`                                |
