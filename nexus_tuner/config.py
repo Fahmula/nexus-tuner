@@ -34,7 +34,7 @@ class Config:
         'tmp_dir', 'hls_segment_duration', 'segment_prune_timeout', 'latest_segment_timeout', 'hls_playlist_length',
         'process_start_timeout', 'process_inactivity_timeout', 'ffmpeg_path', 'ffprobe_path', 'process_logs_dir',
         'emby_url', 'emby_api_key', 'jellyfin_url', 'jellyfin_api_key', 'ghost_check_interval',
-        'file_lock', '_cleaning_up_process_logs'
+        'file_lock', '_cleaning_up_process_logs', 'remove_captions_and_subtitles'
     )
     
     def __init__(self) -> None:
@@ -88,6 +88,11 @@ class Config:
         self.stream_engine: Final[StreamEngine] = StreamEngine(stream_engine)
         if self.stream_engine == StreamEngine.VLC and not self.vlc_path:
             raise ValueError("NEXUS_STREAM_ENGINE is set to VLC but NEXUS_VLC_PATH is not set.")
+
+        remove_captions_and_subtitles = os.getenv("NEXUS_REMOVE_CAPTIONS_AND_SUBTITLES", "false").lower()
+        if remove_captions_and_subtitles not in ("true", "false"):
+            raise ValueError("NEXUS_REMOVE_CAPTIONS_AND_SUBTITLES must be 'true' or 'false'.")
+        self.remove_captions_and_subtitles: Final[bool] = remove_captions_and_subtitles == "true"
 
         # --- Logging ---
 

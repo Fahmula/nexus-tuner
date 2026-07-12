@@ -410,7 +410,14 @@
 
     <footer class="footer mt-auto py-3 bg-body-tertiary border-top">
         <div class="container text-center">
-            <span class="text-muted">NexusTuner v{{ app_version }} © {{ now.year }}</span>
+            <span class="text-muted">
+                NexusTuner
+                <a href="https://github.com/Fahmula/nexus-tuner/releases/tag/v{{ app_version }}" target="_blank"
+                    rel="noopener noreferrer">
+                    v{{ app_version }}
+                </a>
+                © {{ now.year }}
+            </span>
         </div>
     </footer>
 

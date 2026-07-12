@@ -38,7 +38,13 @@ async def create_hls_ffmpeg_command(stream_manager: StreamManager, config: Confi
         "-reconnect_on_network_error", "1", "-reconnect_on_http_error", "5xx",
         "-i", input_url,
         "-codec", "copy",
-        "-map", "0:v", "-map", "0:a", "-c:s", "copy",
+        "-map", "0:v:0", "-map", "0:a?",
+    ]
+    if config.remove_captions_and_subtitles:
+        command.extend(["-sn", "-bsf:v", "filter_units=remove_types=6"])
+    else:
+        command.extend(["-map", "0:s?", "-c:s", "copy"])
+    command.extend([
         "-f", "hls",
         "-hls_time", str(config.hls_segment_duration),
         "-hls_list_size", str(config.hls_playlist_length),
@@ -46,7 +52,7 @@ async def create_hls_ffmpeg_command(stream_manager: StreamManager, config: Confi
         "-hls_segment_filename", str(get_segment_path(channel_hls_dir, "segment_%05d.ts")),
         "-start_number", str(start_number),
         str(get_playlist_path(channel_hls_dir))
-    ]
+    ])
     return command, channel_hls_dir
 
 
@@ -63,9 +69,13 @@ def create_mpegts_ffmpeg_command(config: Config, input_url: str) -> list[str]:
         "-i", input_url,
         "-c:v", "copy",
         "-c:a", "aac", "-ac", "2", "-af", "aresample=async=1:first_pts=0",
-        "-map", "0:v", "-map", "0:a", "-c:s", "copy",
-        "-f", "mpegts", "pipe:1"
+        "-map", "0:v:0", "-map", "0:a?",
     ]
+    if config.remove_captions_and_subtitles:
+        command.extend(["-sn", "-bsf:v", "filter_units=remove_types=6"])
+    else:
+        command.extend(["-map", "0:s?", "-c:s", "copy"])
+    command.extend(["-f", "mpegts", "pipe:1"])
     return command
 
 
@@ -79,8 +89,12 @@ async def create_hls_vlc_command(stream_manager: StreamManager, config: Config, 
     Log.debug(Label.STREAM, f"{video_name} {stream_info}: Starting HLS stream at segment number {start_number} in directory '{channel_hls_dir}'", (VideoType.HLS, StreamEngine.VLC))
 
     segment_format = "segment_#####.ts"
-    command = [
-        str(config.vlc_path),
+    command = [str(config.vlc_path)]
+    if config.remove_captions_and_subtitles:
+        command.extend(["--no-sout-spu"])
+    else:
+        command.extend(["--sout-spu"])
+    command.extend([
         input_url,
         "-I", "dummy",
         "--sout", f"#std{{mux=ts{{use-key-frames}},access=livehttp{{seglen={config.hls_segment_duration},numsegs={config.hls_playlist_length},initial-segment-number={start_number},delsegs=true,index={get_playlist_path(channel_hls_dir)},index-url={segment_format}}},dst={get_segment_path(channel_hls_dir, segment_format)}}}",
@@ -88,14 +102,18 @@ async def create_hls_vlc_command(stream_manager: StreamManager, config: Config, 
         "--network-caching", "1000",
         "--http-reconnect",
         "--http-user-agent", NEXUS_TUNER_USER_AGENT,
-    ]
+    ])
     return command, channel_hls_dir
 
 
 def create_mpegts_vlc_command(config: Config, input_url: str) -> list[str]:
     """Constructs the VLC command list to output a continuous MPEGTS stream using VLC."""
-    command = [
-        str(config.vlc_path),
+    command = [str(config.vlc_path)]
+    if config.remove_captions_and_subtitles:
+        command.extend(["--no-sout-spu"])
+    else:
+        command.extend(["--sout-spu"])
+    command.extend([
         input_url,
         "-I", "dummy",
         "--sout", "#std{mux=ts,access=file,dst=-}",
@@ -103,7 +121,7 @@ def create_mpegts_vlc_command(config: Config, input_url: str) -> list[str]:
         "--network-caching", "1000",
         "--http-reconnect",
         "--http-user-agent", NEXUS_TUNER_USER_AGENT,
-    ]
+    ])
     return command
 
 

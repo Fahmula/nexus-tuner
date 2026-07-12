@@ -98,6 +98,7 @@ Here are all the available environment variables:
 | **`NEXUS_FFMPEG_PATH`** (Required)     | The path to the FFmpeg executable on your system. Used for processing streams.                          | `/usr/bin/ffmpeg`                     |
 | `NEXUS_VLC_PATH`                       | The path to the VLC executable on your system. Used for processing streams.                             | `/usr/bin/vlc`                        |
 | `NEXUS_PORT`                           | The internal port the application listens on.                                                           | `4040`                                |
+| `NEXUS_REMOVE_CAPTIONS_AND_SUBTITLES`               | Whether to remove subtitles from the processed streams. Options are `true` or `false`.                  | `false`                                |
 | `NEXUS_PROCESS_INACTIVITY_TIMEOUT`     | Seconds of inactivity before a stream is stopped. Inactive streams will be pruned earlier when needed.  | `900`                                 |
 | `NEXUS_PROCESS_LOGS_RETENTION_SECONDS` | How long to keep process logs in seconds.                                                               | `86400`                               |
 | `NEXUS_LOG_BACKUP_COUNT`               | Number of days of log backups to keep.                                                                  | `7`                                   |
@@ -184,7 +185,3 @@ venv\Scripts\pip install -r requirements.txt  # Windows
 ## Development
 
 Contributions are welcome! This project follows the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) specification for all commit messages to ensure a clear and automated versioning and changelog process.
-
-## License
-
-This project is licensed under the MIT License.
