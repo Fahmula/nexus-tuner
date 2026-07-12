@@ -8,7 +8,7 @@ import math
 import numpy as np
 import random
 import soundfile as sf  # type: ignore
-from scipy.signal import fftconvolve  # type: ignore
+from scipy.signal import butter, fftconvolve, sosfiltfilt, stft  # type: ignore
 
 from nexus_tuner.config import Config
 from nexus_tuner.handler import ChannelHandler
@@ -48,8 +48,15 @@ OFFSET_CLIP_DURATION = 5
 OFFSET_GRACE = 1
 OFFSET_WAIT_INTERVAL = 120
 OFFSET_CONF_THRESH: Final[float] = 0.8  # Should equate to a few seconds off the true value
+OFFSET_ROUND_VARIANCE_WARN: Final[float] = 2.0
+OFFSET_ANALYSIS_WINDOW: Final[float] = 2.5
+OFFSET_ANALYSIS_STEP: Final[float] = 0.5
+OFFSET_MATCH_CLUSTER_TOLERANCE: Final[float] = 0.125
+OFFSET_FINE_SEARCH_PAD: Final[float] = 3.0
 OFFSET_RETRY_INTERVAL: Final[int] = 5
 OFFSET_RETRY_TIMEOUT: Final[int] = 60 * 60
+
+OFFSET_BANDPASS_SOS: np.ndarray = cast(np.ndarray, butter(4, (80, 3500), btype="bandpass", fs=OFFSET_SR, output="sos"))
 
 
 class QualityMonitor:
@@ -559,69 +566,209 @@ class QualityMonitor:
             }
         self._quality_scores = new_quality_scores
 
-    def _load_and_envelope(self, path: Path) -> np.ndarray:
-        data, sr = sf.read(path, dtype='int16')  # type: ignore
+    def _load_audio(self, path: Path) -> np.ndarray:
+        data, sr = sf.read(path, dtype='float32')  # type: ignore
         if sr != OFFSET_SR:
             raise ValueError(f"Expected {OFFSET_SR}Hz audio, got {sr}Hz")
-        y = (data.astype(np.float32) / 32768.0)  # type: ignore
-        if len(y) < OFFSET_FRAME_LEN:  # type: ignore
-            return np.array([np.sqrt(np.mean(y * y) + 1e-12)], dtype=np.float32)  # type: ignore
-        framed = np.lib.stride_tricks.sliding_window_view(y, OFFSET_FRAME_LEN)[::OFFSET_HOP]  # type: ignore
-        rms = np.sqrt(np.mean(framed * framed, axis=1) + 1e-12).astype(np.float32)
-        # optionally trim leading/trailing zeros or near-silence? keep as-is but z-score
-        if np.std(rms) > 1e-9:
-            rms = (rms - rms.mean()) / (rms.std() + 1e-12)
-        return rms
+        y = np.asarray(data, dtype=np.float32)
+        if y.ndim > 1:
+            y = np.mean(y, axis=1, dtype=np.float32)
+        return cast(np.ndarray, np.atleast_1d(np.nan_to_num(y, nan=0.0, posinf=0.0, neginf=0.0)).astype(np.float32, copy=False))
 
-    def _match_clip_in_reference(self, clip: np.ndarray, reference: np.ndarray) -> tuple[float, float]:
-        """Returns (match_time_seconds, confidence) or (nan, 0.0) if no match found."""
-        M = len(clip)
-        N = len(reference)
-        if M == 0 or N == 0 or N < M:
-            return float("nan"), 0.0
+    def _prepare_alignment_audio(self, samples: np.ndarray) -> np.ndarray:
+        y = np.asarray(samples, dtype=np.float32)
+        if y.size == 0:
+            return y
+        y = y - float(np.mean(y))
+        if y.size >= OFFSET_FRAME_LEN * 2:
+            y = sosfiltfilt(OFFSET_BANDPASS_SOS, y).astype(np.float32)
+        y = np.diff(y, prepend=y[0]).astype(np.float32)
+        norm = float(np.sqrt(np.mean(y * y) + 1e-12))
+        if norm <= 1e-9:
+            return y
+        return y / norm
 
-        # raw valid correlation r[k] = sum_{i=0..M-1} ref[k+i] * tpl[M-1-i]
-        corr = fftconvolve(reference, clip[::-1], mode='valid')  # length = N-M+1
+    def _build_alignment_features(self, samples: np.ndarray) -> np.ndarray:
+        if samples.size < OFFSET_FRAME_LEN:
+            value = float(np.sqrt(np.mean(samples * samples) + 1e-12)) if samples.size else 0.0
+            return np.array([[value]], dtype=np.float32)
+        freqs, _, spectrum = cast(
+            tuple[np.ndarray, np.ndarray, np.ndarray],
+            stft(
+                samples,
+                fs=OFFSET_SR,
+                window='hann',
+                nperseg=OFFSET_FRAME_LEN * 2,
+                noverlap=(OFFSET_FRAME_LEN * 2) - OFFSET_HOP,
+                boundary='zeros',
+                padded=False,
+            )
+        )
+        if spectrum.size == 0:
+            value = float(np.sqrt(np.mean(samples * samples) + 1e-12))
+            return np.array([[value]], dtype=np.float32)
+        magnitude = np.abs(spectrum).astype(np.float32)
+        log_magnitude = np.log1p(magnitude)
 
-        # Template energy
-        tpl_energy = np.sum(clip * clip)
-        if tpl_energy < 1e-12:
-            return float("nan"), 0.0
-
-        # Running energy of reference windows of length M:
-        ref_sq = reference * reference
-        # convolve with ones of length M to get windowed sum of squares
-        window = np.ones(M, dtype=np.float64)
-        ref_window_energy = np.convolve(ref_sq, window, mode='valid')  # length N-M+1
-
-        # normalization denominator per alignment: sqrt(tpl_energy * window_energy)
-        denom = np.sqrt(tpl_energy * (ref_window_energy + 1e-16))
-        corr_norm = corr / denom
-
-        # find peak
-        peak_idx = int(np.argmax(np.abs(corr_norm)))
-        peak_val = float(corr_norm[peak_idx])
-
-        # parabolic refinement on corr_norm (use the absolute correlation but keep sign)
-        # ensure neighbors exist
-        if 0 < peak_idx < (len(corr_norm) - 1):
-            y0 = corr_norm[peak_idx - 1]
-            y1 = corr_norm[peak_idx]
-            y2 = corr_norm[peak_idx + 1]
-            # parabolic interpolation formula for vertex offset
-            denom_par = (y0 - 2 * y1 + y2)
-            if abs(denom_par) > 1e-12:
-                delta = 0.5 * (y0 - y2) / denom_par
+        features: list[np.ndarray] = []
+        for low_hz, high_hz in ((80, 250), (250, 500), (500, 1000), (1000, 2000), (2000, 3500)):
+            band_mask = (freqs >= low_hz) & (freqs < high_hz)
+            if np.any(band_mask):
+                features.append(np.mean(log_magnitude[band_mask], axis=0).astype(np.float32))
             else:
-                delta = 0.0
+                features.append(cast(np.ndarray, np.zeros(log_magnitude.shape[1], dtype=np.float32)))
+
+        flux = np.zeros(log_magnitude.shape[1], dtype=np.float32)
+        if log_magnitude.shape[1] > 1:
+            flux[1:] = np.mean(np.maximum(np.diff(log_magnitude, axis=1), 0.0), axis=0).astype(np.float32)
+        centroid_den = np.sum(magnitude, axis=0) + 1e-12
+        centroid = (np.sum(freqs[:, None] * magnitude, axis=0) / centroid_den).astype(np.float32)
+        energy = np.sqrt(np.mean(magnitude * magnitude, axis=0) + 1e-12).astype(np.float32)
+        features.extend((flux, centroid, energy))
+
+        feature_matrix = np.vstack(features).astype(np.float32)
+        for idx in range(feature_matrix.shape[0]):
+            row = cast(np.ndarray, feature_matrix[idx])
+            mean = float(np.mean(row))
+            std = float(np.std(row))
+            if std > 1e-6:
+                feature_matrix[idx] = (row - mean) / (std + 1e-12)
+            else:
+                feature_matrix[idx].fill(0.0)
+        return feature_matrix
+
+    def _normalized_cross_correlation(self, template: np.ndarray, reference: np.ndarray) -> np.ndarray:
+        template = np.asarray(template, dtype=np.float32)
+        reference = np.asarray(reference, dtype=np.float32)
+        template_len = len(template)
+        reference_len = len(reference)
+        if template_len == 0 or reference_len == 0 or reference_len < template_len:
+            return np.zeros(0, dtype=np.float32)
+        template_energy = float(np.sum(template * template))
+        if template_energy < 1e-12:
+            return np.zeros(reference_len - template_len + 1, dtype=np.float32)
+        corr = fftconvolve(reference, template[::-1], mode='valid')
+        reference_sq = reference * reference
+        reference_cumsum = np.concatenate((np.array([0.0], dtype=np.float64), np.cumsum(reference_sq, dtype=np.float64)))
+        reference_window_energy = reference_cumsum[template_len:] - reference_cumsum[:-template_len]
+        denom = np.sqrt(template_energy * np.maximum(reference_window_energy, 1e-12))
+        return np.nan_to_num(corr / denom, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
+
+    def _second_peak(self, values: np.ndarray, peak_idx: int, exclusion_radius: int) -> float:
+        if values.size == 0:
+            return 0.0
+        keep = np.ones(values.shape[0], dtype=bool)
+        start = max(0, peak_idx - exclusion_radius)
+        end = min(values.shape[0], peak_idx + exclusion_radius + 1)
+        keep[start:end] = False
+        if not np.any(keep):
+            return 0.0
+        return float(np.max(values[keep]))
+
+    def _match_feature_sequence(self, clip_features: np.ndarray, reference_features: np.ndarray) -> tuple[float, float]:
+        if clip_features.size == 0 or reference_features.size == 0:
+            return float("nan"), 0.0
+        max_rows = min(clip_features.shape[0], reference_features.shape[0])
+        correlations = [
+            self._normalized_cross_correlation(clip_features[row_idx], reference_features[row_idx])
+            for row_idx in range(max_rows)
+        ]
+        correlations = [corr for corr in correlations if corr.size > 0]
+        if not correlations:
+            return float("nan"), 0.0
+        min_len = min(len(corr) for corr in correlations)
+        composite = np.mean(np.vstack([corr[:min_len] for corr in correlations]), axis=0)
+        peak_idx = int(np.argmax(composite))
+        peak_val = float(composite[peak_idx])
+        second_peak = self._second_peak(composite, peak_idx, max(1, int(1.0 / (OFFSET_HOP / OFFSET_SR))))
+        prominence = max(0.0, peak_val - second_peak)
+        confidence = min(1.0, max(0.0, peak_val) * (1.0 + prominence))
+        return (peak_idx * OFFSET_HOP) / float(OFFSET_SR), confidence
+
+    def _refine_match_time(self, clip: np.ndarray, reference: np.ndarray, coarse_time: float) -> tuple[float, float]:
+        clip_len = len(clip)
+        reference_len = len(reference)
+        if clip_len == 0 or reference_len < clip_len:
+            return float("nan"), 0.0
+        coarse_index = int(round(coarse_time * OFFSET_SR))
+        pad_samples = int(round(OFFSET_FINE_SEARCH_PAD * OFFSET_SR))
+        search_start = max(0, coarse_index - pad_samples)
+        search_end = min(reference_len, coarse_index + clip_len + pad_samples)
+        local_reference = reference[search_start:search_end]
+        corr = self._normalized_cross_correlation(clip, local_reference)
+        if corr.size == 0:
+            return float("nan"), 0.0
+        peak_idx = int(np.argmax(corr))
+        peak_val = float(corr[peak_idx])
+        if 0 < peak_idx < (len(corr) - 1):
+            y0 = float(corr[peak_idx - 1])
+            y1 = float(corr[peak_idx])
+            y2 = float(corr[peak_idx + 1])
+            denom = y0 - (2.0 * y1) + y2
+            delta = 0.5 * (y0 - y2) / denom if abs(denom) > 1e-12 else 0.0
         else:
             delta = 0.0
+        refined_index = search_start + peak_idx + delta
+        second_peak = self._second_peak(corr, peak_idx, max(1, int(0.5 * OFFSET_SR)))
+        prominence = max(0.0, peak_val - second_peak)
+        confidence = min(1.0, max(0.0, peak_val) * (1.0 + prominence))
+        return refined_index / float(OFFSET_SR), confidence
 
-        # effective fractional index (frames)
-        frac_idx = peak_idx + delta
-        # convert to seconds: (frame_index * hop_samples) / sr
-        match_time_seconds = (frac_idx * OFFSET_HOP) / float(OFFSET_SR)
-        return match_time_seconds, peak_val
+    def _match_clip_in_reference(self, clip: np.ndarray, reference: np.ndarray) -> tuple[float, float]:
+        """Returns (clip_start_time_seconds_in_reference, confidence) or (nan, 0.0) if no match found."""
+        clip_wave = self._prepare_alignment_audio(clip)
+        reference_wave = self._prepare_alignment_audio(reference)
+        if clip_wave.size == 0 or reference_wave.size < clip_wave.size:
+            return float("nan"), 0.0
+
+        reference_features = self._build_alignment_features(reference_wave)
+        window_samples = min(len(clip_wave), max(int(round(OFFSET_ANALYSIS_WINDOW * OFFSET_SR)), OFFSET_FRAME_LEN * 2))
+        step_samples = max(1, int(round(OFFSET_ANALYSIS_STEP * OFFSET_SR)))
+        if len(clip_wave) <= window_samples:
+            window_starts = [0]
+        else:
+            window_starts = list(range(0, len(clip_wave) - window_samples + 1, step_samples))
+            last_start = len(clip_wave) - window_samples
+            if window_starts[-1] != last_start:
+                window_starts.append(last_start)
+
+        estimates: list[tuple[float, float]] = []
+        for window_start in window_starts:
+            window_end = window_start + window_samples
+            clip_window = clip_wave[window_start:window_end]
+            if clip_window.size < OFFSET_FRAME_LEN:
+                continue
+            clip_features = self._build_alignment_features(clip_window)
+            coarse_time, coarse_confidence = self._match_feature_sequence(clip_features, reference_features)
+            if not math.isfinite(coarse_time) or coarse_confidence <= 0.0:
+                continue
+            refined_time, fine_confidence = self._refine_match_time(clip_window, reference_wave, coarse_time)
+            if not math.isfinite(refined_time) or fine_confidence <= 0.0:
+                continue
+            clip_start_estimate = refined_time - (window_start / float(OFFSET_SR))
+            combined_confidence = min(1.0, coarse_confidence * fine_confidence)
+            estimates.append((clip_start_estimate, combined_confidence))
+
+        if not estimates:
+            return float("nan"), 0.0
+
+        best_group: list[tuple[float, float]] = []
+        best_weight = -1.0
+        for center_time, _ in estimates:
+            group = [(time, confidence) for time, confidence in estimates if abs(time - center_time) <= OFFSET_MATCH_CLUSTER_TOLERANCE]
+            weight = sum(confidence for _, confidence in group)
+            if weight > best_weight:
+                best_group = group
+                best_weight = weight
+        if not best_group:
+            return float("nan"), 0.0
+
+        total_weight = sum(confidence for _, confidence in best_group)
+        if total_weight <= 0.0:
+            return float("nan"), 0.0
+        match_time = sum(time * confidence for time, confidence in best_group) / total_weight
+        match_confidence = min(1.0, max(confidence for _, confidence in best_group) * (0.75 + (0.25 * len(best_group) / len(estimates))))
+        return match_time, match_confidence
 
     async def measure_relative_offset_for_channel(self, logical_channel_id: LogicalChannelId) -> bool | None:
         """Measures relative delay between sources mapped to a logical channel."""
@@ -637,6 +784,7 @@ class QualityMonitor:
         if len(mappings) < 2:
             Log.error(Label.QUALITY, f"{stream_name}: At least two mapped sources are required for offset measurement.")
             return
+        missing_offset_source_ids = {mapping["source_id"] for mapping in mappings if mapping["offset"] is None}
 
         def get_ffmpeg_cmd(url: StreamURL, out_path: Path, duration: float = 0, realtime: bool = False) -> list[str]:
             cmd: list[str] = [
@@ -673,15 +821,32 @@ class QualityMonitor:
                     self._full_providers[provider_alias] = False
                 else:
                     self._full_providers[provider_alias] = True
-            if len(valid_source_ids) < 2:
-                Log.error(Label.QUALITY, f"{stream_name}: Not enough sources with available provider slots for offset measurement.")
-                return
             offset_source_ids = {m["source_id"]: m["offset"] for m in mappings if m["offset"] is not None}
-            if offset_source_ids and all(source_id not in offset_source_ids for source_id in valid_source_ids):
-                Log.error(Label.QUALITY, f"{stream_name}: No currently valid sources have existing offset measurements to use as an anchor for new measurements. Unmap then remap sources with a offset to reset its value or retry this analysis.")
-                return
+            if offset_source_ids:
+                if all(source_id not in offset_source_ids for source_id in valid_source_ids):
+                    if not missing_offset_source_ids:
+                        Log.debug(Label.QUALITY, f"{stream_name}: Keeping existing offsets because no anchored source is currently available to remeasure against.")
+                        return True
+                    Log.warn(Label.QUALITY, f"{stream_name}: No currently available source has an existing offset measurement to anchor new sources against, retrying later.")
+                    return False
+            else:
+                if len(valid_source_ids) < 2:
+                    Log.warn(Label.QUALITY, f"{stream_name}: Not enough sources with available provider slots for initial offset measurement, retrying later.")
+                    return False
+            if len(valid_source_ids) < 2:
+                if not missing_offset_source_ids:
+                    Log.debug(Label.QUALITY, f"{stream_name}: Keeping existing offsets because fewer than two sources are currently available.")
+                    return True
+                Log.warn(Label.QUALITY, f"{stream_name}: Fewer than two sources are currently available for offset measurement, retrying later.")
+                return False
             ref_source_id = random.choice(valid_source_ids)
             other_source_ids = [source_id for source_id in valid_source_ids if source_id != ref_source_id]
+            if not other_source_ids:
+                if not missing_offset_source_ids:
+                    Log.debug(Label.QUALITY, f"{stream_name}: Keeping existing offsets because no additional available sources need measuring.")
+                    return True
+                Log.warn(Label.QUALITY, f"{stream_name}: No unmeasured sources are currently available to compare against the reference, retrying later.")
+                return False
             ref_discovered_source = discovered_sources[ref_source_id]
             ref_provider_alias = ref_discovered_source["provider_alias"]
             ref_source_title = ref_discovered_source['display_title'] or ref_discovered_source['tvg_name']
@@ -719,7 +884,7 @@ class QualityMonitor:
                 process: asyncio.subprocess.Process | None = None
                 try:
                     Log.debug(Label.QUALITY, f"{video_name}: Capturing {OFFSET_CLIP_DURATION}s clip...")
-                    audio_path = self.config.get_offset_path(VideoKey(f"{logical_channel_id}_{source_id}"))
+                    audio_path = self.config.get_offset_path(VideoKey(f"{logical_channel_id}_{source_id}_round{round}"))
                     audio_files.append(audio_path)
 
                     process = await asyncio.create_subprocess_exec(*get_ffmpeg_cmd(discovered_source["stream_url"], audio_path, OFFSET_CLIP_DURATION), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
@@ -780,7 +945,7 @@ class QualityMonitor:
             ref_process: asyncio.subprocess.Process | None = None
             try:
                 Log.debug(Label.QUALITY, f"{ref_video_name}: Capturing as reference...")
-                ref_audio_path = self.config.get_offset_path(VideoKey(f"{logical_channel_id}_{ref_source_id}"))
+                ref_audio_path = self.config.get_offset_path(VideoKey(f"{logical_channel_id}_{ref_source_id}_reference"))
                 audio_files.append(ref_audio_path)
                 ref_process = await asyncio.create_subprocess_exec(*get_ffmpeg_cmd(ref_discovered_source["stream_url"], ref_audio_path, 0, realtime=True), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
                 t0 = loop.time()
@@ -859,16 +1024,17 @@ class QualityMonitor:
             max_offset = (loop.time() - t0) + ((OFFSET_CLIP_DURATION + OFFSET_GRACE) * len(other_source_ids))
 
             try:
-                ref_envelope = await asyncio.to_thread(self._load_and_envelope, ref_audio_path)
+                ref_envelope = await asyncio.to_thread(self._load_audio, ref_audio_path)
             except Exception as e:
                 Log.error(Label.QUALITY, f"{ref_video_name}: Failed to load reference audio - {e}")
                 return False
 
             raw_offsets: dict[tuple[SourceId, int], Offset] = {}
             raw_confidences: dict[tuple[SourceId, int], float] = {}
+            raw_match_times: dict[tuple[SourceId, int], float] = {}
             for (source_id, round), (video_name, audio_path, start_offset) in clip_infos.items():
                 try:
-                    clip_envelope = await asyncio.to_thread(self._load_and_envelope, audio_path)
+                    clip_envelope = await asyncio.to_thread(self._load_audio, audio_path)
                 except Exception as e:
                     Log.error(Label.QUALITY, f"{video_name}: Failed to load clip audio - {e}")
                     continue
@@ -885,28 +1051,36 @@ class QualityMonitor:
                     continue
                 raw_offsets[(source_id, round)] = raw_offset
                 raw_confidences[(source_id, round)] = peak_val
+                raw_match_times[(source_id, round)] = match_time
 
             best_offsets: dict[SourceId, Offset] = {}
             best_confidences: dict[SourceId, float] = {}
             for source_id in other_source_ids:
-                if (source_id, 1) not in raw_offsets and (source_id, 2) not in raw_offsets:
+                source_measurements = [(round, raw_offsets[(source_id, round)], raw_confidences[(source_id, round)])
+                                       for round in (1, 2) if (source_id, round) in raw_offsets]
+                if not source_measurements:
                     continue
-                if (source_id, 1) not in raw_offsets:
-                    best_offset = raw_offsets[(source_id, 2)]
-                    best_confidence = raw_confidences[(source_id, 2)]
-                elif (source_id, 2) not in raw_offsets:
-                    best_offset = raw_offsets[(source_id, 1)]
-                    best_confidence = raw_confidences[(source_id, 1)]
-                else:
-                    if raw_confidences[(source_id, 1)] >= raw_confidences[(source_id, 2)]:
-                        best_offset = raw_offsets[(source_id, 1)]
-                        best_confidence = raw_confidences[(source_id, 1)]
-                    else:
-                        best_offset = raw_offsets[(source_id, 2)]
-                        best_confidence = raw_confidences[(source_id, 2)]
+                if len(source_measurements) == 2:
+                    round_1_match_time = raw_match_times[(source_id, 1)]
+                    round_2_match_time = raw_match_times[(source_id, 2)]
+                    round_1_start = clip_infos[(source_id, 1)][2]
+                    round_2_start = clip_infos[(source_id, 2)][2]
+                    round_variance = abs((round_2_match_time - round_1_match_time) - (round_2_start - round_1_start))
+                    if round_2_match_time <= round_1_match_time:
+                        Log.warn(Label.QUALITY, f"{video_names[source_id]}: Clip #2 matched before clip #1 in the reference timeline, using the later-matching result only.")
+                    elif round_variance > OFFSET_ROUND_VARIANCE_WARN:
+                        Log.warn(Label.QUALITY, f"{video_names[source_id]}: Clip matches differ by {round_variance:.3f}s between rounds, using the least delayed measurement.")
+                # Probe startup can only make a short capture appear earlier in the reference, so keep the
+                # largest surviving offset across rounds rather than whichever round had the higher confidence.
+                best_round, best_offset, best_confidence = max(source_measurements, key=lambda measurement: (measurement[1], measurement[2]))
+                if len(source_measurements) == 1:
+                    Log.debug(Label.QUALITY, f"{video_names[source_id]}: Only clip #{best_round} produced a usable offset measurement.")
                 best_offsets[source_id] = best_offset
                 best_confidences[source_id] = best_confidence
             if not best_offsets:
+                if not missing_offset_source_ids:
+                    Log.warn(Label.QUALITY, f"{stream_name}: No new high confidence offset measurements computed, keeping existing offsets.")
+                    return True
                 Log.error(Label.QUALITY, f"{stream_name}: No high confidence offset measurements computed.")
                 return False
           
