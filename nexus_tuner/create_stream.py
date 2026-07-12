@@ -56,13 +56,13 @@ def create_mpegts_ffmpeg_command(config: Config, input_url: str) -> list[str]:
         str(config.ffmpeg_path),
         "-hide_banner", "-loglevel", "info",
         "-user_agent", NEXUS_TUNER_USER_AGENT,
-        "-fflags", "+genpts", "-copyts",
+        "-fflags", "+genpts",
         "-analyzeduration", "1000000", "-probesize", "1000000", "-reconnect", "1",
         "-reconnect_delay_max", "3", "-reconnect_streamed", "1", "-reconnect_at_eof", "1",
         "-reconnect_on_network_error", "1", "-reconnect_on_http_error", "5xx",
         "-i", input_url,
         "-c:v", "copy",
-        "-c:a", "libmp3lame", "-ac", "2",
+        "-c:a", "aac", "-ac", "2", "-af", "aresample=async=1:first_pts=0",
         "-map", "0:v", "-map", "0:a", "-c:s", "copy",
         "-f", "mpegts", "pipe:1"
     ]
