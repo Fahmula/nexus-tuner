@@ -6,6 +6,7 @@ services:
 
     # These variables override the defaults and ones in the .env file.
     # NEXUS_PORT changes the internal port the application listens on.
+    # Everything else is configured on the Settings page of the web UI.
     environment:
       - NEXUS_PORT=4040
   

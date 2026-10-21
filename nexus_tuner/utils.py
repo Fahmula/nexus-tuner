@@ -18,6 +18,8 @@ from logging.handlers import TimedRotatingFileHandler
 import os
 from pathlib import Path
 import re
+import shutil
+import uuid
 from typing import Any, Coroutine, Final, Literal, Mapping, NewType, ReadOnly, TypedDict
 
 import aiofiles
@@ -122,10 +124,17 @@ GroupKey = NewType("GroupKey", str)
 # as it only treats it as an opaque string. Must never contain a SourceId, ';' or '/', see create_video_key().
 SourceChannelId = NewType("SourceChannelId", str)
 
+MediaServerId = NewType("MediaServerId", str)
+
 
 class StreamEngine(StrEnum):
     FFMPEG = "ffmpeg"
     VLC = "vlc"
+
+
+class MediaServerType(StrEnum):
+    EMBY = "emby"
+    JELLYFIN = "jellyfin"
 
 
 class VideoType(StrEnum):
@@ -280,6 +289,32 @@ _PlaylistsDataReadOnly = NewType("_PlaylistsDataReadOnly", Mapping[PlaylistId, P
 type PlaylistsData = PlaylistsDataImpl | _PlaylistsDataReadOnly
 class PlaylistInfoWithId(PlaylistInfo):
     playlist_id: ReadOnly[PlaylistId]
+
+class MediaServerInfo(TypedDict):
+    id: ReadOnly[MediaServerId]
+    name: ReadOnly[str]
+    type: ReadOnly[MediaServerType]
+    url: ReadOnly[str]  # Without a trailing slash, may include a reverse proxy subpath
+    api_key: ReadOnly[str]  # Only empty when the server is disabled
+    enabled: ReadOnly[bool]
+
+class MediaServerStatus(TypedDict):
+    ok: ReadOnly[bool]
+    message: ReadOnly[str]
+    checked_at: ReadOnly[datetime]
+
+class SettingsInfo(TypedDict):
+    nexus_url: ReadOnly[str]  # Empty or a URL without a port, the port comes from NEXUS_PORT
+    ffmpeg_path: ReadOnly[str]
+    vlc_path: ReadOnly[str]  # Empty when VLC is not installed
+    stream_engine: ReadOnly[StreamEngine]
+    remove_captions_and_subtitles: ReadOnly[bool]
+    process_inactivity_timeout: ReadOnly[int]
+    process_logs_retention_seconds: ReadOnly[int]
+    log_backup_count: ReadOnly[int]
+    backup_count: ReadOnly[int]
+    ghost_check_interval: ReadOnly[int]
+    media_servers: ReadOnly[tuple[MediaServerInfo, ...]]
 
 class PlaylistEntry(TypedDict):
     extinf: ReadOnly[str]
@@ -537,6 +572,13 @@ class Log:
         cls.initialized = True
 
     @classmethod
+    def set_backup_count(cls, log_backup_count: int) -> None:
+        """Updates how many rotated log files are kept, applies from the next rotation."""
+        for handler in cls._logger.handlers:
+            if isinstance(handler, TimedRotatingFileHandler):
+                handler.backupCount = log_backup_count
+
+    @classmethod
     def debug(cls, label: Label, msg: str, options: tuple[VideoType, StreamEngine | None] | None = None) -> None:
         """Logs a debug message with the specified label."""
         if options:
@@ -678,6 +720,31 @@ def default_playlist_info(name: str = "Main") -> PlaylistInfo:
         "lc_groups": (),
         "source_groups": (),
         "base_url": BaseURL(""),
+    }
+
+
+MEDIA_SERVER_ID_REGEX: Final[re.Pattern[str]] = re.compile(r'^[a-z0-9]{1,32}$')
+
+
+def create_media_server_id() -> MediaServerId:
+    """Generates a new random media server ID."""
+    return MediaServerId(uuid.uuid4().hex[:8])
+
+
+def default_settings() -> SettingsInfo:
+    """Returns the default settings used for fresh installs and for keys missing from settings.json."""
+    return {
+        "nexus_url": "",
+        "ffmpeg_path": shutil.which("ffmpeg") or "/usr/bin/ffmpeg",
+        "vlc_path": "",
+        "stream_engine": StreamEngine.FFMPEG,
+        "remove_captions_and_subtitles": False,
+        "process_inactivity_timeout": 900,
+        "process_logs_retention_seconds": 86400,
+        "log_backup_count": 7,
+        "backup_count": 30,
+        "ghost_check_interval": 60,
+        "media_servers": (),
     }
 
 

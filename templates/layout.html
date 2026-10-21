@@ -373,6 +373,10 @@
                             href="{{ url_for('ui_playlists_list') }}">Playlists</a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'ui_settings' %}active{% endif %}"
+                            href="{{ url_for('ui_settings') }}">Settings</a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="#" hx-get="/ui/logs/modal/100" hx-target="#modal-log-content"
                             data-bs-toggle="modal" data-bs-target="#modal-logs">
                             Logs
@@ -405,6 +409,15 @@
     </a>
 
     <main class="container mt-4 mb-5 flex-shrink-0">
+        {% if config_problems %}
+        <div class="alert alert-warning d-flex align-items-start" role="alert">
+            <i class="fas fa-exclamation-triangle me-2 mt-1"></i>
+            <div>
+                {% for problem in config_problems %}{{ problem }} {% endfor %}
+                <a href="{{ url_for('ui_settings') }}" class="alert-link">Fix it in Settings.</a>
+            </div>
+        </div>
+        {% endif %}
         <div id="flash-messages-container" hx-trigger="flashMessagesUpdated from:body"
             hx-get="{{ url_for('ui_flash_messages') }}" hx-swap="innerHTML">
             {% include "_flash_messages.html" %}

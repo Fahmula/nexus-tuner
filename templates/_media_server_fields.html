@@ -1,0 +1,61 @@
+{% set field_id = server.id if editing else "new" %}
+<div class="row g-2 align-items-end">
+    <div class="col-md-3">
+        <label for="media-server-name-{{ field_id }}" class="form-label small mb-1">Name</label>
+        <input type="text" class="form-control form-control-sm" id="media-server-name-{{ field_id }}" name="name"
+               value="{{ server.name if server else '' }}" placeholder="e.g. Home Emby" required>
+    </div>
+    <div class="col-md-2">
+        <label for="media-server-type-{{ field_id }}" class="form-label small mb-1">Type</label>
+        <select class="form-select form-select-sm" id="media-server-type-{{ field_id }}" name="type">
+            {% for server_type in media_server_types %}
+            <option value="{{ server_type }}" {% if server and server.type == server_type %}selected{% endif %}>
+                {{ "Emby" if server_type == "emby" else "Jellyfin" }}
+            </option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-3">
+        <label for="media-server-url-{{ field_id }}" class="form-label small mb-1">URL</label>
+        <input type="url" class="form-control form-control-sm font-monospace" id="media-server-url-{{ field_id }}" name="url"
+               value="{{ server.url if server else '' }}" placeholder="http://192.168.1.20:8096" required>
+    </div>
+    <div class="col-md-3">
+        <label for="media-server-api-key-{{ field_id }}" class="form-label small mb-1">API Key</label>
+        <input type="password" class="form-control form-control-sm" id="media-server-api-key-{{ field_id }}" name="api_key"
+               autocomplete="new-password"
+               placeholder="{{ 'Leave empty to keep the saved key' if editing else 'From API Keys in the server dashboard' }}">
+    </div>
+    <div class="col-md-1">
+        <div class="form-check form-switch mb-1">
+            <input class="form-check-input" type="checkbox" role="switch" id="media-server-enabled-{{ field_id }}" name="enabled"
+                   {% if not server or server.enabled %}checked{% endif %}>
+            <label class="form-check-label small" for="media-server-enabled-{{ field_id }}">Enabled</label>
+        </div>
+    </div>
+</div>
+<div class="d-flex flex-wrap align-items-center gap-2 mt-2">
+    <button type="submit" class="btn btn-sm {{ 'btn-success' if editing else 'btn-primary' }}">
+        <i class="fas {{ 'fa-check' if editing else 'fa-plus' }}"></i> {{ "Save" if editing else "Add" }}
+    </button>
+    {% if editing %}
+    <button type="button" class="btn btn-sm btn-outline-secondary"
+            hx-get="{{ url_for('ui_settings_media_server_edit', server_id=server.id, cancel='true') }}"
+            hx-target="closest tr" hx-swap="outerHTML">
+        <i class="fas fa-times"></i> Cancel
+    </button>
+    {% else %}
+    <button type="button" class="btn btn-sm btn-outline-secondary"
+            hx-on:click="document.getElementById('add-media-server-form-container').innerHTML = '';">
+        <i class="fas fa-times"></i> Cancel
+    </button>
+    {% endif %}
+    <button type="button" class="btn btn-sm btn-outline-secondary"
+            hx-post="{{ url_for('ui_settings_media_server_test') }}"
+            hx-include="closest form"
+            hx-target="next .media-server-test-result"
+            hx-swap="innerHTML">
+        <i class="fas fa-plug"></i> Test Connection
+    </button>
+    <span class="media-server-test-result"></span>
+</div>
