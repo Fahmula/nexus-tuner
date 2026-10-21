@@ -6,7 +6,7 @@ from nexus_tuner.config import Config
 from nexus_tuner.handler import ChannelHandler
 from nexus_tuner.mpegts import MPEGTSStream
 from nexus_tuner.stream import StreamManager
-from nexus_tuner.utils import Label, Log, LogicalChannelId, LogicalChannelTitle, StopReason, VideoKey, VideoType
+from nexus_tuner.utils import Label, Log, StopReason, VideoKey, VideoType
 
 # --- Constants ---
 SESSION_MONITOR_STARTUP_DELAY: Final[int] = 15
@@ -23,7 +23,7 @@ class GhostSessionMonitor:
     """
     __slots__ = (
         'config', 'handler', 'stream_manager',
-        'lc_title_to_lc_id_map', 'ghost_monitor_task',
+        'title_to_stream_ids', 'ghost_monitor_task',
     )
     
     def __init__(self, config: Config, handler: ChannelHandler, stream_manager: StreamManager) -> None:
@@ -36,7 +36,7 @@ class GhostSessionMonitor:
         self.handler: ChannelHandler = handler
         self.stream_manager: StreamManager = stream_manager
         
-        self.lc_title_to_lc_id_map: dict[LogicalChannelTitle, LogicalChannelId] = {}
+        self.title_to_stream_ids: dict[str, set[str]] = {}  # Logical channels and source channels can share a title
         self.ghost_monitor_task: asyncio.Task[NoReturn]
 
     @classmethod
@@ -80,21 +80,19 @@ class GhostSessionMonitor:
             results = await asyncio.gather(*tasks)
             all_sessions = [item for sublist in results for item in sublist]
 
-        if not self.lc_title_to_lc_id_map:
+        if not self.title_to_stream_ids:
             return set()
 
         for session_data in all_sessions:
             if (now_playing := session_data.get("NowPlayingItem")) and now_playing.get("Type") == "TvChannel":
-                if (channel_name := now_playing.get("Name")) in self.lc_title_to_lc_id_map:
-                    lc_id = self.lc_title_to_lc_id_map[channel_name]
-                    active_lc_ids.add(lc_id)
+                if (channel_name := now_playing.get("Name")) in self.title_to_stream_ids:
+                    active_lc_ids |= self.title_to_stream_ids[channel_name]
         
         return active_lc_ids
 
     async def _check_for_ghost_sessions(self) -> None:
         """The main logic loop to find and terminate ghost streams."""
-        self.lc_title_to_lc_id_map = {channel_data["logical_channel_title"]: lc_id
-                    for lc_id, channel_data in (await self.handler.copy_client_channels()).items()}
+        self.title_to_stream_ids = await self.handler.get_stream_title_map()
 
         try:
             legitimately_active_lc_ids = await self._get_legitimate_stream_ids()

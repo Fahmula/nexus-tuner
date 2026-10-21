@@ -11,6 +11,7 @@ This design allows the most dangerous operations to be clearly marked and the re
 
 import asyncio
 from datetime import datetime
+import hashlib
 from enum import StrEnum
 import logging
 from logging.handlers import TimedRotatingFileHandler
@@ -74,7 +75,6 @@ M3UURL = NewType("M3UURL", str)
 MaxStreams = NewType("MaxStreams", int)
 ActiveStreams = NewType("ActiveStreams", int)
 AvailableStreams = NewType("AvailableStreams", int)
-MainM3UPlaylist = NewType("MainM3UPlaylist", str)
 
 LogicalChannelId = NewType("LogicalChannelId", str)
 LogicalChannelTitle = NewType("LogicalChannelTitle", str)
@@ -114,6 +114,14 @@ TVGLogo = NewType("TVGLogo", str)
 ReaderId = NewType("ReaderId", int)
 SegmentNum = NewType("SegmentNum", int)
 
+PlaylistId = NewType("PlaylistId", str)
+PlaylistName = NewType("PlaylistName", str)
+BaseURL = NewType("BaseURL", str)
+GroupKey = NewType("GroupKey", str)
+# Source channels are streamed like logical channels, the id is passed to the stream pipeline as a LogicalChannelId
+# as it only treats it as an opaque string. Must never contain a SourceId, ';' or '/', see create_video_key().
+SourceChannelId = NewType("SourceChannelId", str)
+
 
 class StreamEngine(StrEnum):
     FFMPEG = "ffmpeg"
@@ -123,6 +131,10 @@ class StreamEngine(StrEnum):
 class VideoType(StrEnum):
     HLS = "hls"
     MPEGTS = "mpegts"
+
+class LCGroupMode(StrEnum):
+    INCLUDE_ALL_EXCEPT = "include_all_except"
+    ONLY_INCLUDE = "only_include"
 
 class JobName(StrEnum):
     BACKUP = "backup"
@@ -233,6 +245,55 @@ class ClientChannelInfo(LogicalChannelInfo):
 ClientChannelInfosImpl = NewType("ClientChannelInfosImpl", dict[LogicalChannelId, ClientChannelInfo])
 _ClientChannelInfosReadOnly = NewType("_ClientChannelInfosReadOnly", Mapping[LogicalChannelId, ClientChannelInfo])
 type ClientChannelInfos = ClientChannelInfosImpl | _ClientChannelInfosReadOnly
+
+class SourceChannelInfo(TypedDict):
+    title: ReadOnly[LogicalChannelTitle]
+    group_title: ReadOnly[TVGGroupTitle]
+    group_key: ReadOnly[GroupKey]
+    tvg_id: ReadOnly[TVGId]
+    tvg_logo: ReadOnly[TVGLogo]
+    sources: ReadOnly[list[SourceInfo]]
+
+class SourceGroupInfo(TypedDict):
+    key: ReadOnly[GroupKey]
+    display_title: ReadOnly[TVGGroupTitle]
+    providers: ReadOnly[tuple[ProviderAlias, ...]]
+    channel_count: ReadOnly[int]
+
+class LCGroupInfo(TypedDict):
+    key: ReadOnly[GroupKey]
+    display_title: ReadOnly[TVGGroupTitle]
+    channel_count: ReadOnly[int]
+
+class StreamChannelInfo(TypedDict):
+    title: ReadOnly[LogicalChannelTitle]
+    channel_num: ReadOnly[ChannelNum | None]
+
+class PlaylistInfo(TypedDict):
+    name: ReadOnly[PlaylistName]
+    lc_group_mode: ReadOnly[LCGroupMode]
+    lc_groups: ReadOnly[tuple[GroupKey, ...]]
+    source_groups: ReadOnly[tuple[GroupKey, ...]]
+    base_url: ReadOnly[BaseURL]  # Empty to use the URL the client connected with
+PlaylistsDataImpl = NewType("PlaylistsDataImpl", dict[PlaylistId, PlaylistInfo])
+_PlaylistsDataReadOnly = NewType("_PlaylistsDataReadOnly", Mapping[PlaylistId, PlaylistInfo])
+type PlaylistsData = PlaylistsDataImpl | _PlaylistsDataReadOnly
+class PlaylistInfoWithId(PlaylistInfo):
+    playlist_id: ReadOnly[PlaylistId]
+
+class PlaylistEntry(TypedDict):
+    extinf: ReadOnly[str]
+    path: ReadOnly[str]  # Appended to the base URL when served
+
+class PlaylistLineupEntry(TypedDict):
+    channel_id: ReadOnly[LogicalChannelId]
+    title: ReadOnly[LogicalChannelTitle]
+    channel_num: ReadOnly[ChannelNum]
+    source_ids: ReadOnly[tuple[SourceId, ...]]
+
+class PlaylistChannelCounts(TypedDict):
+    logical_channels: ReadOnly[int]
+    source_channels: ReadOnly[int]
 
 class RuntimeInfo(TypedDict):
     stop_reason: ReadOnly[StopReason]
@@ -586,6 +647,45 @@ def get_logical_channel_id_from_preview(preview_id: PreviewId) -> LogicalChannel
 def is_preview_id(input_id: PreviewId | LogicalChannelId) -> bool:
     """Checks if the given ID is a preview ID."""
     return input_id.startswith("preview;")
+
+
+MAIN_PLAYLIST_ID: Final[PlaylistId] = PlaylistId("main")
+MAIN_DEVICE_ID: Final[str] = "12345678"
+SOURCE_CHANNEL_ID_PREFIX: Final[str] = "src-"
+PLAYLIST_ID_REGEX: Final[re.Pattern[str]] = re.compile(r'^[a-z0-9][a-z0-9-]{0,47}$')
+
+
+def normalize_group_key(name: str) -> GroupKey:
+    """Normalizes a group or channel name so that names differing only by case or surrounding whitespace match."""
+    return GroupKey(name.strip().casefold())
+
+
+def create_source_channel_id(group_key: GroupKey, name_key: str) -> SourceChannelId:
+    """Generates a stable ID for a source channel from its normalized group and name."""
+    return SourceChannelId(SOURCE_CHANNEL_ID_PREFIX + hashlib.md5(f"{group_key}|{name_key}".encode('utf-8')).hexdigest()[:16])
+
+
+def is_source_channel_id(input_id: str) -> bool:
+    """Checks if the given ID is a source channel ID."""
+    return input_id.startswith(SOURCE_CHANNEL_ID_PREFIX)
+
+
+def default_playlist_info(name: str = "Main") -> PlaylistInfo:
+    """Returns the default playlist which includes all logical channels."""
+    return {
+        "name": PlaylistName(name),
+        "lc_group_mode": LCGroupMode.INCLUDE_ALL_EXCEPT,
+        "lc_groups": (),
+        "source_groups": (),
+        "base_url": BaseURL(""),
+    }
+
+
+def playlist_device_id(playlist_id: PlaylistId) -> str:
+    """Returns a stable HDHomeRun device ID for the playlist, the main playlist keeps the original ID."""
+    if playlist_id == MAIN_PLAYLIST_ID:
+        return MAIN_DEVICE_ID
+    return hashlib.md5(f"nexus-tuner:{playlist_id}".encode('utf-8')).hexdigest()[:8].upper()
 
 
 def get_playlist_path(channel_hls_dir: Path) -> Path:

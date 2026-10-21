@@ -9,7 +9,7 @@ from nexus_tuner.config import Config
 from nexus_tuner.handler import ChannelHandler
 from nexus_tuner.quality_monitor import QualityMonitor
 from nexus_tuner.utils import (CREATE_STREAM_DEADLINE, PROCESS_TERMINATE_INTERVAL, PROCESS_TERMINATE_TIMEOUT, NEW_DEADLINE_NON_BEST, ChannelNum, DateTimeISO, ProcessInfo, ProcessInfoMutable, ProcessInfos, ProcessInfosMutable,
-                                Label, Log, LogicalChannelId, PreviewId, ProcessStatuses, ProcessStatusesImpl, ProviderAlias, RelativeTimeStr, SegmentNum, StopReason, StreamEngine, TVGDisplayTitle, VideoKey, VideoName, VideoType, duration_to_str, get_logical_channel_id_from_preview, get_playlist_path, get_segment_number, run_bg)
+                                Label, Log, LogicalChannelId, PreviewId, ProcessStatuses, ProcessStatusesImpl, ProviderAlias, RelativeTimeStr, SegmentNum, StopReason, StreamEngine, TVGDisplayTitle, VideoKey, VideoName, VideoType, SourceChannelId, duration_to_str, get_logical_channel_id_from_preview, get_playlist_path, get_segment_number, is_source_channel_id, run_bg)
 
 
 # --- Constants ---
@@ -102,6 +102,10 @@ class StreamManager:
                 id_for_page = LogicalChannelId(logical_channel_id)
                 tvg_logo = client_channel["tvg_logo"]
                 channel_num = client_channel["channel_num"] or process_info['channel_num']
+            elif is_source_channel_id(logical_channel_id) and (source_channel := await self.handler.get_source_channel(SourceChannelId(logical_channel_id))):
+                id_for_page = None  # Source channels have no page to edit
+                tvg_logo = source_channel["tvg_logo"]
+                channel_num = process_info['channel_num']
             else:
                 id_for_page = None
                 tvg_logo = None

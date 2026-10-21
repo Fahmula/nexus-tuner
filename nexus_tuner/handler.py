@@ -3,7 +3,7 @@ import re
 import html
 import hashlib
 import asyncio
-from typing import TYPE_CHECKING, Final, Self
+from typing import TYPE_CHECKING, Any, Final, Self
 
 import aiohttp
 from nexus_tuner.config import Config
@@ -12,8 +12,11 @@ from nexus_tuner.utils import (M3UURL, NEXUS_TUNER_USER_AGENT, ClientChannelInfo
                                 ChannelListGroup, ChannelListInfo, ChannelMappings, ChannelMappingsImpl, ChannelMappingsData, ChannelMappingsDataImpl, ChannelNum, DateTimeISO,
                                 DiscoveredSource, DiscoveredSourceWithId, DiscoveredSourcesData, DiscoveredSourcesDataImpl, Log, LogicalChannelInfo, LogicalChannelInfoWithId, LogicalChannelTitle, LogicalChannelsDataImpl, Priority, ProviderInfo,
                                 ProviderStatuses, SourceInfo, SourceMappingInfoWithId, SourceId, StreamURL, TVGGroupTitle, Label, LogicalChannelId,
-                                LogicalChannelsData, M3USource, MainM3UPlaylist, MaxStreams, ProviderAlias, ProvidersData, ProvidersDataImpl,
-                                StreamKey, TVGDisplayTitle, TVGId, TVGLogo, TVGName, VideoType, create_stream_name, create_video_name, run_bg)
+                                LogicalChannelsData, M3USource, MaxStreams, ProviderAlias, ProvidersData, ProvidersDataImpl,
+                                StreamKey, TVGDisplayTitle, TVGId, TVGLogo, TVGName, VideoType, create_stream_name, create_video_name, run_bg,
+                                DEFAULT_PRIORITY, MAIN_PLAYLIST_ID, GroupKey, LCGroupInfo, LCGroupMode, PlaylistChannelCounts, PlaylistEntry, PlaylistId, PlaylistInfo,
+                                PlaylistInfoWithId, PlaylistLineupEntry, PlaylistsData, PlaylistsDataImpl, SourceChannelId, SourceChannelInfo, SourceGroupInfo,
+                                StreamChannelInfo, create_source_channel_id, default_playlist_info, normalize_group_key)
 
 if TYPE_CHECKING:
     from nexus_tuner.quality_monitor import QualityMonitor
@@ -27,6 +30,16 @@ TVG_NAME_REGEX: Final[re.Pattern[str]] = re.compile(r'tvg-name="([^"]*)"', re.IG
 TVG_ID_REGEX: Final[re.Pattern[str]] = re.compile(r'tvg-id="([^"]*)"', re.IGNORECASE)
 TVG_LOGO_REGEX: Final[re.Pattern[str]] = re.compile(r'tvg-logo="([^"]*)"', re.IGNORECASE)
 TVG_GROUP_TITLE_REGEX: Final[re.Pattern[str]] = re.compile(r'group-title="([^"]*)"', re.IGNORECASE)
+NOT_PLAYLIST_ID_REGEX: Final[re.Pattern[str]] = re.compile(r'[^a-z0-9]+')
+DEFAULT_LC_GROUP_TITLE: Final[TVGGroupTitle] = TVGGroupTitle("Uncategorized")
+
+
+def _channel_num_sort_key(channel_num: str) -> tuple[float, str]:
+    """Sorts channel numbers numerically, non-numeric numbers are sorted last."""
+    try:
+        return (float(channel_num), channel_num)
+    except ValueError:
+        return (float('inf'), channel_num)
 
 
 class ChannelHandler:
@@ -42,8 +55,8 @@ class ChannelHandler:
     """
     __slots__ = (
         'label', 'config', 'quality_monitor', '_mutex', '_providers_data', '_discovered_sources_data',
-        '_logical_channels_data', '_channel_mappings_data', '_channel_list_data',
-        '_client_channels', '_main_m3u_playlist',
+        '_logical_channels_data', '_channel_mappings_data', '_channel_list_data', '_playlists_data',
+        '_client_channels', '_source_groups', '_source_channels', '_playlist_entries', '_playlist_lineups', '_playlist_counts',
         '_slots', '_kill_provider_streams', '_pending_streams',
     )
     
@@ -62,10 +75,15 @@ class ChannelHandler:
         self._logical_channels_data: LogicalChannelsData = LogicalChannelsDataImpl({})
         self._channel_mappings_data: ChannelMappingsData = ChannelMappingsDataImpl({})
         self._channel_list_data: ChannelListData = ChannelListDataImpl({})
+        self._playlists_data: PlaylistsData = PlaylistsDataImpl({MAIN_PLAYLIST_ID: default_playlist_info()})
 
         # In-memory processed data
         self._client_channels: ClientChannelInfos = ClientChannelInfosImpl({})
-        self._main_m3u_playlist: MainM3UPlaylist = MainM3UPlaylist("#EXTM3U\n")
+        self._source_groups: dict[GroupKey, SourceGroupInfo] = {}
+        self._source_channels: dict[SourceChannelId, SourceChannelInfo] = {}  # Only for groups selected by a playlist
+        self._playlist_entries: dict[PlaylistId, tuple[PlaylistEntry, ...]] = {}
+        self._playlist_lineups: dict[PlaylistId, tuple[PlaylistLineupEntry, ...]] = {}
+        self._playlist_counts: dict[PlaylistId, PlaylistChannelCounts] = {}
 
         # Slots management
         self._slots: dict[ProviderAlias, ProviderSlots] = {}
@@ -137,6 +155,17 @@ class ChannelHandler:
                 Log.critical(self.label, "Channel list configuration was removed/corrupted after startup, cannot reload.")
             else:
                 self._channel_list_data = new_channel_list_data
+            new_playlists_data = await self.config.get_playlists_config(label=self.label)
+            if new_playlists_data is None:
+                if self.label == Label.STARTUP:
+                    Log.critical(self.label, "Playlists configuration was not found, cannot start ChannelHandler.")
+                    raise RuntimeError("Playlists configuration invalid or missing.")
+                if await self.config.save_playlists_config(self._playlists_data):
+                    Log.warn(self.label, "Playlists configuration was removed/corrupted after startup, reloaded with data in-memory.")
+                else:
+                    Log.critical(self.label, "Playlists configuration was removed/corrupted after startup, cannot reload.")
+            else:
+                self._playlists_data = new_playlists_data
 
             if update_providers:
                 new_providers_data = await self.config.get_providers_config(label=self.label)
@@ -172,9 +201,10 @@ class ChannelHandler:
 
             # Build in-memory data
             await self._build_client_channels(prev_discovered_sources)
-            self.generate_main_client_m3u()
+            self._build_source_channels()
+            self._build_playlist_outputs()
             
-            Log.info(self.label, f"Discovered: {len(self._discovered_sources_data)}, Client-Facing: {len(self._client_channels)}")
+            Log.info(self.label, f"Discovered: {len(self._discovered_sources_data)}, Client-Facing: {len(self._client_channels)}, Source Channels: {len(self._source_channels)}, Playlists: {len(self._playlists_data)}")
         finally:
             self._mutex.release()
 
@@ -385,30 +415,120 @@ class ChannelHandler:
         async with self._mutex:
             self._pending_streams.remove(stream_key)
 
-    def generate_main_client_m3u(self) -> None:
-        """Generates the main M3U content to be served to clients."""
-        m3u_lines = ["#EXTM3U x-tvg-url=\"\""]
-        if not self.config.nexus_url:
-            Log.error(self.label, "NEXUS_URL not set. Client M3U URLs will be incorrect.")
-            m3u_lines.extend(["#EXTINF:-1,Error: NEXUS_URL not configured", "http://error.invalid/stream"])
-            self._main_m3u_playlist = MainM3UPlaylist("\n".join(m3u_lines) + "\n")
-            return
+    def _build_source_channels(self) -> None:
+        """Groups discovered sources by their normalized group and name across providers.
+        All groups are indexed for the UI, but source channels are only built for groups selected by a playlist.
+        """
+        selected_groups = {group_key for playlist in self._playlists_data.values() for group_key in playlist["source_groups"]}
+        group_titles: dict[GroupKey, TVGGroupTitle] = {}
+        group_providers: dict[GroupKey, dict[ProviderAlias, None]] = {}
+        group_names: dict[GroupKey, set[str]] = {}
+        channel_keys: dict[SourceChannelId, tuple[GroupKey, str]] = {}
+        channel_sources: dict[SourceChannelId, list[tuple[SourceId, DiscoveredSource]]] = {}
+        skipped = 0
+        for source_id, discovered_source in self._discovered_sources_data.items():
+            name = discovered_source["tvg_name"].strip() or discovered_source["display_title"].strip()
+            if not name:
+                skipped += 1
+                continue
+            group_key = normalize_group_key(discovered_source["group_title"])
+            name_key = normalize_group_key(name)
+            group_titles.setdefault(group_key, TVGGroupTitle(discovered_source["group_title"].strip()))
+            group_providers.setdefault(group_key, {})[discovered_source["provider_alias"]] = None
+            group_names.setdefault(group_key, set()).add(name_key)
+            if group_key not in selected_groups:
+                continue
+            source_channel_id = create_source_channel_id(group_key, name_key)
+            if channel_keys.setdefault(source_channel_id, (group_key, name_key)) != (group_key, name_key):
+                Log.error(self.label, f"Source channel ID collision for '{name}' in group '{discovered_source['group_title']}', skipping source '{source_id}'.")
+                continue
+            channel_sources.setdefault(source_channel_id, []).append((source_id, discovered_source))
+        if skipped:
+            Log.debug(self.label, f"Skipped {skipped} discovered sources without a name when building source channels.")
 
-        client_channels = [(logical_channel_id, client_channel) for logical_channel_id, client_channel in self._client_channels.items()]
-        client_channels.sort(key=lambda item: (item[1].get("group_title", "zzz").lower(), item[1].get("logical_channel_title", "zzz").lower()))
+        self._source_groups = {group_key: {
+            "key": group_key,
+            "display_title": group_titles[group_key],
+            "providers": tuple(group_providers[group_key]),
+            "channel_count": len(group_names[group_key]),
+        } for group_key in group_titles}
 
-        for logical_channel_id, client_channel in client_channels:
-            name = client_channel.get("logical_channel_title", "")
-            extinf_parts = [f'tvg-name="{name}"']
-            extinf_parts.append(f'tvg-chno="{client_channel['channel_num']}"')
-            extinf_parts.append(f'tvg-id="{client_channel['tvg_id']}"')
-            extinf_parts.append(f'tvg-logo="{client_channel['tvg_logo']}"')
-            extinf_parts.append(f'group-title="{client_channel['group_title']}"')
-            
-            m3u_lines.append(f"#EXTINF:-1 {' '.join(extinf_parts)},{name}")
-            m3u_lines.append(f"{self.config.nexus_url}/{VideoType.HLS}/{logical_channel_id}/{self.config.stream_engine}/playlist.m3u8")
-        
-        self._main_m3u_playlist = MainM3UPlaylist("\n".join(m3u_lines) + "\n")
+        source_channels: dict[SourceChannelId, SourceChannelInfo] = {}
+        for source_channel_id, sources in channel_sources.items():
+            first_source = sources[0][1]
+            source_channels[source_channel_id] = {
+                "title": LogicalChannelTitle(first_source["tvg_name"].strip() or first_source["display_title"].strip()),
+                "group_title": group_titles[channel_keys[source_channel_id][0]],
+                "group_key": channel_keys[source_channel_id][0],
+                "tvg_id": next((s["tvg_id"] for _, s in sources if s["tvg_id"]), TVGId("")),
+                "tvg_logo": next((s["tvg_logo"] for _, s in sources if s["tvg_logo"]), TVGLogo("")),
+                "sources": [{
+                    "source_id": source_id,
+                    "priority": Priority(DEFAULT_PRIORITY),
+                    "provider_alias": s["provider_alias"],
+                    "stream_url": s["stream_url"],
+                } for source_id, s in sources],
+            }
+        self._source_channels = source_channels
+
+    def _build_playlist_outputs(self) -> None:
+        """Builds the M3U entries and HDHomeRun lineup of every playlist.
+        The base URL is added when served as it depends on the URL the client connected with.
+        """
+        client_channels = sorted(self._client_channels.items(), key=lambda item: (item[1].get("group_title", "zzz").lower(), item[1].get("logical_channel_title", "zzz").lower()))
+        logical_channels = sorted(self._logical_channels_data.items(), key=lambda item: _channel_num_sort_key(item[1]["channel_num"]))
+        source_channels = sorted(self._source_channels.items(), key=lambda item: (item[1]["group_title"].casefold(), item[1]["title"].casefold(), item[0]))
+
+        playlist_entries: dict[PlaylistId, tuple[PlaylistEntry, ...]] = {}
+        playlist_lineups: dict[PlaylistId, tuple[PlaylistLineupEntry, ...]] = {}
+        playlist_counts: dict[PlaylistId, PlaylistChannelCounts] = {}
+        for playlist_id, playlist in self._playlists_data.items():
+            lc_groups = set(playlist["lc_groups"])
+            only_include = playlist["lc_group_mode"] == LCGroupMode.ONLY_INCLUDE
+            def is_lc_included(group_title: TVGGroupTitle) -> bool:
+                return (normalize_group_key(group_title or DEFAULT_LC_GROUP_TITLE) in lc_groups) == only_include
+
+            entries: list[PlaylistEntry] = []
+            for logical_channel_id, client_channel in client_channels:
+                if not is_lc_included(client_channel["group_title"]):
+                    continue
+                name = client_channel.get("logical_channel_title", "")
+                extinf_parts = [f'tvg-name="{name}"']
+                extinf_parts.append(f'tvg-chno="{client_channel['channel_num']}"')
+                extinf_parts.append(f'tvg-id="{client_channel['tvg_id']}"')
+                extinf_parts.append(f'tvg-logo="{client_channel['tvg_logo']}"')
+                extinf_parts.append(f'group-title="{client_channel['group_title']}"')
+                entries.append({
+                    "extinf": f"#EXTINF:-1 {' '.join(extinf_parts)},{name}",
+                    "path": f"/{VideoType.HLS}/{logical_channel_id}/{self.config.stream_engine}/playlist.m3u8",
+                })
+            num_logical_channels = len(entries)
+
+            source_groups = set(playlist["source_groups"])
+            for source_channel_id, source_channel in source_channels:
+                if source_channel["group_key"] not in source_groups:
+                    continue
+                extinf_parts = [f'tvg-name="{source_channel['title'].replace('"', "'")}"']  # Provider values are unescaped when parsed
+                extinf_parts.append(f'tvg-id="{source_channel['tvg_id'].replace('"', "'")}"')
+                extinf_parts.append(f'tvg-logo="{source_channel['tvg_logo'].replace('"', "'")}"')
+                extinf_parts.append(f'group-title="{source_channel['group_title'].replace('"', "'")}"')
+                entries.append({
+                    "extinf": f"#EXTINF:-1 {' '.join(extinf_parts)},{source_channel['title']}",
+                    "path": f"/{VideoType.HLS}/{source_channel_id}/{self.config.stream_engine}/playlist.m3u8",
+                })
+            playlist_entries[playlist_id] = tuple(entries)
+            playlist_counts[playlist_id] = {"logical_channels": num_logical_channels, "source_channels": len(entries) - num_logical_channels}
+
+            playlist_lineups[playlist_id] = tuple({
+                "channel_id": logical_channel_id,
+                "title": logical_channel["logical_channel_title"],
+                "channel_num": logical_channel["channel_num"],
+                "source_ids": tuple(self._channel_mappings_data.get(logical_channel_id, {})),
+            } for logical_channel_id, logical_channel in logical_channels
+              if logical_channel["channel_num"] and is_lc_included(logical_channel["group_title"]))
+        self._playlist_entries = playlist_entries
+        self._playlist_lineups = playlist_lineups
+        self._playlist_counts = playlist_counts
 
     async def get_client_channel(self, logical_channel_id: LogicalChannelId) -> ClientChannelInfo | None:
         """Retrieves a client channel by its logical channel ID."""
@@ -416,9 +536,36 @@ class ChannelHandler:
             return self._client_channels.get(logical_channel_id)
 
     async def copy_sources_for_client_channel(self, logical_channel_id: LogicalChannelId) -> list[SourceInfo]:
-        """Retrieves sources for a channel."""
+        """Retrieves sources for a logical channel or source channel."""
         async with self._mutex:
-            return self._client_channels.get(logical_channel_id, {}).get("sources", []).copy()
+            if (client_channel := self._client_channels.get(logical_channel_id)):
+                return client_channel["sources"].copy()
+            if (source_channel := self._source_channels.get(SourceChannelId(logical_channel_id))):
+                return source_channel["sources"].copy()
+            return []
+
+    async def resolve_stream_channel(self, channel_id: str) -> StreamChannelInfo | None:
+        """Returns the title and channel number used when streaming a logical channel or source channel."""
+        async with self._mutex:
+            if (logical_channel := self._logical_channels_data.get(LogicalChannelId(channel_id))):
+                return {"title": logical_channel["logical_channel_title"], "channel_num": logical_channel["channel_num"]}
+            if (source_channel := self._source_channels.get(SourceChannelId(channel_id))):
+                return {"title": source_channel["title"], "channel_num": None}
+
+    async def get_source_channel(self, source_channel_id: SourceChannelId) -> SourceChannelInfo | None:
+        """Retrieves a source channel by its ID."""
+        async with self._mutex:
+            return self._source_channels.get(source_channel_id)
+
+    async def get_stream_title_map(self) -> dict[str, set[str]]:
+        """Returns the IDs of all client-facing logical channels and source channels by their title."""
+        async with self._mutex:
+            title_map: dict[str, set[str]] = {}
+            for logical_channel_id, client_channel in self._client_channels.items():
+                title_map.setdefault(client_channel["logical_channel_title"], set()).add(logical_channel_id)
+            for source_channel_id, source_channel in self._source_channels.items():
+                title_map.setdefault(source_channel["title"], set()).add(source_channel_id)
+            return title_map
 
     def _update_providers_slots(self) -> None:
         """Initializes or updates provider slots based on config."""
@@ -549,15 +696,9 @@ class ChannelHandler:
 
     async def get_logical_channels_for_ui(self) -> list[LogicalChannelInfoWithId]:
         """Returns a copy of the logical channels data sorted by channel number."""
-        def sort_key(x: LogicalChannelInfoWithId) -> tuple[float, str]:
-            channel_num = x["channel_num"]
-            try:
-                return (float(channel_num), channel_num)
-            except ValueError:
-                return (float('inf'), channel_num)
         async with self._mutex:
             return sorted((LogicalChannelInfoWithId({**lc, "logical_channel_id": logical_channel_id})
-                   for logical_channel_id, lc in self._logical_channels_data.items()), key=sort_key)
+                   for logical_channel_id, lc in self._logical_channels_data.items()), key=lambda x: _channel_num_sort_key(x["channel_num"]))
 
     async def get_logical_channel_by_id(self, logical_channel_id: LogicalChannelId) -> LogicalChannelInfo | None:
         """Gets a logical channel by its ID."""
@@ -794,7 +935,94 @@ class ChannelHandler:
         async with self._mutex:
             return ClientChannelInfosImpl({**self._client_channels})
 
-    async def get_main_m3u_playlist(self) -> MainM3UPlaylist:
-        """Returns the main M3U playlist."""
+    # --- Playlists ---
+
+    async def get_playlist(self, playlist_id: PlaylistId) -> PlaylistInfo | None:
+        """Gets a playlist by its ID."""
         async with self._mutex:
-            return self._main_m3u_playlist
+            return self._playlists_data.get(playlist_id)
+
+    async def get_playlists_for_ui(self) -> list[PlaylistInfoWithId]:
+        """Returns all playlists with the main playlist first, then sorted by name."""
+        async with self._mutex:
+            return sorted((PlaylistInfoWithId({**playlist, "playlist_id": playlist_id}) for playlist_id, playlist in self._playlists_data.items()),
+                          key=lambda x: (x["playlist_id"] != MAIN_PLAYLIST_ID, x["name"].casefold()))
+
+    async def get_playlist_channel_counts(self) -> dict[PlaylistId, PlaylistChannelCounts]:
+        """Returns the number of logical channels and source channels in each playlist's M3U."""
+        async with self._mutex:
+            return {**self._playlist_counts}
+
+    async def get_playlist_entries(self, playlist_id: PlaylistId) -> tuple[PlaylistEntry, ...] | None:
+        """Returns the M3U entries of a playlist, the base URL must be prepended to each path."""
+        async with self._mutex:
+            return self._playlist_entries.get(playlist_id)
+
+    async def get_playlist_lineup(self, playlist_id: PlaylistId) -> tuple[PlaylistLineupEntry, ...] | None:
+        """Returns the HDHomeRun lineup of a playlist, only logical channels with a channel number are included."""
+        async with self._mutex:
+            return self._playlist_lineups.get(playlist_id)
+
+    def _generate_playlist_id(self, name: str) -> PlaylistId:
+        """Generates a unique, URL-safe ID from the playlist name."""
+        base_id = NOT_PLAYLIST_ID_REGEX.sub('-', name.casefold()).strip('-')[:40].strip('-') or "playlist"
+        playlist_id = PlaylistId(base_id)
+        suffix = 2
+        while playlist_id in self._playlists_data or playlist_id == MAIN_PLAYLIST_ID:
+            playlist_id = PlaylistId(f"{base_id}-{suffix}")
+            suffix += 1
+        return playlist_id
+
+    async def add_playlist(self, playlist: PlaylistInfo) -> PlaylistId | None:
+        """Adds a new playlist to the configuration."""
+        async with self._mutex:
+            playlist_id = self._generate_playlist_id(playlist["name"])
+            new_data = PlaylistsDataImpl({**self._playlists_data, playlist_id: PlaylistInfo({**playlist})})
+            if not await self.config.save_playlists_config(new_data):
+                Log.critical(self.label, f"Failed to save new playlist configuration: {playlist}")
+                return
+            self._playlists_data = new_data
+            return playlist_id
+
+    async def update_playlist(self, playlist_id: PlaylistId, playlist: PlaylistInfo) -> bool:
+        """Updates an existing playlist, the ID never changes so client URLs stay valid."""
+        async with self._mutex:
+            if playlist_id not in self._playlists_data:
+                raise ValueError(f"Playlist '{playlist_id}' not found.")
+            new_data = PlaylistsDataImpl({**self._playlists_data, playlist_id: PlaylistInfo({**playlist})})
+            if not await self.config.save_playlists_config(new_data):
+                Log.critical(self.label, f"Failed to save updated playlist configuration for '{playlist_id}': {playlist}")
+                return False
+            self._playlists_data = new_data
+            return True
+
+    async def delete_playlist(self, playlist_id: PlaylistId) -> bool:
+        """Deletes a playlist, the main playlist cannot be deleted."""
+        async with self._mutex:
+            if playlist_id == MAIN_PLAYLIST_ID:
+                raise ValueError("The main playlist cannot be deleted.")
+            if playlist_id not in self._playlists_data:
+                raise ValueError(f"Playlist '{playlist_id}' not found.")
+            new_data = PlaylistsDataImpl({k: v for k, v in self._playlists_data.items() if k != playlist_id})
+            if not await self.config.save_playlists_config(new_data):
+                Log.critical(self.label, f"Failed to save playlists configuration after deleting '{playlist_id}'.")
+                return False
+            self._playlists_data = new_data
+            return True
+
+    async def get_lc_groups_for_ui(self) -> list[LCGroupInfo]:
+        """Returns the groups used by logical channels with their channel counts."""
+        async with self._mutex:
+            groups: dict[GroupKey, dict[str, Any]] = {}
+            for logical_channel in self._logical_channels_data.values():
+                group_title = logical_channel["group_title"].strip() or DEFAULT_LC_GROUP_TITLE
+                group = groups.setdefault(normalize_group_key(group_title), {"display_title": group_title, "channel_count": 0})
+                group["channel_count"] += 1
+        return sorted((LCGroupInfo({"key": key, "display_title": TVGGroupTitle(group["display_title"]), "channel_count": group["channel_count"]})
+                       for key, group in groups.items()), key=lambda x: x["display_title"].casefold())
+
+    async def get_source_groups_for_ui(self) -> list[SourceGroupInfo]:
+        """Returns all discovered source groups merged across providers."""
+        async with self._mutex:
+            source_groups = list(self._source_groups.values())
+        return sorted(source_groups, key=lambda x: x["display_title"].casefold())

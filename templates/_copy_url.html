@@ -1,0 +1,38 @@
+{% macro copy_url(input_id, value, label) %}
+<div class="input-group input-group-sm">
+    <span class="input-group-text">{{ label }}</span>
+    <input type="text" class="form-control font-monospace" id="{{ input_id }}" value="{{ value }}" readonly
+        onclick="this.select()">
+    <button type="button" class="btn btn-outline-secondary" data-copy-target="{{ input_id }}"
+        onclick="nexusCopyUrl(this)" title="Copy to clipboard">
+        <i class="fas fa-copy"></i>
+    </button>
+</div>
+{% endmacro %}
+
+{% macro copy_url_script() %}
+<script>
+    function nexusCopyUrl(button) {
+        const input = document.getElementById(button.dataset.copyTarget);
+        const icon = button.querySelector('i');
+        const done = () => {
+            icon.className = 'fas fa-check';
+            setTimeout(() => icon.className = 'fas fa-copy', 1500);
+        };
+        const fallback = () => {  // The Clipboard API is unavailable over plain HTTP, e.g. LAN or VPN IPs
+            input.select();
+            try {
+                document.execCommand('copy');
+                done();
+            } catch (e) {
+                console.error('Failed to copy URL', e);
+            }
+        };
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(input.value).then(done).catch(fallback);
+        } else {
+            fallback();
+        }
+    }
+</script>
+{% endmacro %}
