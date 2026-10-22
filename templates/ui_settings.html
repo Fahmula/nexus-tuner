@@ -1,0 +1,215 @@
+{% extends "layout.html" %}
+
+{% block title %}Settings - NexusTuner{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Settings</h1>
+</div>
+
+<div class="p-3 mb-4 bg-body-tertiary rounded-3 small text-muted">
+    <h6 class="border-bottom pb-2 mb-2 text-body-emphasis">About Settings</h6>
+    <p class="mb-2">
+        <i class="fas fa-bolt text-warning me-2" style="width: 1.25em;"></i>
+        <strong>Changes apply immediately</strong>, no restart is needed. Streams that are already running keep their stream
+        engine until they stop.
+    </p>
+    <p class="mb-0">
+        <i class="fas fa-file-code text-info me-2" style="width: 1.25em;"></i>
+        <strong>Storage:</strong> Settings are saved in <span class="font-monospace">{{ settings_path }}</span>. Only
+        <span class="font-monospace">NEXUS_CONFIG_DIR</span> and <span class="font-monospace">NEXUS_PORT</span> are still set with
+        environment variables, other environment variables were only used once to create this file.
+    </p>
+</div>
+
+<form id="settings-form" method="POST" action="{{ url_for('ui_settings') }}">
+    <div class="row g-3">
+        <div class="col-lg-6">
+            <div class="card mb-3">
+                <div class="card-header">General</div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label for="nexus_url" class="form-label">Fallback URL <small class="text-muted">(optional)</small></label>
+                        <input type="text" class="form-control font-monospace" id="nexus_url" name="nexus_url"
+                            value="{{ settings.nexus_url }}" placeholder="e.g. http://192.168.1.10">
+                        <div class="form-text">
+                            Without a port. Only used when the address a client connected with is unknown, playlists use the
+                            address each client connects with (<span class="font-monospace">{{ detected_base_url }}</span> for
+                            you right now) or their own base URL.
+                        </div>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-sm-4">
+                            <label for="nexus_port" class="form-label">Port</label>
+                            <input type="text" class="form-control font-monospace" id="nexus_port" value="{{ nexus_port }}" readonly disabled>
+                        </div>
+                        <div class="col-sm-8">
+                            <label for="config_dir" class="form-label">Config Folder</label>
+                            <input type="text" class="form-control font-monospace" id="config_dir" value="{{ config_dir }}" readonly disabled>
+                        </div>
+                    </div>
+                    <div class="form-text">Set with the <span class="font-monospace">NEXUS_PORT</span> and
+                        <span class="font-monospace">NEXUS_CONFIG_DIR</span> environment variables.</div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header">Maintenance</div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label for="log_backup_count" class="form-label">Days of Logs Kept</label>
+                        <input type="number" class="form-control" id="log_backup_count" name="log_backup_count"
+                            value="{{ settings.log_backup_count }}" min="0" required>
+                        <div class="form-text">The application logs rotate at midnight, older files are deleted.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="process_logs_retention_seconds" class="form-label">Stream Log Retention</label>
+                        <div class="input-group">
+                            <input type="number" class="form-control" id="process_logs_retention_seconds" name="process_logs_retention_seconds"
+                                value="{{ settings.process_logs_retention_seconds }}" min="0" required>
+                            <span class="input-group-text">seconds</span>
+                        </div>
+                        <div class="form-text">How long the FFmpeg/VLC log of each stream is kept.</div>
+                    </div>
+                    <div class="mb-0">
+                        <label for="backup_count" class="form-label">Scheduled Backups Kept</label>
+                        <input type="number" class="form-control" id="backup_count" name="backup_count"
+                            value="{{ settings.backup_count }}" min="0" required>
+                        <div class="form-text">0 disables scheduled backups. Backups include media server API keys.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            <div class="card mb-3">
+                <div class="card-header">Streaming</div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label for="stream_engine" class="form-label">Stream Engine</label>
+                        <select class="form-select" id="stream_engine" name="stream_engine">
+                            {% for engine in stream_engines %}
+                            <option value="{{ engine }}" {% if settings.stream_engine == engine %}selected{% endif %}>
+                                {{ "FFmpeg" if engine == "ffmpeg" else "VLC" }}{% if engine == "vlc" and not settings.vlc_path %} (set a VLC path first){% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="ffmpeg_path" class="form-label d-flex justify-content-between">
+                            <span>FFmpeg Path</span>
+                            {% if engine_problems.ffmpeg %}
+                            <span class="badge bg-danger" title="{{ engine_problems.ffmpeg }}"><i class="fas fa-times-circle me-1"></i>Not usable</span>
+                            {% else %}
+                            <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Found</span>
+                            {% endif %}
+                        </label>
+                        <input type="text" class="form-control font-monospace" id="ffmpeg_path" name="ffmpeg_path"
+                            value="{{ settings.ffmpeg_path }}" placeholder="/usr/bin/ffmpeg" required>
+                        <div class="form-text">
+                            {% if engine_problems.ffmpeg %}<span class="text-danger">{{ engine_problems.ffmpeg }}</span>{% endif %}
+                            FFprobe must be in the same folder, it is used for quality analysis.
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="vlc_path" class="form-label d-flex justify-content-between">
+                            <span>VLC Path <small class="text-muted">(optional)</small></span>
+                            {% if not settings.vlc_path %}
+                            <span class="badge bg-secondary">Not set</span>
+                            {% elif engine_problems.vlc %}
+                            <span class="badge bg-danger" title="{{ engine_problems.vlc }}"><i class="fas fa-times-circle me-1"></i>Not usable</span>
+                            {% else %}
+                            <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Found</span>
+                            {% endif %}
+                        </label>
+                        <input type="text" class="form-control font-monospace" id="vlc_path" name="vlc_path"
+                            value="{{ settings.vlc_path }}" placeholder="/usr/bin/vlc">
+                        {% if settings.vlc_path and engine_problems.vlc %}
+                        <div class="form-text text-danger">{{ engine_problems.vlc }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="mb-3 form-check form-switch">
+                        <input class="form-check-input" type="checkbox" role="switch" id="remove_captions_and_subtitles"
+                            name="remove_captions_and_subtitles" {% if settings.remove_captions_and_subtitles %}checked{% endif %}>
+                        <label class="form-check-label" for="remove_captions_and_subtitles">Remove captions and subtitles</label>
+                        <div class="form-text">Applies to streams started after saving.</div>
+                    </div>
+                    <div class="mb-0">
+                        <label for="process_inactivity_timeout" class="form-label">Inactivity Timeout</label>
+                        <div class="input-group">
+                            <input type="number" class="form-control" id="process_inactivity_timeout" name="process_inactivity_timeout"
+                                value="{{ settings.process_inactivity_timeout }}" min="0" required>
+                            <span class="input-group-text">seconds</span>
+                        </div>
+                        <div class="form-text">Streams with no client requests for this long are stopped.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header">Ghost Session Monitor</div>
+                <div class="card-body">
+                    <label for="ghost_check_interval" class="form-label">Check Interval</label>
+                    <div class="input-group">
+                        <input type="number" class="form-control" id="ghost_check_interval" name="ghost_check_interval"
+                            value="{{ settings.ghost_check_interval }}" min="1" required>
+                        <span class="input-group-text">seconds</span>
+                    </div>
+                    <div class="form-text">How often the media servers below are asked what is playing.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mb-4">
+        <button type="submit" class="btn btn-primary">
+            <i class="fas fa-save"></i> Save Settings
+        </button>
+    </div>
+</form>
+
+<div class="d-flex justify-content-between flex-wrap align-items-center pt-3 pb-2 mb-3 border-bottom" id="media-servers">
+    <h2 class="h4 mb-0">Media Servers</h2>
+    <button type="button" class="btn btn-sm btn-outline-success" hx-get="{{ url_for('ui_settings_media_server_add') }}"
+        hx-target="#add-media-server-form-container" hx-swap="innerHTML" hx-indicator="#add-media-server-indicator">
+        <i class="fas fa-plus"></i> Add Media Server
+        <span id="add-media-server-indicator" class="htmx-indicator spinner-border spinner-border-sm ms-1" role="status"
+            aria-hidden="true"></span>
+    </button>
+</div>
+
+<div id="add-media-server-form-container" class="mb-3">
+    <!-- HTMX will load the add form here -->
+</div>
+
+<div class="card mb-4">
+    <div class="card-header">Emby &amp; Jellyfin Servers</div>
+    <div class="card-body">
+        <p class="text-muted small mb-2">
+            The ghost session monitor stops streams that no enabled server is playing, e.g. when a client stopped watching but
+            left its connection open. Add every Emby or Jellyfin server that watches through this tuner, including ones at other
+            locations, or their viewers will be stopped.
+        </p>
+        <ul class="text-muted small">
+            <li>Channels are matched by name, keep the channel names in each server the same as in NexusTuner.</li>
+            <li>If an enabled server cannot be reached, no streams are stopped until it is reachable again.</li>
+            <li>Changes apply immediately and run a check straight away.</li>
+        </ul>
+        <div class="table-responsive">
+            <table class="table table-striped table-hover table-sm align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>URL</th>
+                        <th>API Key</th>
+                        <th>Last Check</th>
+                        <th style="width: 1%;">Actions</th>
+                    </tr>
+                </thead>
+                {% include '_media_servers_table_body.html' %}
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

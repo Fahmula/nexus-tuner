@@ -23,19 +23,19 @@ import json
 import math
 import os
 from datetime import UTC, datetime, timedelta
-from typing import AsyncGenerator, Dict, Final, cast
+from typing import Any, AsyncGenerator, Dict, Final, cast
 
 from quart import Quart, Response, abort, flash, redirect, render_template, request, url_for
 from quart import send_from_directory  # type: ignore
 from werkzeug.wrappers import Response as WerkzeugResponse
 from werkzeug.datastructures import ImmutableMultiDict
 
-from nexus_tuner.config import Config
+from nexus_tuner.config import SETTINGS_INT_FIELDS, Config, validate_media_server
 from nexus_tuner.create_stream import CreateStream
 from nexus_tuner.handler import ChannelHandler
 from nexus_tuner.mpegts import MPEGTSStream
 from nexus_tuner.quality_monitor import QualityMonitor
-from nexus_tuner.session_monitor import GhostSessionMonitor
+from nexus_tuner.session_monitor import GhostSessionMonitor, test_media_server_connection
 from nexus_tuner.stream import StreamManager
 from nexus_tuner.scheduler import Scheduler
 from nexus_tuner.utils import (Log, LogicalChannelFormDetails, PreviewId, ProcessInfoMutable, Runtime, StreamEngine, StopReason, Uptime, VideoKey, background_tasks, CREATE_STREAM_DEADLINE, CREATE_STREAM_POLL_INTERVAL,
@@ -43,7 +43,8 @@ from nexus_tuner.utils import (Log, LogicalChannelFormDetails, PreviewId, Proces
                                 Label, LogicalChannelId, LogicalChannelInfo, LogicalChannelInfoWithId, LogicalChannelMetrics, LogicalChannelTitle, MaxStreams, 
                                 PercentDisplay, Priority, ProviderAlias, ProviderStatus, QualityScores, SourceInfo, SourceMappingInfoWithId, SourceMetrics,
                                 SourceId, TVGGroupTitle, TVGId, TVGLogo, VideoType, create_preview_id, create_stream_key, create_stream_name, duration_to_str, get_source_id_from_preview, is_valid_url, run_bg, sort_sources,
-                                MAIN_PLAYLIST_ID, BaseURL, GroupKey, LCGroupMode, PlaylistId, PlaylistInfo, PlaylistName, normalize_group_key, playlist_device_id)
+                                MAIN_PLAYLIST_ID, BaseURL, GroupKey, LCGroupMode, PlaylistId, PlaylistInfo, PlaylistName, normalize_group_key, playlist_device_id,
+                                CONFIG_DIR, MediaServerId, MediaServerInfo, MediaServerType, create_media_server_id)
 
 # --- Constants ---
 PLAYLIST_POLL_INTERVAL: Final[float] = 0.2         # Seconds to wait between checking for a new playlist
@@ -58,7 +59,7 @@ app.secret_key = os.urandom(24)
 config: Config
 handler: ChannelHandler
 stream_manager: StreamManager
-ghost_monitor: GhostSessionMonitor | None
+ghost_monitor: GhostSessionMonitor
 quality_monitor: QualityMonitor
 scheduler: Scheduler
 
@@ -227,12 +228,21 @@ async def calculate_logical_channel_form_details(*, logical_channel_id: LogicalC
 
 
 @app.context_processor
-def inject_global_vars() -> Dict[str, datetime | str]:
+def inject_global_vars() -> Dict[str, datetime | str | list[str]]:
     """Injects global variables into the context of all templates."""
     return {
         'now': datetime.now(UTC),
-        'app_version': NEXUS_TUNER_VERSION
+        'app_version': NEXUS_TUNER_VERSION,
+        'config_problems': config.get_path_problems(),
     }
+
+
+def abort_if_engine_unusable(stream_engine: StreamEngine, video_type: VideoType) -> None:
+    """Aborts before trying every source when the stream engine's executables cannot be used."""
+    if (problem := config.get_engine_problem(stream_engine)):
+        msg = f"Cannot create stream: {problem} Fix it in Settings."
+        Log.error(Label.SERVER, msg, (video_type, stream_engine))
+        abort(503, msg)
 
 
 # --- Streaming Endpoints ---
@@ -275,6 +285,7 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
             else:
                 Log.info(Label.SERVER, f"{video_name}: Client reconnected to stream.", (VideoType.MPEGTS, stream_engine))
         else:
+            abort_if_engine_unusable(stream_engine, VideoType.MPEGTS)
             create_stream_obj = await CreateStream.create(config, handler, stream_manager, quality_monitor, logical_channel_id, logical_channel_title, channel_num, VideoType.MPEGTS, stream_engine)
             res = await create_stream_obj.result()
             match res[0]:
@@ -324,6 +335,8 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
 @app.route(f'/{VideoType.HLS}/<string:logical_channel_id>/<string:stream_engine>/playlist.m3u8')
 async def serve_hls_playlist(logical_channel_id: LogicalChannelId | PreviewId, stream_engine: StreamEngine, logical_channel_title: LogicalChannelTitle | None = None, channel_num: ChannelNum | None = None, sources: list[SourceInfo] | None = None) -> Response:
     """Serves the HLS playlist for a channel."""
+    if stream_engine not in tuple(StreamEngine):
+        abort(404, f"Unknown stream engine '{stream_engine}'.")
     run_bg(stream_manager.record_video_access(logical_channel_id, VideoType.HLS, stream_engine))
     added_pending_stream = False
     loop = asyncio.get_running_loop()
@@ -354,6 +367,7 @@ async def serve_hls_playlist(logical_channel_id: LogicalChannelId | PreviewId, s
             video_key, p_info = lc_id_processes.popitem()
             video_name = p_info['video_name']
         else:
+            abort_if_engine_unusable(stream_engine, VideoType.HLS)
             create_stream_obj = await CreateStream.create(config, handler, stream_manager, quality_monitor, logical_channel_id, logical_channel_title, channel_num, VideoType.HLS, stream_engine, sources)
             res = await create_stream_obj.result()
             match res[0]:
@@ -967,6 +981,163 @@ async def ui_playlist_form(playlist_id: PlaylistId | None = None) -> Response | 
                                  lc_group_modes=LCGroupMode)
 
 
+# --- Settings ---
+
+
+async def apply_settings_side_effects(changed: set[str]) -> None:
+    """Applies changed settings that are not read each time they are used."""
+    if "stream_engine" in changed:
+        await handler.reload_handler_config()  # Playlist entries contain the stream engine
+    if changed & {"media_servers", "ghost_check_interval"}:
+        ghost_monitor.notify_settings_changed()
+
+
+async def render_media_servers_table_body() -> str:
+    return await render_template("_media_servers_table_body.html", media_servers=config.media_servers, server_status=ghost_monitor.server_status)
+
+
+def parse_media_server_form(form_data: ImmutableMultiDict[str, str], server_id: MediaServerId) -> MediaServerInfo:
+    """Builds a media server from the form, keeping the saved API key when the field is left empty."""
+    api_key = form_data.get("api_key", "").strip()
+    if not api_key and (existing := config.get_media_server(server_id)):
+        api_key = existing["api_key"]
+    return {
+        "id": server_id,
+        "name": form_data.get("name", "").strip(),
+        "type": cast(MediaServerType, form_data.get("type", "")),
+        "url": form_data.get("url", "").strip(),
+        "api_key": api_key,
+        "enabled": "enabled" in form_data,
+    }
+
+
+@app.route("/ui/settings", methods=["GET", "POST"])
+async def ui_settings() -> Response | WerkzeugResponse | str:
+    """Renders and saves the application settings."""
+    form_settings: dict[str, Any] | None = None
+    if request.method == "POST":
+        form_data = cast(ImmutableMultiDict[str, str], await request.form)  # type: ignore
+        form_settings = {
+            "nexus_url": form_data.get("nexus_url", ""),
+            "ffmpeg_path": form_data.get("ffmpeg_path", ""),
+            "vlc_path": form_data.get("vlc_path", ""),
+            "stream_engine": form_data.get("stream_engine", ""),
+            "remove_captions_and_subtitles": "remove_captions_and_subtitles" in form_data,
+        }
+        for key in SETTINGS_INT_FIELDS:
+            form_settings[key] = form_data.get(key, "").strip()
+        try:
+            changes = dict(form_settings)
+            for key, (display_name, _) in SETTINGS_INT_FIELDS.items():
+                try:
+                    changes[key] = int(form_settings[key])
+                except ValueError:
+                    raise ValueError(f"{display_name}: expected a whole number, got '{form_settings[key]}'.")
+            changed = await config.update_settings(changes)
+        except (ValueError, RuntimeError) as e:
+            Log.error(Label.SERVER, f"Settings form error: {e}")
+            await flash(f"Settings were not saved. {e}", "error")
+        else:
+            await apply_settings_side_effects(changed)
+            await flash("Settings saved." if changed else "No settings were changed.", "success")
+            return redirect(url_for('ui_settings'))
+
+    return await render_template("ui_settings.html",
+                                 settings={**config.settings, **(form_settings or {})},
+                                 media_servers=config.media_servers, server_status=ghost_monitor.server_status,
+                                 engine_problems={engine: config.get_engine_problem(engine) for engine in StreamEngine},
+                                 stream_engines=StreamEngine, nexus_port=NEXUS_TUNER_PORT, config_dir=CONFIG_DIR,
+                                 settings_path=config.settings_path, detected_base_url=get_request_base_url())
+
+
+@app.route("/ui/settings/media-servers/add", methods=["GET", "POST"])
+async def ui_settings_media_server_add() -> Response | str:
+    if request.method == "GET":
+        return await render_template("_media_server_add_form.html", server=None, media_server_types=MediaServerType)
+
+    form_data = cast(ImmutableMultiDict[str, str], await request.form)  # type: ignore
+    server = parse_media_server_form(form_data, create_media_server_id())
+    try:
+        await config.add_media_server(server)
+    except (ValueError, RuntimeError) as e:
+        Log.error(Label.SERVER, f"Failed to add media server '{server['name']}': {e}")
+        await flash(f"Media server was not added. {e}", "error")
+        response = Response(await render_template("_media_server_add_form.html", server=server, media_server_types=MediaServerType))
+        response.headers["HX-Retarget"] = "#add-media-server-form-wrapper"
+        response.headers["HX-Reswap"] = "outerHTML"
+    else:
+        await apply_settings_side_effects({"media_servers"})
+        await flash(f"Media server '{server['name']}' added.", "success")
+        form_removal_html = '<div id="add-media-server-form-wrapper" hx-swap-oob="true"></div>'
+        response = Response(await render_media_servers_table_body() + form_removal_html)
+    response.headers["HX-Trigger"] = "flashMessagesUpdated"
+    return response
+
+
+@app.route("/ui/settings/media-servers/edit/<string:server_id>", methods=["GET", "PUT"])
+async def ui_settings_media_server_edit(server_id: MediaServerId) -> Response | str:
+    existing = config.get_media_server(server_id)
+    if not existing:
+        return await render_media_servers_table_body()
+
+    if request.method == "GET":
+        if request.args.get('cancel') == 'true':
+            return await render_template("_media_server_row.html", server=existing, status=ghost_monitor.server_status.get(server_id))
+        return await render_template("_media_server_edit_form.html", server=existing, media_server_types=MediaServerType)
+
+    form_data = cast(ImmutableMultiDict[str, str], await request.form)  # type: ignore
+    server = parse_media_server_form(form_data, server_id)
+    try:
+        await config.update_media_server(server)
+    except (ValueError, RuntimeError) as e:
+        Log.error(Label.SERVER, f"Failed to update media server '{existing['name']}': {e}")
+        await flash(f"Media server was not saved. {e}", "error")
+        response = Response(await render_template("_media_server_edit_form.html", server=server, media_server_types=MediaServerType))
+    else:
+        await apply_settings_side_effects({"media_servers"})
+        await flash(f"Media server '{server['name']}' saved.", "success")
+        updated = config.get_media_server(server_id) or server
+        response = Response(await render_template("_media_server_row.html", server=updated, status=ghost_monitor.server_status.get(server_id)))
+    response.headers["HX-Trigger"] = "flashMessagesUpdated"
+    return response
+
+
+@app.route("/ui/settings/media-servers/delete/<string:server_id>", methods=["DELETE"])
+async def ui_settings_media_server_delete(server_id: MediaServerId) -> Response:
+    existing = config.get_media_server(server_id)
+    try:
+        await config.delete_media_server(server_id)
+    except (ValueError, RuntimeError) as e:
+        Log.error(Label.SERVER, f"Failed to delete media server '{server_id}': {e}")
+        await flash(f"Media server was not deleted. {e}", "error")
+    else:
+        await apply_settings_side_effects({"media_servers"})
+        await flash(f"Media server '{existing['name'] if existing else server_id}' deleted.", "success")
+    response = Response(await render_media_servers_table_body())
+    response.headers["HX-Trigger"] = "flashMessagesUpdated"
+    return response
+
+
+@app.route("/ui/settings/media-servers/test", methods=["POST"])
+async def ui_settings_media_server_test() -> str:
+    """Tests the connection to a saved media server, or to the values entered in its form."""
+    form_data = cast(ImmutableMultiDict[str, str], await request.form)  # type: ignore
+    server_id = MediaServerId(form_data.get("server_id", ""))
+    saved_server = config.get_media_server(server_id) if server_id else None
+    if saved_server and "url" not in form_data:
+        server = saved_server
+    else:
+        server = parse_media_server_form(form_data, server_id or create_media_server_id())
+    try:
+        server = validate_media_server({**server, "name": server["name"] or "Test", "enabled": True})
+    except ValueError as e:
+        ok, message = False, str(e)
+    else:
+        ok, message = await test_media_server_connection(server)
+    Log.info(Label.SERVER, f"Media server connection test for '{server['name']}' at {server['url']}: {'OK' if ok else 'failed'} - {message}")
+    return await render_template("_media_server_test_result.html", ok=ok, message=message)
+
+
 @app.route("/ui/channels/populate-from-suggestion")
 async def ui_channel_populate_from_suggestion() -> str:
     """
@@ -1314,6 +1485,10 @@ async def reload_configuration() -> Response:
 
     Log.info(Label.SERVER, f"Received request to reload configuration via UI with params={{update_providers={update_providers}, force_discover_sources={force_discover_sources}}}")
     try:
+        if (changed_settings := await config.reload_settings()) is None:
+            await flash(f"Could not reload {config.settings_name}, kept the current settings. See the logs for details.", "warning")
+        elif changed_settings & {"media_servers", "ghost_check_interval"}:
+            ghost_monitor.notify_settings_changed()
         await handler.reload_handler_config(update_providers=update_providers, force_discover_sources=force_discover_sources)
         await quality_monitor.reload_quality_scores()
         if force_discover_sources:

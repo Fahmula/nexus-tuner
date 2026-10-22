@@ -3,7 +3,7 @@ import os
 import json
 import time
 from pathlib import Path
-from typing import Any, Final, Mapping, Self
+from typing import Any, Final, Mapping, Self, cast
 from urllib.parse import urlparse
 
 import asyncio
@@ -11,19 +11,183 @@ import aiofiles.os
 import aioshutil
 
 from nexus_tuner.utils import (CONFIG_DIR, NEXUS_TUNER_PORT, NEXUS_TUNER_VERSION, ChannelListDataImpl, ChannelMappingsData, ChannelMappingsDataImpl, DiscoveredSourcesData, DiscoveredSourcesDataImpl, JobName, JobsData, JobsDataImpl,
-                               Label, Log, LCGroupMode, LogicalChannelsData, LogicalChannelsDataImpl, MAIN_PLAYLIST_ID, PLAYLIST_ID_REGEX, PlaylistsData, PlaylistsDataImpl, ProvidersData, ProvidersDataImpl,
-                               QualityCacheData, QualityCacheDataImpl, StopReason, StreamEngine, VideoKey, default_playlist_info, get_fs_safe_alphanum, is_valid_url, normalize_group_key)
+                               Label, Log, LCGroupMode, LogicalChannelsData, LogicalChannelsDataImpl, MAIN_PLAYLIST_ID, MEDIA_SERVER_ID_REGEX, PLAYLIST_ID_REGEX, MediaServerId, MediaServerInfo, MediaServerType, PlaylistsData, PlaylistsDataImpl,
+                               ProvidersData, ProvidersDataImpl, QualityCacheData, QualityCacheDataImpl, SettingsInfo, StopReason, StreamEngine, VideoKey, create_media_server_id, default_playlist_info, default_settings,
+                               get_fs_safe_alphanum, is_valid_url, normalize_group_key)
+
+
+# Whole number settings with their display name and minimum value
+SETTINGS_INT_FIELDS: Final[dict[str, tuple[str, int]]] = {
+    "process_inactivity_timeout": ("Inactivity timeout", 0),
+    "process_logs_retention_seconds": ("Process log retention", 0),
+    "log_backup_count": ("Log files kept", 0),
+    "backup_count": ("Scheduled backups kept", 0),
+    "ghost_check_interval": ("Ghost session check interval", 1),
+}
+
+# Environment variables used before settings.json existed, they are only read once to create it
+LEGACY_ENV_VARS: Final[dict[str, str]] = {
+    "NEXUS_URL": "nexus_url",
+    "NEXUS_FFMPEG_PATH": "ffmpeg_path",
+    "NEXUS_VLC_PATH": "vlc_path",
+    "NEXUS_STREAM_ENGINE": "stream_engine",  # After NEXUS_VLC_PATH as the VLC engine requires a VLC path
+    "NEXUS_REMOVE_CAPTIONS_AND_SUBTITLES": "remove_captions_and_subtitles",
+    "NEXUS_PROCESS_INACTIVITY_TIMEOUT": "process_inactivity_timeout",
+    "NEXUS_PROCESS_LOGS_RETENTION_SECONDS": "process_logs_retention_seconds",
+    "NEXUS_LOG_BACKUP_COUNT": "log_backup_count",
+    "NEXUS_BACKUP_COUNT": "backup_count",
+    "NEXUS_GHOST_SESSION_CHECK_INTERVAL": "ghost_check_interval",
+}
+LEGACY_MEDIA_SERVER_ENV_VARS: Final[tuple[tuple[MediaServerType, str, str, str], ...]] = (
+    (MediaServerType.EMBY, "Emby", "NEXUS_EMBY_URL", "NEXUS_EMBY_API_KEY"),
+    (MediaServerType.JELLYFIN, "Jellyfin", "NEXUS_JELLYFIN_URL", "NEXUS_JELLYFIN_API_KEY"),
+)
+
+
+def validate_media_server(server: Any) -> MediaServerInfo:
+    """Validates and normalizes a media server. Raises ValueError if it is invalid."""
+    if type(server) is not dict:
+        raise ValueError(f"Media server: expected dict, got {server}")
+    server = cast(dict[str, Any], server)
+    server_id = server.get("id")
+    if type(server_id) is not str or not MEDIA_SERVER_ID_REGEX.match(server_id):
+        raise ValueError(f"Media server: invalid ID {server_id}")
+    name = server.get("name")
+    if type(name) is not str or not name.strip():
+        raise ValueError("Media server: a name is required.")
+    name = name.strip()
+    server_type = server.get("type")
+    if server_type not in tuple(MediaServerType):
+        raise ValueError(f'Media server "{name}": type must be one of {", ".join(MediaServerType)}, got {server_type}')
+    url = server.get("url")
+    if type(url) is not str or not is_valid_url(url.strip()):
+        raise ValueError(f'Media server "{name}": expected a URL like http://192.168.1.10:8096, got "{url}"')
+    api_key = server.get("api_key", "")
+    if type(api_key) is not str:
+        raise ValueError(f'Media server "{name}": API key must be text.')
+    enabled = server.get("enabled", True)
+    if type(enabled) is not bool:
+        raise ValueError(f'Media server "{name}": enabled must be true or false, got {enabled}')
+    if enabled and not api_key.strip():
+        raise ValueError(f'Media server "{name}": an API key is required while it is enabled.')
+    return {
+        "id": MediaServerId(server_id),
+        "name": name,
+        "type": MediaServerType(server_type),
+        "url": url.strip().rstrip("/"),
+        "api_key": api_key.strip(),
+        "enabled": enabled,
+    }
+
+
+def validate_settings(data: Any) -> SettingsInfo:
+    """Validates and normalizes settings, missing keys use their defaults and unknown keys are dropped.
+    Raises ValueError with a message that can be shown to the user if the settings are invalid.
+    Only checks the format of paths, see Config.get_path_problems() for whether they exist.
+    """
+    if type(data) is not dict:
+        raise ValueError(f"Settings: expected dict, got {type(data)}")
+    settings: dict[str, Any] = {key: data.get(key, default) for key, default in default_settings().items()}  # type: ignore[reportUnknownMemberType]
+
+    nexus_url = settings["nexus_url"]
+    if type(nexus_url) is not str:
+        raise ValueError(f"Fallback URL: expected text, got {nexus_url}")
+    nexus_url = nexus_url.strip().rstrip("/")
+    if nexus_url and not is_valid_url(nexus_url):
+        raise ValueError(f'Fallback URL: expected empty or a URL like http://192.168.1.10, got "{nexus_url}"')
+    if nexus_url and urlparse(nexus_url).port is not None:
+        raise ValueError(f"Fallback URL: should not contain a port, the port is set by NEXUS_PORT ({NEXUS_TUNER_PORT}).")
+    settings["nexus_url"] = nexus_url
+
+    for key, display_name, executable in (("ffmpeg_path", "FFmpeg path", "ffmpeg"), ("vlc_path", "VLC path", "vlc")):
+        path = settings[key]
+        if type(path) is not str:
+            raise ValueError(f"{display_name}: expected text, got {path}")
+        path = path.strip()
+        if key == "ffmpeg_path" and not path:
+            raise ValueError("FFmpeg path: required.")
+        if path and executable not in Path(path).name.lower():
+            raise ValueError(f'{display_name}: must point to the {executable} executable, got "{path}"')
+        settings[key] = path
+
+    if settings["stream_engine"] not in tuple(StreamEngine):
+        raise ValueError(f'Stream engine: expected one of {", ".join(StreamEngine)}, got {settings["stream_engine"]}')
+    settings["stream_engine"] = StreamEngine(settings["stream_engine"])
+    if settings["stream_engine"] == StreamEngine.VLC and not settings["vlc_path"]:
+        raise ValueError("Stream engine: VLC requires a VLC path.")
+
+    if type(settings["remove_captions_and_subtitles"]) is not bool:
+        raise ValueError(f'Remove captions and subtitles: expected true or false, got {settings["remove_captions_and_subtitles"]}')
+
+    for key, (display_name, minimum) in SETTINGS_INT_FIELDS.items():
+        if type(settings[key]) is not int or settings[key] < minimum:
+            raise ValueError(f"{display_name}: expected a whole number of at least {minimum}, got {settings[key]}")
+
+    if type(settings["media_servers"]) not in (list, tuple):
+        raise ValueError(f'Media servers: expected list, got {settings["media_servers"]}')
+    servers = tuple(validate_media_server(server) for server in settings["media_servers"])
+    seen_ids: set[str] = set()
+    seen_names: set[str] = set()
+    for server in servers:
+        if server["id"] in seen_ids:
+            raise ValueError(f'Media server "{server["name"]}": ID {server["id"]} is used more than once.')
+        if server["name"].casefold() in seen_names:
+            raise ValueError(f'Media server "{server["name"]}": another server already has this name.')
+        seen_ids.add(server["id"])
+        seen_names.add(server["name"].casefold())
+    settings["media_servers"] = servers
+    return cast(SettingsInfo, settings)
+
+
+def seed_settings_from_env() -> tuple[SettingsInfo, list[str]]:
+    """Creates settings from the environment variables used before settings.json existed.
+    Invalid values are skipped with a warning so that the application always starts.
+    """
+    settings = default_settings()
+    warnings: list[str] = []
+    for env_var, key in LEGACY_ENV_VARS.items():
+        raw = os.getenv(env_var, "").strip()
+        if not raw:
+            continue
+        default = cast(Mapping[str, Any], settings)[key]
+        try:
+            value: Any = raw
+            if type(default) is bool:
+                if raw.lower() not in ("true", "false"):
+                    raise ValueError("expected 'true' or 'false'")
+                value = raw.lower() == "true"
+            elif type(default) is int:
+                value = int(raw)
+            settings = validate_settings({**settings, key: value})
+        except ValueError as e:
+            warnings.append(f"Ignored {env_var}={raw}: {e}")
+
+    for server_type, name, url_env_var, api_key_env_var in LEGACY_MEDIA_SERVER_ENV_VARS:
+        url = os.getenv(url_env_var, "").strip()
+        if not url:
+            continue
+        api_key = os.getenv(api_key_env_var, "").strip()
+        server: MediaServerInfo = {"id": create_media_server_id(), "name": name, "type": server_type, "url": url, "api_key": api_key, "enabled": bool(api_key)}
+        try:
+            settings = validate_settings({**settings, "media_servers": (*settings["media_servers"], server)})
+        except ValueError as e:
+            warnings.append(f"Ignored {url_env_var}={url}: {e}")
+            continue
+        if not api_key:
+            warnings.append(f"{name} media server was added disabled because {api_key_env_var} is not set, add its API key in Settings.")
+    return settings, warnings
 
 
 class Config:
     """
     Manages all application configuration, file paths, and logging.
     
-    Loads settings from environment variables and provides async methods for
-    accessing and persisting data to JSON files in a non-blocking, safe manner.
+    Settings are managed in the web UI and stored in settings.json, they are applied without a restart.
+    Provides async methods for accessing and persisting data to JSON files in a non-blocking, safe manner.
     """
     __slots__ = (
-        'nexus_url', 'logs_dir', 'log_backup_count', 'process_logs_retention_seconds',
+        'logs_dir',
+        'settings_name', 'settings_path',
         'providers_name', 'providers_path',
         'discovered_sources_name', 'discovered_sources_path',
         'logical_channels_name', 'logical_channels_path',
@@ -31,12 +195,11 @@ class Config:
         'channel_list_name', 'channel_list_path', 'channel_list_default_path',
         'playlists_name', 'playlists_path',
         'quality_cache_name', 'quality_cache_path',
-        'jobs_name', 'jobs_path', 'vlc_path', 'stream_engine',
-        'backups_base_path', 'backups_scheduled_path', 'backups_manual_path', 'backup_count',
+        'jobs_name', 'jobs_path',
+        'backups_base_path', 'backups_scheduled_path', 'backups_manual_path',
         'tmp_dir', 'hls_segment_duration', 'segment_prune_timeout', 'latest_segment_timeout', 'hls_playlist_length',
-        'process_start_timeout', 'process_inactivity_timeout', 'ffmpeg_path', 'ffprobe_path', 'process_logs_dir',
-        'emby_url', 'emby_api_key', 'jellyfin_url', 'jellyfin_api_key', 'ghost_check_interval',
-        'file_lock', '_cleaning_up_process_logs', 'remove_captions_and_subtitles'
+        'process_start_timeout', 'process_logs_dir',
+        'file_lock', '_cleaning_up_process_logs', '_settings', '_settings_lock'
     )
     
     def __init__(self) -> None:
@@ -48,63 +211,16 @@ class Config:
         which is called by the `create` factory method.
         """
 
-        # --- Connectivity ---
+        # --- Settings ---
 
-        nexus_url: str | None = os.getenv("NEXUS_URL")
-        if not nexus_url:
-            raise ValueError("NEXUS_URL environment variable is not set.")
-        nexus_url = nexus_url.strip().rstrip('/')
-        url_port = urlparse(nexus_url).port
-        if url_port is not None:
-            raise ValueError("NEXUS_URL should not contain a port, set the NEXUS_PORT environment variable instead.")
-        self.nexus_url: Final[str] = f"{nexus_url}:{NEXUS_TUNER_PORT}"
-
-        # --- Stream Engines ---
-
-        ffmpeg_path: str | None = os.getenv("NEXUS_FFMPEG_PATH")
-        if not ffmpeg_path:
-            raise ValueError("NEXUS_FFMPEG_PATH environment variable is not set.")
-        self.ffmpeg_path: Final[Path] = Path(ffmpeg_path.strip())
-        if not os.path.isfile(self.ffmpeg_path):
-            raise ValueError(f"NEXUS_FFMPEG_PATH '{self.ffmpeg_path}' does not point to a valid file.")
-        if not os.access(self.ffmpeg_path, os.X_OK):
-            raise ValueError(f"NEXUS_FFMPEG_PATH '{self.ffmpeg_path}' is not executable. Please check permissions.")
-        self.ffprobe_path: Final[Path] = self.ffmpeg_path.with_name(self.ffmpeg_path.name.replace("ffmpeg", "ffprobe"))
-        if not os.path.isfile(self.ffprobe_path):
-            raise ValueError(f"NEXUS_FFMPEG_PATH '{self.ffprobe_path}' does not point to a valid ffprobe file.")
-        if not os.access(self.ffprobe_path, os.X_OK):
-            raise ValueError(f"NEXUS_FFMPEG_PATH '{self.ffprobe_path}' is not executable. Please check permissions.")
-
-        vlc_path: str | None = os.getenv("NEXUS_VLC_PATH")
-        self.vlc_path: Path | None = None
-        if vlc_path:
-            self.vlc_path = Path(vlc_path.strip())
-            if not os.path.isfile(self.vlc_path):
-                raise ValueError(f"NEXUS_VLC_PATH '{self.vlc_path}' does not point to a valid file.")
-            if not os.access(self.vlc_path, os.X_OK):
-                raise ValueError(f"NEXUS_VLC_PATH '{self.vlc_path}' is not executable. Please check permissions.")
-
-        stream_engine = os.getenv("NEXUS_STREAM_ENGINE")
-        if stream_engine not in StreamEngine:
-            raise ValueError(f"NEXUS_STREAM_ENGINE '{stream_engine}' is not a valid StreamEngine: {", ".join(StreamEngine)}")
-        self.stream_engine: Final[StreamEngine] = StreamEngine(stream_engine)
-        if self.stream_engine == StreamEngine.VLC and not self.vlc_path:
-            raise ValueError("NEXUS_STREAM_ENGINE is set to VLC but NEXUS_VLC_PATH is not set.")
-
-        remove_captions_and_subtitles = os.getenv("NEXUS_REMOVE_CAPTIONS_AND_SUBTITLES", "false").lower()
-        if remove_captions_and_subtitles not in ("true", "false"):
-            raise ValueError("NEXUS_REMOVE_CAPTIONS_AND_SUBTITLES must be 'true' or 'false'.")
-        self.remove_captions_and_subtitles: Final[bool] = remove_captions_and_subtitles == "true"
+        self._settings: SettingsInfo = default_settings()  # Replaced with settings.json in _initialize()
+        self._settings_lock: Final[asyncio.Lock] = asyncio.Lock()
+        self.settings_name: Final[str] = "settings.json"
+        self.settings_path: Final[Path] = CONFIG_DIR / self.settings_name
 
         # --- Logging ---
 
         self.logs_dir: Final[Path] = CONFIG_DIR / "logs"
-        self.log_backup_count: Final[int] = int(os.getenv("NEXUS_LOG_BACKUP_COUNT", 7))
-        if self.log_backup_count < 0:
-            raise ValueError("NEXUS_LOG_BACKUP_COUNT must be a non-negative integer.")
-        self.process_logs_retention_seconds: Final[int] = int(os.getenv("NEXUS_PROCESS_LOGS_RETENTION_SECONDS", 86400))
-        if self.process_logs_retention_seconds < 0:
-            raise ValueError("NEXUS_PROCESS_LOGS_RETENTION_SECONDS must be a non-negative integer.")
 
         # --- JSON Data Paths ---
 
@@ -138,9 +254,6 @@ class Config:
         self.backups_base_path: Final[Path] = CONFIG_DIR / "backups"
         self.backups_scheduled_path: Final[Path] = self.backups_base_path / "scheduled"
         self.backups_manual_path: Final[Path] = self.backups_base_path / "manual"
-        self.backup_count: Final[int] = int(os.getenv("NEXUS_BACKUP_COUNT", 30))
-        if self.backup_count < 0:
-            raise ValueError("NEXUS_BACKUP_COUNT must be a non-negative integer.")
 
         # --- Temp Directory ---
 
@@ -153,20 +266,7 @@ class Config:
         self.latest_segment_timeout: Final[float] = 60
         self.hls_playlist_length: Final[int] = 30
         self.process_start_timeout: Final[float] = 5
-        self.process_inactivity_timeout: Final[int] = int(os.getenv("NEXUS_PROCESS_INACTIVITY_TIMEOUT", 900))
-        if self.process_inactivity_timeout < 0:
-            raise ValueError("NEXUS_PROCESS_INACTIVITY_TIMEOUT must be a non-negative integer.")
         self.process_logs_dir: Final[Path] = self.logs_dir / "process_logs"
-
-        # --- Media Server Monitoring Configs ---
-
-        self.emby_url: Final[str | None] = os.getenv("NEXUS_EMBY_URL")
-        self.emby_api_key: Final[str | None] = os.getenv("NEXUS_EMBY_API_KEY")
-        self.jellyfin_url: Final[str | None] = os.getenv("NEXUS_JELLYFIN_URL")
-        self.jellyfin_api_key: Final[str | None] = os.getenv("NEXUS_JELLYFIN_API_KEY")
-        self.ghost_check_interval: Final[int] = int(os.getenv("NEXUS_GHOST_SESSION_CHECK_INTERVAL", 60))
-        if self.ghost_check_interval < 1:
-            raise ValueError("NEXUS_GHOST_SESSION_CHECK_INTERVAL must be a positive integer.")
 
         self.file_lock: Final[asyncio.Lock] = asyncio.Lock()
         self._cleaning_up_process_logs: bool = False
@@ -182,6 +282,186 @@ class Config:
         await instance._initialize()
         return instance
 
+    # --- Settings ---
+
+    @property
+    def settings(self) -> SettingsInfo:
+        return self._settings
+
+    @property
+    def nexus_url(self) -> str:
+        """Fallback URL used when the address a client connected with is unknown."""
+        return f"{self._settings['nexus_url'] or 'http://localhost'}:{NEXUS_TUNER_PORT}"
+
+    @property
+    def ffmpeg_path(self) -> Path:
+        return Path(self._settings["ffmpeg_path"])
+
+    @property
+    def ffprobe_path(self) -> Path:
+        ffmpeg_path = self.ffmpeg_path
+        return ffmpeg_path.with_name(ffmpeg_path.name.replace("ffmpeg", "ffprobe"))
+
+    @property
+    def vlc_path(self) -> Path | None:
+        return Path(self._settings["vlc_path"]) if self._settings["vlc_path"] else None
+
+    @property
+    def stream_engine(self) -> StreamEngine:
+        return self._settings["stream_engine"]
+
+    @property
+    def remove_captions_and_subtitles(self) -> bool:
+        return self._settings["remove_captions_and_subtitles"]
+
+    @property
+    def process_inactivity_timeout(self) -> int:
+        return self._settings["process_inactivity_timeout"]
+
+    @property
+    def process_logs_retention_seconds(self) -> int:
+        return self._settings["process_logs_retention_seconds"]
+
+    @property
+    def log_backup_count(self) -> int:
+        return self._settings["log_backup_count"]
+
+    @property
+    def backup_count(self) -> int:
+        return self._settings["backup_count"]
+
+    @property
+    def ghost_check_interval(self) -> int:
+        return self._settings["ghost_check_interval"]
+
+    @property
+    def media_servers(self) -> tuple[MediaServerInfo, ...]:
+        return self._settings["media_servers"]
+
+    def get_media_server(self, server_id: MediaServerId) -> MediaServerInfo | None:
+        return next((server for server in self.media_servers if server["id"] == server_id), None)
+
+    def get_engine_problem(self, stream_engine: StreamEngine) -> str | None:
+        """Returns why streams cannot be created with the stream engine, or None if its executables are usable."""
+        if stream_engine == StreamEngine.FFMPEG:
+            executables = (("FFmpeg", self.ffmpeg_path), ("FFprobe", self.ffprobe_path))
+        elif self.vlc_path:
+            executables = (("VLC", self.vlc_path),)
+        else:
+            return "VLC path is not set."
+        for display_name, path in executables:
+            if not os.path.isfile(path):
+                return f"{display_name} was not found at '{path}'."
+            if not os.access(path, os.X_OK):
+                return f"{display_name} at '{path}' is not executable, check its permissions."
+        return None
+
+    def get_path_problems(self) -> list[str]:
+        """Returns problems with the configured executables, FFmpeg is always needed for quality analysis."""
+        problems: list[str] = []
+        if (problem := self.get_engine_problem(StreamEngine.FFMPEG)):
+            problems.append(problem)
+        if (self.vlc_path or self.stream_engine == StreamEngine.VLC) and (problem := self.get_engine_problem(StreamEngine.VLC)):
+            problems.append(problem)
+        return problems
+
+    async def update_settings(self, changes: Mapping[str, Any]) -> set[str]:
+        """Validates, saves and applies the changed settings, returning the keys whose value changed.
+        Raises ValueError if the settings are invalid and RuntimeError if they could not be saved.
+        """
+        async with self._settings_lock:
+            return await self._save_and_apply_settings({**self._settings, **changes})
+
+    async def add_media_server(self, server: MediaServerInfo) -> None:
+        """Adds a media server, raises like update_settings()."""
+        async with self._settings_lock:
+            await self._save_and_apply_settings({**self._settings, "media_servers": (*self._settings["media_servers"], server)})
+
+    async def update_media_server(self, server: MediaServerInfo) -> None:
+        """Replaces the media server with the same ID, raises like update_settings()."""
+        async with self._settings_lock:
+            if not any(existing["id"] == server["id"] for existing in self._settings["media_servers"]):
+                raise ValueError(f"Media server '{server['id']}' not found.")
+            servers = tuple(server if existing["id"] == server["id"] else existing for existing in self._settings["media_servers"])
+            await self._save_and_apply_settings({**self._settings, "media_servers": servers})
+
+    async def delete_media_server(self, server_id: MediaServerId) -> None:
+        """Deletes a media server, raises like update_settings()."""
+        async with self._settings_lock:
+            servers = tuple(server for server in self._settings["media_servers"] if server["id"] != server_id)
+            if len(servers) == len(self._settings["media_servers"]):
+                raise ValueError(f"Media server '{server_id}' not found.")
+            await self._save_and_apply_settings({**self._settings, "media_servers": servers})
+
+    async def reload_settings(self) -> set[str] | None:
+        """Reloads settings.json, e.g. after it was edited by hand. Returns the changed keys, or None if it could not be loaded."""
+        async with self._settings_lock:
+            settings = await self.get_settings_config()
+            if settings is None:
+                return None
+            return self._apply_settings(settings)
+
+    async def _save_and_apply_settings(self, data: Mapping[str, Any]) -> set[str]:
+        """Must be called with _settings_lock held."""
+        settings = validate_settings(dict(data))
+        if not await self.save_settings_config(settings):
+            raise RuntimeError(f"Could not save {self.settings_name}, see the logs for details.")
+        return self._apply_settings(settings)
+
+    def _apply_settings(self, settings: SettingsInfo) -> set[str]:
+        """Swaps in the new settings in a single assignment so readers always see a consistent snapshot."""
+        old_settings = cast(Mapping[str, Any], self._settings)
+        new_settings = cast(Mapping[str, Any], settings)
+        self._settings = settings
+        changed = {key for key in new_settings if new_settings[key] != old_settings[key]}
+        if "log_backup_count" in changed:
+            Log.set_backup_count(settings["log_backup_count"])
+        for key in sorted(changed):
+            if key == "media_servers":
+                servers = ", ".join(f"{server['name']} ({server['type']}{'' if server['enabled'] else ', disabled'})" for server in settings["media_servers"])
+                Log.info(Label.CONFIG, f"Setting media_servers changed to: {servers or 'none'}")
+            else:
+                Log.info(Label.CONFIG, f"Setting {key} changed from {json.dumps(old_settings[key])} to {json.dumps(new_settings[key])}")
+        return changed
+
+    async def _load_or_seed_settings(self) -> None:
+        """Loads settings.json, creating it from the legacy environment variables on the first start."""
+        legacy_env_vars = [*LEGACY_ENV_VARS, *(env_var for _, _, *env_vars in LEGACY_MEDIA_SERVER_ENV_VARS for env_var in env_vars)]
+        set_legacy_env_vars = [env_var for env_var in legacy_env_vars if os.getenv(env_var)]
+        if not await aiofiles.os.path.exists(self.settings_path):
+            settings, warnings = seed_settings_from_env()
+            if not await self.save_settings_config(settings):
+                raise RuntimeError(f"Could not create {self.settings_path}")
+            source = "environment variables" if set_legacy_env_vars else "default settings"
+            Log.info(Label.STARTUP, f"Created {self.settings_path} from {source}, settings are now managed in the web UI.")
+            for warning in warnings:
+                Log.warn(Label.STARTUP, warning)
+        else:
+            loaded_settings = await self.get_settings_config(label=Label.STARTUP)
+            if loaded_settings is None:
+                raise RuntimeError(f"Could not load {self.settings_path}, fix or delete the file to recreate it.")
+            settings = loaded_settings
+            if (ignored := set_legacy_env_vars):
+                Log.info(Label.STARTUP, f"Ignoring environment variables {', '.join(ignored)}, settings are managed in the web UI ({self.settings_name}).")
+        self._settings = settings
+        Log.set_backup_count(settings["log_backup_count"])
+        for problem in self.get_path_problems():
+            Log.error(Label.STARTUP, f"{problem} Streams cannot be created until this is fixed in Settings.")
+
+    async def get_settings_config(self, *, label: Label | None = None) -> SettingsInfo | None:
+        """Loads the settings from settings.json."""
+        try:
+            return validate_settings(await self._load_json_file(self.settings_path))
+        except BaseException as e:
+            Log.critical(label or Label.CONFIG, f"Failed to load settings from {self.settings_path}: {e}")
+            if isinstance(e, Exception):
+                return
+            raise
+
+    async def save_settings_config(self, data: SettingsInfo) -> bool:
+        """Saves the settings to settings.json."""
+        return await self._save_json_file(self.settings_path, data)
+
     async def _initialize(self) -> None:
         """
         Performs all asynchronous I/O operations required for initialization.
@@ -193,6 +473,8 @@ class Config:
 
         Log.initialize_logger(self.logs_dir, self.log_backup_count)
         Log.info(Label.STARTUP, f"NexusTuner v{NEXUS_TUNER_VERSION}")
+
+        await self._load_or_seed_settings()
 
         # If all the JSON config files do not exist, create them for first time setup
         if all([not await aiofiles.os.path.exists(path) for path in (
@@ -699,7 +981,7 @@ class Config:
     async def backup_config(self, *, scheduled: bool) -> Path | None:
         """Creates a zip backup of the current configuration files."""
         if scheduled and not self.backup_count:
-            Log.debug(Label.CONFIG, "Scheduled backups are disabled (NEXUS_BACKUP_COUNT is 0). Skipping backup.")
+            Log.debug(Label.CONFIG, "Scheduled backups are disabled (scheduled backups kept is 0). Skipping backup.")
             return
         try:
             base_path = self.backups_scheduled_path if scheduled else self.backups_manual_path
@@ -708,6 +990,7 @@ class Config:
             backup_path = backup_folder.with_name(f"{backup_folder.name}.zip")
             Log.info(Label.CONFIG, f"Creating backup at {backup_path}")
             async with self.file_lock:
+                await aioshutil.copy2(self.settings_path, backup_folder / self.settings_name)
                 await aioshutil.copy2(self.providers_path, backup_folder / self.providers_name)
                 await aioshutil.copy2(self.discovered_sources_path, backup_folder / self.discovered_sources_name)
                 await aioshutil.copy2(self.logical_channels_path, backup_folder / self.logical_channels_name)

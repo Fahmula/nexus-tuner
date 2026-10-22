@@ -15,7 +15,7 @@ from nexus_tuner.handler import ChannelHandler
 from nexus_tuner.slots import ProviderSlots
 from nexus_tuner.utils import (FAILED_STOP_REASONS, PROCESS_TERMINATE_INTERVAL, PROCESS_TERMINATE_TIMEOUT, NEXUS_TUNER_USER_AGENT, Bitrate, BitrateScore, ChannelNum, DateTimeISO, Framerate, FramerateScore, Height,
                                 Label, Log, LogicalChannelId, Offset, ProbeInfo, ProbeSuccess, ProviderAlias, QualityInfoImpl, QualityProcessInfos, QualityProcessInfosImpl, QualityScore, QualityScores,
-                                QualityScoresImpl, ResolutionScore, QualityCacheData, QualityCacheDataImpl, Runtime, RuntimeInfo, RuntimeScore, SourceId, SourceMappingInfoMutable, StopReason, StreamName,
+                                QualityScoresImpl, ResolutionScore, QualityCacheData, QualityCacheDataImpl, Runtime, RuntimeInfo, RuntimeScore, SourceId, SourceMappingInfoMutable, StopReason, StreamEngine, StreamName,
                                 StreamURL, TVGDisplayTitle, TVGLogo, TVGName, TotalScore, Uptime, UptimeScore, VideoKey, VideoName, Width, create_stream_name, create_video_name, run_bg)
 
 if TYPE_CHECKING:
@@ -332,6 +332,10 @@ class QualityMonitor:
     
     async def analyze_mapped_sources(self, input_lc_id: LogicalChannelId | None = None) -> int | str:
         """Finds and probes all mapped sources concurrently."""
+        if (problem := self.config.get_engine_problem(StreamEngine.FFMPEG)):
+            # Without FFprobe every source would be recorded as offline
+            Log.error(Label.QUALITY, f"Skipping quality analysis: {problem}")
+            return 0
         if self._running:
             if not input_lc_id:
                 Log.warn(Label.QUALITY, "Quality analysis is already running, cannot start another.")
@@ -772,6 +776,9 @@ class QualityMonitor:
 
     async def measure_relative_offset_for_channel(self, logical_channel_id: LogicalChannelId) -> bool | None:
         """Measures relative delay between sources mapped to a logical channel."""
+        if (problem := self.config.get_engine_problem(StreamEngine.FFMPEG)):
+            Log.error(Label.QUALITY, f"Skipping offset measurement: {problem}")
+            return
         loop = asyncio.get_running_loop()
         logical_channel = await self.handler.get_logical_channel_by_id(logical_channel_id)
         if not logical_channel:

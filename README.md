@@ -59,55 +59,59 @@ venv\Scripts\pip install -r requirements.txt  # Windows
 
 > [!IMPORTANT]
 > You'll need to install FFmpeg (and optionally VLC) separately on your system, you'll be able to
-> configure the paths in the `.env` file later. ffprobe will be inferred from the FFmpeg path.
+> set their paths on the **Settings** page later. ffprobe will be inferred from the FFmpeg path.
 
 ### Configuring `NexusTuner`
 
-You can set the environment variables on your system, in the docker compose file, or in the `.env` file.
+Almost everything is configured on the **Settings** page of the web UI and saved in `settings.json` in your config directory.
+Changes apply immediately without a restart. Only two environment variables are still needed to start the application:
+
+| Variable                          | Description                                                                         | Example                              |
+| :-------------------------------- | :---------------------------------------------------------------------------------- | :----------------------------------- |
+| **`NEXUS_CONFIG_DIR`** (Required) | The directory where `NexusTuner` stores its configuration files. `/config` in Docker. | `/path/to/config/folder/nexus-tuner` |
+| `NEXUS_PORT`                      | The port the application listens on and serves client URLs with.                   | `4040`                               |
+
+You can set them on your system, in the docker compose file, or in a `.env` file in your config directory, see [env.example](env.example).
+Docker users only need the docker compose file. Non-docker users should create a directory anywhere on their system to use as their
+config directory and copy [env.example](env.example) to `config/.env`.
+
+#### Settings Page
+
+| Setting                       | Description                                                                                             | Default            |
+| :---------------------------- | :------------------------------------------------------------------------------------------------------ | :----------------- |
+| Fallback URL                  | Address without the port, only used when the address a client connected with is unknown.               | (empty)            |
+| Stream Engine                 | The stream processing engine to use, `FFmpeg` or `VLC`.                                                 | `FFmpeg`           |
+| FFmpeg Path                   | The path to the FFmpeg executable, ffprobe must be in the same folder.                                  | `/usr/bin/ffmpeg`  |
+| VLC Path                      | The path to the VLC executable (optional).                                                              | (empty)            |
+| Remove captions and subtitles | Removes subtitles from the processed streams.                                                           | Off                |
+| Inactivity Timeout            | Seconds of inactivity before a stream is stopped. Inactive streams will be pruned earlier when needed.  | `900`              |
+| Stream Log Retention          | How long to keep process logs in seconds.                                                               | `86400`            |
+| Days of Logs Kept             | Number of days of log backups to keep.                                                                  | `7`                |
+| Scheduled Backups Kept        | Number of days of config backups to keep, `0` disables them. Each backup is `<1MB` in size.             | `30`               |
+| Check Interval                | Interval in seconds to check the media servers for ghost sessions.                                      | `60`               |
+| Media Servers                 | Emby and Jellyfin servers to check for ghost sessions, see below.                                       | (none)             |
+
+The application shows a warning on every page if the FFmpeg or VLC path cannot be used.
+
 > [!WARNING]
-> Values from your system or the docker compose file will override the `.env` file.
+> Backups include `settings.json`, which contains your media server API keys.
 
-#### Create the Environment File
+#### Media Servers and Ghost Sessions
 
-For docker users, your config directory will be your mount to `/config`.
+When media servers are added on the **Settings** page, the ghost session monitor asks each enabled server what is playing and stops
+streams that none of them are watching, e.g. when a client stopped watching but left its connection open.
 
-For non-docker users, create a directory anywhere on your system to use as your config directory.
+* Add **every** Emby or Jellyfin server that watches through `NexusTuner`, including ones at other locations that use a shared
+  playlist. Streams watched only on a server that is not added will be stopped.
+* Channels are matched by name, keep the channel names in each server the same as in `NexusTuner`.
+* If an enabled server cannot be reached, no streams are stopped until it is reachable again.
+* Use **Test** to check the URL and API key. API keys are created under **API Keys** in each server's dashboard.
 
-Copy the example environment file at [env.example](env.example) to `config/.env`.
+#### Upgrading From Environment Variables
 
-#### Edit the Environment File
-
-There are two baseline options you need to set:
-
-1. **`NEXUS_URL`**: The base URL where your `NexusTuner` instance will be accessible.
-2. **`NEXUS_PORT`**: The port `NexusTuner` will listen on
-
-Non-docker users will also need to set two more options:
-
-3. **`NEXUS_CONFIG_DIR`**: The directory where `NexusTuner` will store its configuration files.
-4. **`NEXUS_FFMPEG_PATH`**: The path to the FFmpeg executable on your system.
-5. **`NEXUS_VLC_PATH`**: The path to the VLC executable on your system (optional).
-
-Here are all the available environment variables:
-
-| Variable                               | Description                                                                                             | Example                               |
-| :------------------------------------- | :------------------------------------------------------------------------------------------------------ | :------------------------------------ |
-| **`NEXUS_CONFIG_DIR`** (Required)      | The directory where `NexusTuner` will store its configuration files.                                    | `/path/to/config/folder/nexus-tuner`  |
-| **`NEXUS_URL`** (Required)             | The full URL of your `NexusTuner` instance, without the port. Used for UI and building playlist URLs.   | `http://192.168.1.100`                |
-| **`NEXUS_STREAM_ENGINE`** (Required)   | The stream processing engine to use. Options are `ffmpeg` or `vlc`.                                     | `ffmpeg`                              |
-| **`NEXUS_FFMPEG_PATH`** (Required)     | The path to the FFmpeg executable on your system. Used for processing streams.                          | `/usr/bin/ffmpeg`                     |
-| `NEXUS_VLC_PATH`                       | The path to the VLC executable on your system. Used for processing streams.                             | `/usr/bin/vlc`                        |
-| `NEXUS_PORT`                           | The internal port the application listens on.                                                           | `4040`                                |
-| `NEXUS_REMOVE_CAPTIONS_AND_SUBTITLES`               | Whether to remove subtitles from the processed streams. Options are `true` or `false`.                  | `false`                                |
-| `NEXUS_PROCESS_INACTIVITY_TIMEOUT`     | Seconds of inactivity before a stream is stopped. Inactive streams will be pruned earlier when needed.  | `900`                                 |
-| `NEXUS_PROCESS_LOGS_RETENTION_SECONDS` | How long to keep process logs in seconds.                                                               | `86400`                               |
-| `NEXUS_LOG_BACKUP_COUNT`               | Number of days of log backups to keep.                                                                  | `7`                                   |
-| `NEXUS_BACKUP_COUNT`                   | Number of days of config backups to keep. Each backup is `<1MB` in size.                                | `30`                                  |
-| `NEXUS_GHOST_SESSION_CHECK_INTERVAL`   | Interval in seconds to check Jellyfin/Emby servers for ghost sessions.                                  | `60`                                  |
-| `NEXUS_EMBY_URL`                       | (Optional) URL for your Emby server to enable ghost session cleanup.                                    | `http://emby.local:8096`              |
-| `NEXUS_EMBY_API_KEY`                   | (Optional) API key for your Emby server.                                                                | `your_emby_api_key`                   |
-| `NEXUS_JELLYFIN_URL`                   | (Optional) URL for your Jellyfin server to enable ghost session cleanup.                                | `http://jellyfin.local:8096`          |
-| `NEXUS_JELLYFIN_API_KEY`               | (Optional) API key for your Jellyfin server.                                                            | `your_jellyfin_api_key`               |
+Earlier versions were configured with environment variables such as `NEXUS_URL`, `NEXUS_FFMPEG_PATH` and `NEXUS_EMBY_URL`. On the first
+start after upgrading, their values are copied into `settings.json` automatically, after that they are ignored and can be removed.
+An Emby or Jellyfin URL without an API key is added as a disabled server.
 
 ### Run `NexusTuner`
 
@@ -140,7 +144,8 @@ Schedule `NexusTuner` to run on startup using your system's service manager (e.g
 > You will map specific sources to your configured logical channels in `NexusTuner`, perform only the bare minimum filtering on your IPTV
 > service (e.g. only US channels) for the best experience.
 
-* Open a web browser and navigate to the `NEXUS_URL` and `NEXUS_PORT` you configured (e.g. `http://192.168.1.100:4040`).
+* Open a web browser and navigate to your server's address and `NEXUS_PORT` (e.g. `http://192.168.1.100:4040`).
+* Check the **Settings** page, e.g. to set the FFmpeg path or add your Emby and Jellyfin servers.
 * Navigate to the **Providers** page and add your M3U source providers.
   * Return to the Dashboard and click `Reload Providers & Sources` to discover the sources from your configured providers.
 * Navigate to the **Logical Channels** page to create your desired channel lineup.
@@ -156,10 +161,10 @@ Schedule `NexusTuner` to run on startup using your system's service manager (e.g
 
 The best way to use `NexusTuner` is through the `HDHomeRun` interface, which is supported by many media clients including Plex, Emby, and Jellyfin.
 `NexusTuner` should automatically be detected by your media client applications if they are on the same network. Otherwise, follow the instructions
-for your specific media client application to add an `HDHomeRun` tuner by specifying the `NEXUS_URL` and `NEXUS_PORT`.
+for your specific media client application to add an `HDHomeRun` tuner by specifying your server's address and `NEXUS_PORT`.
 
 `NexusTuner` also provides a standard M3U playlist that can be used in any media client application that supports it. For an application
-like VLC, you can use the M3U playlist URL: **`<NEXUS_URL>:<NEXUS_PORT>/playlist.m3u`**
+like VLC, you can use the M3U playlist URL: **`http://<server address>:<NEXUS_PORT>/playlist.m3u`**
 
 ### Updating `NexusTuner`
 

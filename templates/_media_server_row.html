@@ -1,0 +1,44 @@
+<tr id="media-server-{{ server.id }}">
+    <td>
+        <strong>{{ server.name }}</strong>
+        {% if not server.enabled %}
+            <span class="badge bg-secondary ms-1">Disabled</span>
+        {% endif %}
+    </td>
+    <td>{{ "Emby" if server.type == "emby" else "Jellyfin" }}</td>
+    <td class="font-monospace small text-break">{{ server.url }}</td>
+    <td><span class="text-muted">{{ "***********" if server.api_key else "Not set" }}</span></td>
+    <td id="media-server-status-{{ server.id }}">
+        {% if not server.enabled %}
+            <span class="text-muted small">Not checked</span>
+        {% elif status %}
+            {% with ok = status.ok, message = status.message, checked_at = status.checked_at %}
+                {% include '_media_server_test_result.html' %}
+            {% endwith %}
+        {% else %}
+            <span class="text-muted small">Waiting for first check</span>
+        {% endif %}
+    </td>
+    <td class="text-nowrap">
+        <button type="button" class="btn btn-sm btn-outline-secondary me-1" title="Test Connection"
+                hx-post="{{ url_for('ui_settings_media_server_test') }}"
+                hx-vals='{"server_id": "{{ server.id }}"}'
+                hx-target="#media-server-status-{{ server.id }}"
+                hx-swap="innerHTML">
+            <i class="fas fa-plug"></i> Test
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-primary me-1" title="Edit Media Server"
+                hx-get="{{ url_for('ui_settings_media_server_edit', server_id=server.id) }}"
+                hx-target="closest tr"
+                hx-swap="outerHTML">
+            <i class="fas fa-edit"></i> Edit
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-danger" title="Delete Media Server"
+                hx-delete="{{ url_for('ui_settings_media_server_delete', server_id=server.id) }}"
+                hx-target="#media-servers-table-body"
+                hx-swap="outerHTML"
+                hx-confirm="Are you sure you want to delete media server '{{ server.name }}'? Streams watched only on it will be stopped as ghost sessions.">
+            <i class="fas fa-trash-alt"></i> Delete
+        </button>
+    </td>
+</tr>

@@ -1,0 +1,14 @@
+<tbody id="media-servers-table-body">
+    {% for server in media_servers %}
+        {% with status = server_status.get(server.id) %}
+            {% include '_media_server_row.html' %}
+        {% endwith %}
+    {% else %}
+        <tr>
+            <td colspan="6" class="text-muted small text-center py-3">
+                No media servers yet, the ghost session monitor is off. Streams stop when clients disconnect or after the
+                inactivity timeout.
+            </td>
+        </tr>
+    {% endfor %}
+</tbody>

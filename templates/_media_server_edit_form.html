@@ -1,0 +1,12 @@
+<tr id="media-server-{{ server.id }}">
+    <td colspan="6">
+        <form hx-put="{{ url_for('ui_settings_media_server_edit', server_id=server.id) }}"
+              hx-target="closest tr"
+              hx-swap="outerHTML">
+            <input type="hidden" name="server_id" value="{{ server.id }}">
+            {% with editing = true %}
+                {% include '_media_server_fields.html' %}
+            {% endwith %}
+        </form>
+    </td>
+</tr>

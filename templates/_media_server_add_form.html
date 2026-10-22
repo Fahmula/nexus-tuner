@@ -1,0 +1,9 @@
+<div class="card card-body mb-3" id="add-media-server-form-wrapper">
+    <form hx-post="{{ url_for('ui_settings_media_server_add') }}"
+          hx-target="#media-servers-table-body"
+          hx-swap="outerHTML">
+        {% with editing = false %}
+            {% include '_media_server_fields.html' %}
+        {% endwith %}
+    </form>
+</div>
