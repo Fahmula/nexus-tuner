@@ -42,7 +42,8 @@ from nexus_tuner.utils import (Log, LogicalChannelFormDetails, PreviewId, Proces
                                 DEFAULT_PRIORITY, M3UURL, NEXUS_TUNER_PORT, NEXUS_TUNER_VERSION, ChannelNum, DiscoveredSource,
                                 Label, LogicalChannelId, LogicalChannelInfo, LogicalChannelInfoWithId, LogicalChannelMetrics, LogicalChannelTitle, MaxStreams, 
                                 PercentDisplay, Priority, ProviderAlias, ProviderStatus, QualityScores, SourceInfo, SourceMappingInfoWithId, SourceMetrics,
-                                SourceId, TVGGroupTitle, TVGId, TVGLogo, VideoType, create_preview_id, create_stream_key, create_stream_name, duration_to_str, get_source_id_from_preview, is_valid_url, run_bg, sort_sources)
+                                SourceId, TVGGroupTitle, TVGId, TVGLogo, VideoType, create_preview_id, create_stream_key, create_stream_name, duration_to_str, get_source_id_from_preview, is_valid_url, run_bg, sort_sources,
+                                MAIN_PLAYLIST_ID, BaseURL, GroupKey, LCGroupMode, PlaylistId, PlaylistInfo, PlaylistName, normalize_group_key, playlist_device_id)
 
 # --- Constants ---
 PLAYLIST_POLL_INTERVAL: Final[float] = 0.2         # Seconds to wait between checking for a new playlist
@@ -257,13 +258,13 @@ async def serve_mpegts_stream(logical_channel_id: LogicalChannelId, stream_respo
             await asyncio.sleep(CREATE_STREAM_POLL_INTERVAL)
         added_pending_stream = True
 
-        logical_channel = await handler.get_logical_channel_by_id(logical_channel_id)
-        if not logical_channel:
-            msg = f"Logical channel {logical_channel_id} not found for MPEGTS."
+        stream_channel = await handler.resolve_stream_channel(logical_channel_id)
+        if not stream_channel:
+            msg = f"Channel {logical_channel_id} not found for MPEGTS."
             Log.error(Label.SERVER, msg, (VideoType.MPEGTS, stream_engine))
             abort(404, msg)
-        logical_channel_title = logical_channel['logical_channel_title']
-        channel_num = logical_channel['channel_num']
+        logical_channel_title = stream_channel['title']
+        channel_num = stream_channel['channel_num']
 
         lc_id_processes = await stream_manager.get_processes_from_logical_id(logical_channel_id, video_type=VideoType.MPEGTS, stream_engine=stream_engine, long_term_only=True)
         if len(lc_id_processes):
@@ -338,13 +339,13 @@ async def serve_hls_playlist(logical_channel_id: LogicalChannelId | PreviewId, s
         added_pending_stream = True
 
         if logical_channel_title is None:
-            logical_channel = await handler.get_logical_channel_by_id(cast(LogicalChannelId, logical_channel_id))
-            if not logical_channel:
-                msg = f"Logical channel {logical_channel_id} not found for HLS."
+            stream_channel = await handler.resolve_stream_channel(logical_channel_id)
+            if not stream_channel:
+                msg = f"Channel {logical_channel_id} not found for HLS."
                 Log.error(Label.SERVER, msg, (VideoType.HLS, stream_engine))
                 abort(404, msg)
-            logical_channel_title = logical_channel['logical_channel_title']
-            channel_num = logical_channel['channel_num']
+            logical_channel_title = stream_channel['title']
+            channel_num = stream_channel['channel_num']
         else:
             channel_num = channel_num
 
@@ -487,10 +488,53 @@ async def stop_stream(video_type: VideoType, logical_channel_id: LogicalChannelI
     return Response(status=204)
 
 
+def get_request_base_url(playlist: PlaylistInfo | None = None) -> str:
+    """Returns the base URL for client-facing URLs, using the playlist's override if set,
+    otherwise the URL the client connected with so that e.g. clients connecting over a VPN get working URLs.
+    """
+    if playlist and playlist["base_url"]:
+        return playlist["base_url"].rstrip("/")
+    host = request.headers.get("X-Forwarded-Host", "").split(",")[0].strip() or request.host
+    if not host:
+        return config.nexus_url
+    scheme = request.headers.get("X-Forwarded-Proto", "").split(",")[0].strip() or request.scheme
+    return f"{scheme}://{host}"
+
+
+def get_playlist_urls(playlist_id: PlaylistId, playlist: PlaylistInfo) -> dict[str, str]:
+    """Returns the M3U and HDHomeRun URLs of a playlist as seen by the current client."""
+    base_url = get_request_base_url(playlist)
+    if playlist_id == MAIN_PLAYLIST_ID:
+        return {"m3u": f"{base_url}/playlist.m3u", "hdhomerun": base_url}
+    return {"m3u": f"{base_url}/playlists/{playlist_id}/playlist.m3u", "hdhomerun": f"{base_url}/playlists/{playlist_id}"}
+
+
+async def serve_playlist_m3u_for(playlist_id: PlaylistId) -> Response:
+    """Serves the M3U of a playlist with URLs using the playlist's base URL."""
+    playlist = await handler.get_playlist(playlist_id)
+    entries = await handler.get_playlist_entries(playlist_id)
+    if playlist is None or entries is None:
+        msg = f"Playlist '{playlist_id}' not found."
+        Log.error(Label.SERVER, msg)
+        abort(404, msg)
+    base_url = get_request_base_url(playlist)
+    m3u_lines = ["#EXTM3U x-tvg-url=\"\""]
+    for entry in entries:
+        m3u_lines.append(entry["extinf"])
+        m3u_lines.append(f"{base_url}{entry['path']}")
+    return Response("\n".join(m3u_lines) + "\n", mimetype="application/x-mpegurl")
+
+
 @app.route("/playlist.m3u")
 async def serve_main_playlist() -> Response:
     """Serves the main M3U playlist for clients."""
-    return Response(await handler.get_main_m3u_playlist(), mimetype="application/x-mpegurl")
+    return await serve_playlist_m3u_for(MAIN_PLAYLIST_ID)
+
+
+@app.route("/playlists/<string:playlist_id>/playlist.m3u")
+async def serve_playlist_m3u(playlist_id: PlaylistId) -> Response:
+    """Serves the M3U playlist for clients of a specific playlist."""
+    return await serve_playlist_m3u_for(playlist_id)
 
 
 # --- UI Endpoints ---
@@ -815,6 +859,114 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     )
 
 
+@app.route("/ui/playlists")
+async def ui_playlists_list() -> str:
+    """Renders the list of all playlists with their client URLs."""
+    playlists = await handler.get_playlists_for_ui()
+    channel_counts = await handler.get_playlist_channel_counts()
+    playlist_urls = {p["playlist_id"]: get_playlist_urls(p["playlist_id"], p) for p in playlists}
+    return await render_template("ui_playlists.html", playlists=playlists, channel_counts=channel_counts, playlist_urls=playlist_urls,
+                                 main_playlist_id=MAIN_PLAYLIST_ID, detected_base_url=get_request_base_url())
+
+
+@app.route("/ui/playlists/delete/<string:playlist_id>", methods=["POST"])
+async def ui_playlist_delete(playlist_id: PlaylistId) -> Response | WerkzeugResponse:
+    playlist = await handler.get_playlist(playlist_id)
+    try:
+        if not await handler.delete_playlist(playlist_id):
+            raise RuntimeError("failed to save configuration")
+        msg = f"Playlist '{playlist['name'] if playlist else playlist_id}': Deleted successfully."
+        Log.info(Label.SERVER, msg)
+        await flash(msg, "success")
+        await handler.reload_handler_config()
+    except ValueError as e:
+        Log.warn(Label.SERVER, f"Cannot delete playlist '{playlist_id}': {e}")
+        await flash(str(e), "warning")
+    except RuntimeError as e:
+        msg = f"Playlist '{playlist_id}': Failed to delete - {e}."
+        Log.error(Label.SERVER, msg)
+        await flash(msg, "error")
+    return redirect(url_for('ui_playlists_list'))
+
+
+@app.route("/ui/playlists/form/", methods=["GET", "POST"])
+@app.route("/ui/playlists/form/<string:playlist_id>", methods=["GET", "POST"])
+async def ui_playlist_form(playlist_id: PlaylistId | None = None) -> Response | WerkzeugResponse | str:
+    """Handles adding/editing a playlist."""
+    if request.method == "POST":
+        form_data = cast(ImmutableMultiDict[str, str], await request.form)  # type: ignore
+        name = PlaylistName(form_data.get("name", "").strip())
+        lc_group_mode = form_data.get("lc_group_mode", LCGroupMode.INCLUDE_ALL_EXCEPT)
+        base_url = BaseURL(form_data.get("base_url", "").strip().rstrip("/"))
+        lc_groups = tuple(dict.fromkeys(normalize_group_key(group) for group in form_data.getlist("lc_groups")))
+        source_groups = tuple(dict.fromkeys(normalize_group_key(group) for group in form_data.getlist("source_groups")))
+
+        error = None
+        if not name:
+            error = "Playlist name is required."
+        elif lc_group_mode not in tuple(LCGroupMode):
+            error = f"Invalid logical channel group mode '{lc_group_mode}'."
+        elif base_url and not is_valid_url(base_url):
+            error = f"Invalid base URL '{base_url}', expected e.g. 'http://100.64.0.1:{NEXUS_TUNER_PORT}' or leave empty to detect automatically."
+        if error:
+            Log.error(Label.SERVER, f"Playlist form error: {error}")
+            await flash(error, "error")
+            return redirect(request.url)
+
+        new_playlist: PlaylistInfo = {
+            "name": name,
+            "lc_group_mode": LCGroupMode(lc_group_mode),
+            "lc_groups": lc_groups,
+            "source_groups": source_groups,
+            "base_url": base_url,
+        }
+        if playlist_id:
+            try:
+                saved = await handler.update_playlist(playlist_id, new_playlist)
+            except ValueError as e:
+                await flash(str(e), "warning")
+                return redirect(url_for('ui_playlists_list'))
+            if not saved:
+                await flash(f"Playlist '{name}': Failed to save.", "error")
+                return redirect(request.url)
+            msg = f"Playlist '{name}': Updated successfully."
+        else:
+            new_playlist_id = await handler.add_playlist(new_playlist)
+            if not new_playlist_id:
+                await flash(f"Playlist '{name}': Failed to create.", "error")
+                return redirect(request.url)
+            playlist_id = new_playlist_id
+            msg = f"Playlist '{name}': Created successfully."
+        Log.info(Label.SERVER, msg)
+        await flash(msg, "success")
+        await handler.reload_handler_config()
+        return redirect(url_for('ui_playlist_form', playlist_id=playlist_id))
+
+    playlist: PlaylistInfo | None = None
+    if playlist_id:
+        playlist = await handler.get_playlist(playlist_id)
+        if not playlist:
+            await flash(f"Playlist '{playlist_id}' not found.", "warning")
+            return redirect(url_for('ui_playlists_list'))
+    lc_groups = await handler.get_lc_groups_for_ui()
+    source_groups = await handler.get_source_groups_for_ui()
+    selected_lc_groups: set[GroupKey] = set(playlist["lc_groups"]) if playlist else set()
+    selected_source_groups: set[GroupKey] = set(playlist["source_groups"]) if playlist else set()
+    stale_lc_groups = sorted(selected_lc_groups - {group["key"] for group in lc_groups})
+    stale_source_groups = sorted(selected_source_groups - {group["key"] for group in source_groups})
+    # Selected groups are shown first so they are easy to review
+    source_groups.sort(key=lambda group: group["key"] not in selected_source_groups)
+    channel_counts = (await handler.get_playlist_channel_counts()).get(playlist_id) if playlist_id else None
+    return await render_template("ui_playlist_form.html",
+                                 playlist=playlist, playlist_id=playlist_id, main_playlist_id=MAIN_PLAYLIST_ID,
+                                 lc_groups=lc_groups, source_groups=source_groups,
+                                 selected_lc_groups=selected_lc_groups, selected_source_groups=selected_source_groups,
+                                 stale_lc_groups=stale_lc_groups, stale_source_groups=stale_source_groups,
+                                 playlist_urls=get_playlist_urls(playlist_id, playlist) if playlist_id and playlist else None,
+                                 channel_counts=channel_counts, detected_base_url=get_request_base_url(),
+                                 lc_group_modes=LCGroupMode)
+
+
 @app.route("/ui/channels/populate-from-suggestion")
 async def ui_channel_populate_from_suggestion() -> str:
     """
@@ -1021,28 +1173,37 @@ async def ui_logs_modal(num_lines: int) -> str:
 # --- HDHomeRun Emulation Endpoints ---
 
 
-@app.route('/discover.json')
-async def hdhomerun_discover() -> Response:
-    """Emulates HDHomeRun device discovery API endpoint."""
-    
+async def hdhomerun_discover_for(playlist_id: PlaylistId) -> Response:
+    """Emulates the HDHomeRun device discovery API for a playlist."""
+    playlist = await handler.get_playlist(playlist_id)
+    if playlist is None:
+        abort(404, f"Playlist '{playlist_id}' not found.")
+    base_url = get_request_base_url(playlist)
+    if playlist_id == MAIN_PLAYLIST_ID:
+        friendly_name = "NexusTuner"
+        device_base_url = base_url
+    else:
+        friendly_name = f"NexusTuner - {playlist['name']}"
+        device_base_url = f"{base_url}/playlists/{playlist_id}"
     response_dict: dict[str, str | int] = {
-        "FriendlyName": "NexusTuner",
+        "FriendlyName": friendly_name,
         "DeviceAuth": "nexus-tuner",
         "ModelNumber": NEXUS_TUNER_VERSION,
         "FirmwareName": f"nexus-tuner_{NEXUS_TUNER_VERSION}",
         "FirmwareVersion": NEXUS_TUNER_VERSION,
-        "DeviceID": "12345678",
+        "DeviceID": playlist_device_id(playlist_id),
         "Manufacturer": "nexus-tuner",
-        "BaseURL": f"{config.nexus_url}",
-        "LineupURL": f"{config.nexus_url}/lineup.json",
+        "BaseURL": device_base_url,
+        "LineupURL": f"{device_base_url}/lineup.json",
         "TunerCount": sum(p["max_streams"] for p in (await handler.get_provider_stream_status()).values())
     }
     return Response(json.dumps(response_dict), mimetype="application/json")
 
 
-@app.route('/lineup_status.json')
-async def hdhomerun_lineup_status() -> Response:
-    """Returns the status of the lineup."""
+async def hdhomerun_lineup_status_for(playlist_id: PlaylistId) -> Response:
+    """Returns the status of the lineup for a playlist."""
+    if await handler.get_playlist(playlist_id) is None:
+        abort(404, f"Playlist '{playlist_id}' not found.")
     response_dict: dict[str, int | str | list[str]] = {
         "ScanInProgress": 0,
         "ScanPossible": 0,
@@ -1052,28 +1213,60 @@ async def hdhomerun_lineup_status() -> Response:
     return Response(json.dumps(response_dict), mimetype="application/json")
 
 
+async def hdhomerun_lineup_for(playlist_id: PlaylistId) -> Response:
+    """Returns the channel lineup of a playlist in HDHomeRun format, only logical channels with a channel number are included."""
+    playlist = await handler.get_playlist(playlist_id)
+    lineup_entries = await handler.get_playlist_lineup(playlist_id)
+    if playlist is None or lineup_entries is None:
+        abort(404, f"Playlist '{playlist_id}' not found.")
+    base_url = get_request_base_url(playlist)
+    lineup: list[dict[str, str | int]] = []
+    quality_scores = await quality_monitor.get_quality_scores()
+    for entry in lineup_entries:
+        is_hd = 1 if any(quality_scores.get(source_id, {}).get('height', 0) >= 720 for source_id in entry["source_ids"]) else 0
+        lineup.append({
+            "GuideNumber": entry["channel_num"],
+            "GuideName": entry["title"],
+            "HD": is_hd,
+            "URL": f"{base_url}/{VideoType.MPEGTS}/{entry['channel_id']}"
+        })
+    return Response(json.dumps(lineup), mimetype="application/json")
+
+
+@app.route('/discover.json')
+async def hdhomerun_discover() -> Response:
+    """Emulates HDHomeRun device discovery API endpoint."""
+    return await hdhomerun_discover_for(MAIN_PLAYLIST_ID)
+
+
+@app.route('/lineup_status.json')
+async def hdhomerun_lineup_status() -> Response:
+    """Returns the status of the lineup."""
+    return await hdhomerun_lineup_status_for(MAIN_PLAYLIST_ID)
+
+
 @app.route('/lineup.json')
 async def hdhomerun_lineup() -> Response:
     """Returns the channel lineup in HDHomeRun format."""
-    lineup: list[dict[str, str | int]] = []
-    quality_scores = await quality_monitor.get_quality_scores()
-    for channel in await handler.get_logical_channels_for_ui():
-        channel_number = channel["channel_num"]
-        if not channel_number:
-            continue
-        is_hd = 1
-        for mapping in await handler.get_channel_mappings_for_ui(channel['logical_channel_id']):
-            if quality_scores.get(mapping['source_id'], {}).get('height', 0) >= 720:
-                break
-        else:
-            is_hd = 0
-        lineup.append({
-            "GuideNumber": channel_number,
-            "GuideName": channel["logical_channel_title"],
-            "HD": is_hd,
-            "URL": f"{config.nexus_url}/{VideoType.MPEGTS}/{channel['logical_channel_id']}"
-        })
-    return Response(json.dumps(lineup), mimetype="application/json")
+    return await hdhomerun_lineup_for(MAIN_PLAYLIST_ID)
+
+
+@app.route('/playlists/<string:playlist_id>/discover.json')
+async def hdhomerun_playlist_discover(playlist_id: PlaylistId) -> Response:
+    """Emulates HDHomeRun device discovery API endpoint for a specific playlist."""
+    return await hdhomerun_discover_for(playlist_id)
+
+
+@app.route('/playlists/<string:playlist_id>/lineup_status.json')
+async def hdhomerun_playlist_lineup_status(playlist_id: PlaylistId) -> Response:
+    """Returns the status of the lineup for a specific playlist."""
+    return await hdhomerun_lineup_status_for(playlist_id)
+
+
+@app.route('/playlists/<string:playlist_id>/lineup.json')
+async def hdhomerun_playlist_lineup(playlist_id: PlaylistId) -> Response:
+    """Returns the channel lineup in HDHomeRun format for a specific playlist."""
+    return await hdhomerun_lineup_for(playlist_id)
 
 
 # --- PWA Endpoints ---

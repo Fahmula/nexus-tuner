@@ -1,0 +1,132 @@
+{% extends "layout.html" %}
+{% from "_copy_url.html" import copy_url, copy_url_script %}
+
+{% block title %}Playlists - NexusTuner{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Playlists</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <a href="{{ url_for('ui_playlist_form') }}" class="btn btn-sm btn-outline-success">
+            <i class="fas fa-plus"></i> Add New Playlist
+        </a>
+    </div>
+</div>
+
+<div class="p-3 mb-4 bg-body-tertiary rounded-3 small text-muted">
+    <h6 class="border-bottom pb-2 mb-2 text-body-emphasis">How Playlists Work</h6>
+    <p class="mb-2">
+        <i class="fas fa-list text-primary me-2" style="width: 1.25em;"></i>
+        <strong>Playlists:</strong> Each playlist is its own M3U and HDHomeRun tuner built from your logical channels
+        and provider groups, so you can give different people or devices different lineups. All playlists share the same
+        provider stream limits, and viewers watching the same channel share a single stream.
+    </p>
+    <p class="mb-2">
+        <i class="fas fa-layer-group text-success me-2" style="width: 1.25em;"></i>
+        <strong>Logical Channel Groups:</strong> <span class="fst-italic text-primary-emphasis">Include all except</span>
+        includes every logical channel group except the ones you select, new groups are included automatically.
+        <span class="fst-italic text-primary-emphasis">Only include</span> includes just the groups you select.
+    </p>
+    <p class="mb-2">
+        <i class="fas fa-sitemap text-warning me-2" style="width: 1.25em;"></i>
+        <strong>Provider Groups:</strong> Select groups straight from your providers' M3Us without creating logical channels.
+        The same group from multiple providers is merged, and channels with the same name become one channel that fails over
+        between providers. Names are matched ignoring case and surrounding spaces.
+    </p>
+    <p class="mb-2">
+        <i class="fas fa-globe text-info me-2" style="width: 1.25em;"></i>
+        <strong>URLs:</strong> The URLs below use the address you are viewing this page with
+        (<span class="font-monospace">{{ detected_base_url }}</span>). Clients always get URLs matching the address they
+        connected with, e.g. someone connecting through your Tailscale IP gets Tailscale URLs inside the playlist. Set a
+        <span class="fst-italic text-primary-emphasis">Base URL</span> on a playlist to always use a fixed address instead.
+    </p>
+    <p class="mb-0">
+        <i class="fas fa-tv text-danger me-2" style="width: 1.25em;"></i>
+        <strong>HDHomeRun:</strong> Add the HDHomeRun URL as a tuner in Emby, Jellyfin, or Plex. It only contains logical channels
+        with a channel number, channels from provider groups are only available in the M3U for now. Some clients such as
+        Plex may only accept an address without a path, the Main playlist uses the root address for this reason.
+    </p>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-striped table-hover table-sm align-middle">
+        <thead class="table-light">
+            <tr>
+                <th>Name</th>
+                <th class="text-center">Logical Channel Groups</th>
+                <th class="text-center">Provider Groups</th>
+                <th class="text-center" data-bs-toggle="tooltip" title="Logical channels / provider group channels in the M3U">Channels</th>
+                <th style="min-width: 22rem;">Client URLs</th>
+                <th style="width: 9%;">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for playlist in playlists %}
+            {% set counts = channel_counts.get(playlist.playlist_id, {}) %}
+            {% set urls = playlist_urls[playlist.playlist_id] %}
+            <tr>
+                <td>
+                    <div class="fw-semibold">
+                        {{ playlist.name }}
+                        {% if playlist.playlist_id == main_playlist_id %}
+                        <span class="badge bg-primary ms-1">Default</span>
+                        {% endif %}
+                    </div>
+                    <small class="text-muted font-monospace">{{ playlist.playlist_id }}</small>
+                    {% if playlist.base_url %}
+                    <span class="badge bg-secondary ms-1" data-bs-toggle="tooltip"
+                        title="Always uses {{ playlist.base_url }}">Fixed Base URL</span>
+                    {% endif %}
+                </td>
+                <td class="text-center">
+                    {% if playlist.lc_group_mode == 'include_all_except' %}
+                        {% if playlist.lc_groups %}
+                        <span class="badge bg-success">All except {{ playlist.lc_groups|length }}</span>
+                        {% else %}
+                        <span class="badge bg-success">All</span>
+                        {% endif %}
+                    {% else %}
+                        {% if playlist.lc_groups %}
+                        <span class="badge bg-info">Only {{ playlist.lc_groups|length }}</span>
+                        {% else %}
+                        <span class="badge bg-secondary">None</span>
+                        {% endif %}
+                    {% endif %}
+                </td>
+                <td class="text-center">
+                    {% if playlist.source_groups %}
+                    <span class="badge bg-warning">{{ playlist.source_groups|length }}</span>
+                    {% else %}
+                    <span class="text-muted">-</span>
+                    {% endif %}
+                </td>
+                <td class="text-center">
+                    <small>{{ counts.get('logical_channels', 0) }} / {{ counts.get('source_channels', 0) }}</small>
+                </td>
+                <td>
+                    <div class="mb-1">{{ copy_url('m3u-url-' ~ playlist.playlist_id, urls.m3u, 'M3U') }}</div>
+                    <div>{{ copy_url('hdhr-url-' ~ playlist.playlist_id, urls.hdhomerun, 'HDHomeRun') }}</div>
+                </td>
+                <td class="text-center">
+                    <a href="{{ url_for('ui_playlist_form', playlist_id=playlist.playlist_id) }}"
+                        class="btn btn-sm btn-outline-primary me-1" title="Edit Playlist">
+                        <i class="fas fa-edit"></i> Edit
+                    </a>
+                    {% if playlist.playlist_id != main_playlist_id %}
+                    <form method="POST" action="{{ url_for('ui_playlist_delete', playlist_id=playlist.playlist_id) }}"
+                        style="display: inline;"
+                        onsubmit='return confirm({{ ("Are you sure you want to delete playlist \"" ~ playlist.name ~ "\"? Clients using its URLs will stop working.")|tojson }});'>
+                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{{ copy_url_script() }}
+{% endblock %}

@@ -11,7 +11,8 @@ import aiofiles.os
 import aioshutil
 
 from nexus_tuner.utils import (CONFIG_DIR, NEXUS_TUNER_PORT, NEXUS_TUNER_VERSION, ChannelListDataImpl, ChannelMappingsData, ChannelMappingsDataImpl, DiscoveredSourcesData, DiscoveredSourcesDataImpl, JobName, JobsData, JobsDataImpl,
-                               Label, Log, LogicalChannelsData, LogicalChannelsDataImpl, ProvidersData, ProvidersDataImpl, QualityCacheData, QualityCacheDataImpl, StopReason, StreamEngine, VideoKey, get_fs_safe_alphanum, is_valid_url)
+                               Label, Log, LCGroupMode, LogicalChannelsData, LogicalChannelsDataImpl, MAIN_PLAYLIST_ID, PLAYLIST_ID_REGEX, PlaylistsData, PlaylistsDataImpl, ProvidersData, ProvidersDataImpl,
+                               QualityCacheData, QualityCacheDataImpl, StopReason, StreamEngine, VideoKey, default_playlist_info, get_fs_safe_alphanum, is_valid_url, normalize_group_key)
 
 
 class Config:
@@ -28,6 +29,7 @@ class Config:
         'logical_channels_name', 'logical_channels_path',
         'channel_mappings_name', 'channel_mappings_path',
         'channel_list_name', 'channel_list_path', 'channel_list_default_path',
+        'playlists_name', 'playlists_path',
         'quality_cache_name', 'quality_cache_path',
         'jobs_name', 'jobs_path', 'vlc_path', 'stream_engine',
         'backups_base_path', 'backups_scheduled_path', 'backups_manual_path', 'backup_count',
@@ -121,6 +123,9 @@ class Config:
         self.channel_list_name: Final[str] = "channel_list.json"
         self.channel_list_path: Final[Path] = CONFIG_DIR / self.channel_list_name
         self.channel_list_default_path: Final[Path] = Path(__file__).parent / "channel_list.json.default"
+
+        self.playlists_name: Final[str] = "playlists.json"
+        self.playlists_path: Final[Path] = CONFIG_DIR / self.playlists_name
         
         self.quality_cache_name: Final[str] = "quality_cache.json"
         self.quality_cache_path: Final[Path] = CONFIG_DIR / self.quality_cache_name
@@ -196,6 +201,7 @@ class Config:
             self.logical_channels_path,
             self.channel_mappings_path,
             self.channel_list_path,
+            self.playlists_path,
             self.quality_cache_path,
             self.jobs_path
         )]):  # Create all except jobs, it's handled by scheduler
@@ -205,10 +211,15 @@ class Config:
             await self.save_logical_channels_config(LogicalChannelsDataImpl({}))
             await self.save_channel_mappings_config(ChannelMappingsDataImpl({}))
             await self.save_quality_cache(QualityCacheDataImpl({}))
+            await self.save_playlists_config(PlaylistsDataImpl({MAIN_PLAYLIST_ID: default_playlist_info()}))
             await aioshutil.copy(self.channel_list_default_path, self.channel_list_path)
-        elif not await aiofiles.os.path.exists(self.channel_list_path):
-            Log.debug(Label.STARTUP, f"Creating default channel list at {self.channel_list_path}")
-            await aioshutil.copy(self.channel_list_default_path, self.channel_list_path)
+        else:
+            if not await aiofiles.os.path.exists(self.channel_list_path):
+                Log.debug(Label.STARTUP, f"Creating default channel list at {self.channel_list_path}")
+                await aioshutil.copy(self.channel_list_default_path, self.channel_list_path)
+            if not await aiofiles.os.path.exists(self.playlists_path):
+                Log.info(Label.STARTUP, f"Creating default playlists at {self.playlists_path}")
+                await self.save_playlists_config(PlaylistsDataImpl({MAIN_PLAYLIST_ID: default_playlist_info()}))
 
         await aioshutil.rmtree(self.tmp_dir, ignore_errors=True)
         await aiofiles.os.makedirs(self.tmp_dir, exist_ok=True)
@@ -451,6 +462,72 @@ class Config:
     async def save_channel_mappings_config(self, data: ChannelMappingsData) -> bool:
         """Saves the channel mappings to channel_mappings.json."""
         return await self._save_json_file(self.channel_mappings_path, data)
+
+    async def get_playlists_config(self, *, label: Label | None = None) -> PlaylistsDataImpl | None:
+        """Loads the playlists configuration from playlists.json."""
+        try:
+            data: PlaylistsDataImpl = await self._load_json_file(self.playlists_path)
+            if type(data) is not dict:
+                raise ValueError(f"Invalid playlists configuration format in {self.playlists_path}")
+            for key1, val1 in data.items():  # type: ignore[reportUnknownVariableType]
+                if type(key1) is not str or not PLAYLIST_ID_REGEX.match(key1):
+                    raise ValueError(f'"{key1}": expected lowercase alphanumeric str with dashes, got {key1}')
+                if type(val1) is not dict:
+                    raise ValueError(f'"{key1}" val: expected dict, got {type(val1)}')
+                if "mode" in val1 or "groups" in val1:  # Format from an earlier playlists implementation
+                    legacy_mode = val1.pop("mode", "exclude")  # type: ignore[reportUnknownMemberType]
+                    legacy_groups = val1.pop("groups", [])  # type: ignore[reportUnknownMemberType]
+                    val1.setdefault("lc_group_mode", {"exclude": LCGroupMode.INCLUDE_ALL_EXCEPT, "include": LCGroupMode.ONLY_INCLUDE}.get(legacy_mode, legacy_mode))  # type: ignore[reportUnknownArgumentType]
+                    val1.setdefault("lc_groups", legacy_groups)
+                    Log.info(label or Label.CONFIG, f'"{key1}": Converted playlist from earlier format (mode={legacy_mode}, groups={legacy_groups})')
+                    if (legacy_sources := val1.pop("sources", [])):  # type: ignore[reportUnknownMemberType]
+                        Log.warn(label or Label.CONFIG, f'"{key1}": Individually selected sources are not supported, they will be removed when the playlist is saved: {legacy_sources}')
+                val1.setdefault("lc_group_mode", LCGroupMode.INCLUDE_ALL_EXCEPT)
+                val1.setdefault("lc_groups", [])
+                val1.setdefault("source_groups", [])
+                val1.setdefault("base_url", "")
+                for key2 in ("name", "lc_group_mode", "lc_groups", "source_groups", "base_url"):
+                    if key2 not in val1:
+                        raise ValueError(f'"{key1}" - missing required key "{key2}"')
+                    val2 = val1[key2]
+                    if key2 == "name":
+                        if type(val2) is not str or not val2.strip():
+                            raise ValueError(f'"{key1}" - "name": expected non-empty str, got {val2}')
+                    elif key2 == "lc_group_mode":
+                        if val2 not in tuple(LCGroupMode):
+                            raise ValueError(f'"{key1}" - "lc_group_mode": expected one of {", ".join(LCGroupMode)}, got {val2}')
+                    elif key2 in ("lc_groups", "source_groups"):
+                        if type(val2) is not list:
+                            raise ValueError(f'"{key1}" - "{key2}": expected list of str, got {val2}')
+                        groups: list[str] = []
+                        for group in val2:  # type: ignore[reportUnknownVariableType]
+                            if type(group) is dict and type(group.get("group")) is str:  # type: ignore[reportUnknownMemberType]
+                                group = group["group"]  # Format from an earlier playlists implementation: [{"group": "Name"}]
+                            if type(group) is not str:
+                                raise ValueError(f'"{key1}" - "{key2}": expected list of str, got {val2}')
+                            groups.append(normalize_group_key(group))
+                        if groups != val2:
+                            Log.info(label or Label.CONFIG, f'"{key1}" - "{key2}": Normalized group names to {groups}')
+                        val1[key2] = list(dict.fromkeys(groups))
+                    elif key2 == "base_url":
+                        if type(val2) is not str or (val2 and not is_valid_url(val2)):
+                            raise ValueError(f'"{key1}" - "base_url": expected empty str or valid URL, got {val2}')
+                    else:
+                        raise ValueError(f'"{key1}" - unexpected key "{key2}"')
+            data.setdefault(MAIN_PLAYLIST_ID, default_playlist_info())
+            return data
+        except BaseException as e:
+            if label == Label.STARTUP and isinstance(e, FileNotFoundError):
+                Log.info(label, f"No playlists configuration found at {self.playlists_path}, using default...")
+                return PlaylistsDataImpl({MAIN_PLAYLIST_ID: default_playlist_info()})
+            Log.critical(label or Label.CONFIG, f"Failed to load playlists configuration from {self.playlists_path}: {e}")
+            if isinstance(e, Exception):
+                return
+            raise
+
+    async def save_playlists_config(self, data: PlaylistsData) -> bool:
+        """Saves the playlists configuration to playlists.json."""
+        return await self._save_json_file(self.playlists_path, data)
     
     async def get_channel_list_config(self, *, use_default: bool = False, label: Label | None = None) -> ChannelListDataImpl | None:
         """Loads the predefined channel list from channel_list.json."""
@@ -636,6 +713,7 @@ class Config:
                 await aioshutil.copy2(self.logical_channels_path, backup_folder / self.logical_channels_name)
                 await aioshutil.copy2(self.channel_mappings_path, backup_folder / self.channel_mappings_name)
                 await aioshutil.copy2(self.channel_list_path, backup_folder / self.channel_list_name)
+                await aioshutil.copy2(self.playlists_path, backup_folder / self.playlists_name)
                 await aioshutil.copy2(self.quality_cache_path, backup_folder / self.quality_cache_name)
                 await aioshutil.copy2(self.jobs_path, backup_folder / self.jobs_name)
                 await aioshutil.make_archive(str(backup_folder), 'zip', backup_folder)

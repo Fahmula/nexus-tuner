@@ -1,0 +1,215 @@
+{% extends "layout.html" %}
+{% from "_copy_url.html" import copy_url, copy_url_script %}
+
+{% block title %}{{ "Edit" if playlist else "Add" }} Playlist - NexusTuner{% endblock %}
+
+{% block content %}
+{% set lc_mode = playlist.lc_group_mode if playlist else 'include_all_except' %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">{{ "Edit" if playlist else "Add" }} Playlist</h1>
+    <a href="{{ url_for('ui_playlists_list') }}" class="btn btn-sm btn-outline-secondary">
+        <i class="fas fa-arrow-left"></i> Back to List
+    </a>
+</div>
+
+<div class="p-3 mb-4 bg-body-tertiary rounded-3 small text-muted">
+    <h6 class="border-bottom pb-2 mb-2 text-body-emphasis">Building a Playlist</h6>
+    <p class="mb-2">
+        <i class="fas fa-layer-group text-success me-2" style="width: 1.25em;"></i>
+        <strong>Logical Channel Groups:</strong> Groups come from the <span class="fst-italic text-primary-emphasis">Group Title</span>
+        of your logical channels. With <span class="fst-italic text-primary-emphasis">Include all except</span>, the selected
+        groups are excluded and any new group is included automatically. With
+        <span class="fst-italic text-primary-emphasis">Only include</span>, only the selected groups are included.
+    </p>
+    <p class="mb-2">
+        <i class="fas fa-sitemap text-warning me-2" style="width: 1.25em;"></i>
+        <strong>Provider Groups:</strong> Selected groups add their channels straight from the provider M3Us. Groups with the
+        same name across providers are shown once, and channels with the same name inside them become a single channel with
+        a source from each provider. These channels obey provider limits, share streams between viewers and fail over like
+        logical channels. They are only in the M3U, not HDHomeRun, for now.
+    </p>
+    <p class="mb-0">
+        <i class="fas fa-globe text-info me-2" style="width: 1.25em;"></i>
+        <strong>Base URL:</strong> Leave empty to use the address each client connects with, e.g.
+        <span class="font-monospace">{{ detected_base_url }}</span> for you right now. Set it to always use a fixed address,
+        such as your Tailscale IP or a domain behind a reverse proxy.
+    </p>
+</div>
+
+<form method="POST" action="">
+    <div class="row g-3">
+        <div class="col-lg-5">
+            <div class="card mb-3">
+                <div class="card-header">Playlist Details</div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Name</label>
+                        <input type="text" class="form-control" id="name" name="name" required
+                            value="{{ playlist.name if playlist else '' }}" placeholder="e.g. Family">
+                        {% if playlist_id %}
+                        <div class="form-text">Playlist ID <span class="font-monospace">{{ playlist_id }}</span> is used in
+                            its URLs and does not change when renamed.</div>
+                        {% endif %}
+                    </div>
+                    <div class="mb-3">
+                        <label for="base_url" class="form-label">Base URL <small class="text-muted">(optional)</small></label>
+                        <input type="text" class="form-control font-monospace" id="base_url" name="base_url"
+                            value="{{ playlist.base_url if playlist else '' }}" placeholder="{{ detected_base_url }}">
+                        <div class="form-text">Leave empty to detect automatically from the address clients connect with.</div>
+                    </div>
+                    {% if playlist_urls %}
+                    <label class="form-label">Client URLs</label>
+                    <div class="mb-1">{{ copy_url('m3u-url', playlist_urls.m3u, 'M3U') }}</div>
+                    <div class="mb-2">{{ copy_url('hdhr-url', playlist_urls.hdhomerun, 'HDHomeRun') }}</div>
+                    {% if channel_counts %}
+                    <div class="form-text">
+                        Currently contains {{ channel_counts.logical_channels }} logical channels and
+                        {{ channel_counts.source_channels }} provider group channels.
+                    </div>
+                    {% endif %}
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header">Logical Channel Groups</div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="lc_group_mode" id="mode-except"
+                                value="include_all_except" {% if lc_mode == 'include_all_except' %}checked{% endif %}>
+                            <label class="form-check-label" for="mode-except">Include all except selected groups</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="lc_group_mode" id="mode-only"
+                                value="only_include" {% if lc_mode == 'only_include' %}checked{% endif %}>
+                            <label class="form-check-label" for="mode-only">Only include selected groups</label>
+                        </div>
+                    </div>
+                    <h6 class="small text-muted" id="lc-groups-heading">
+                        {{ "Groups to exclude" if lc_mode == 'include_all_except' else "Groups to include" }}
+                    </h6>
+                    {% if lc_groups or stale_lc_groups %}
+                    <div class="list-group">
+                        {% for group in lc_groups %}
+                        <label class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>
+                                <input class="form-check-input me-2" type="checkbox" name="lc_groups"
+                                    value="{{ group.key }}" {% if group.key in selected_lc_groups %}checked{% endif %}>
+                                {{ group.display_title }}
+                            </span>
+                            <span class="badge bg-secondary rounded-pill" title="Logical channels">{{ group.channel_count }}</span>
+                        </label>
+                        {% endfor %}
+                        {% for key in stale_lc_groups %}
+                        <label class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>
+                                <input class="form-check-input me-2" type="checkbox" name="lc_groups" value="{{ key }}" checked>
+                                {{ key }}
+                            </span>
+                            <span class="badge bg-warning">No longer used</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="text-muted small">No logical channels have been created yet.</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-7">
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    Provider Groups
+                    <span class="badge bg-warning" id="source-groups-selected-count"></span>
+                </div>
+                <div class="card-body">
+                    {% if source_groups or stale_source_groups %}
+                    <div class="d-flex gap-2 mb-2 flex-wrap">
+                        <input type="search" class="form-control form-control-sm flex-grow-1" id="source-group-search"
+                            placeholder="Search groups..." style="min-width: 12rem; width: auto;">
+                        <div class="form-check form-switch align-self-center mb-0">
+                            <input class="form-check-input" type="checkbox" id="source-group-selected-only">
+                            <label class="form-check-label small" for="source-group-selected-only">Selected only</label>
+                        </div>
+                    </div>
+                    <div class="list-group" id="source-group-list" style="max-height: 60vh; overflow-y: auto;">
+                        {% for key in stale_source_groups %}
+                        <label class="list-group-item d-flex justify-content-between align-items-center source-group-row"
+                            data-search="{{ key }}">
+                            <span>
+                                <input class="form-check-input me-2" type="checkbox" name="source_groups" value="{{ key }}" checked>
+                                {{ key or "(No group)" }}
+                            </span>
+                            <span class="badge bg-warning" title="Kept in case the provider returns it">Not currently discovered</span>
+                        </label>
+                        {% endfor %}
+                        {% for group in source_groups %}
+                        <label class="list-group-item d-flex justify-content-between align-items-center source-group-row"
+                            data-search="{{ group.key }}">
+                            <span>
+                                <input class="form-check-input me-2" type="checkbox" name="source_groups"
+                                    value="{{ group.key }}" {% if group.key in selected_source_groups %}checked{% endif %}>
+                                {{ group.display_title or "(No group)" }}
+                                {% for provider in group.providers %}
+                                <span class="badge text-bg-light border ms-1">{{ provider }}</span>
+                                {% endfor %}
+                            </span>
+                            <span class="badge bg-secondary rounded-pill" title="Channels after merging providers">{{ group.channel_count }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="text-muted small">
+                        No provider groups discovered yet, add a provider and use 'Reload Providers & Sources' on the dashboard.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mb-4">
+        <button type="submit" class="btn btn-primary">
+            <i class="fas fa-save"></i> {{ "Save Playlist" if playlist else "Create Playlist" }}
+        </button>
+    </div>
+</form>
+
+{{ copy_url_script() }}
+<script>
+    (() => {
+        const heading = document.getElementById('lc-groups-heading');
+        document.querySelectorAll('input[name="lc_group_mode"]').forEach((radio) => {
+            radio.addEventListener('change', () => {
+                heading.textContent = radio.value === 'include_all_except' ? 'Groups to exclude' : 'Groups to include';
+            });
+        });
+
+        const list = document.getElementById('source-group-list');
+        if (!list) return;
+        const rows = Array.from(list.querySelectorAll('.source-group-row'));
+        const search = document.getElementById('source-group-search');
+        const selectedOnly = document.getElementById('source-group-selected-only');
+        const selectedCount = document.getElementById('source-groups-selected-count');
+
+        // Hidden rows are still submitted, filtering only changes what is visible
+        const update = () => {
+            const words = search.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+            let selected = 0;
+            rows.forEach((row) => {
+                const checked = row.querySelector('input').checked;
+                if (checked) selected++;
+                const matches = words.every((word) => row.dataset.search.includes(word));
+                row.classList.toggle('d-none', !matches || (selectedOnly.checked && !checked));
+            });
+            selectedCount.textContent = `${selected} selected`;
+        };
+        search.addEventListener('input', update);
+        selectedOnly.addEventListener('change', update);
+        list.addEventListener('change', update);
+        update();
+    })();
+</script>
+{% endblock %}
