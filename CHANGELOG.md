@@ -1,3 +1,10 @@
+# [3.1.0](https://github.com/Fahmula/nexus-tuner/compare/v3.0.1...v3.1.0) (2026-10-22)
+
+
+### Features
+
+* **ui:** add settings page and support multiple media servers for ghost sessions ([07b7474](https://github.com/Fahmula/nexus-tuner/commit/07b747416d6355c02f4414516149b924ab6dc3cf))
+
 ## [3.0.1](https://github.com/Fahmula/nexus-tuner/compare/v3.0.0...v3.0.1) (2026-01-18)
 
 
