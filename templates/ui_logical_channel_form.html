@@ -96,22 +96,11 @@
                     <div id="analyze-button-container" class="ms-2 d-flex align-items-center">
                         <button type="button" class="btn btn-info btn-lg" id="analyze-button"
                             hx-post="{{ url_for('ui_logical_channel_form', logical_channel_id=channel.logical_channel_id) }}"
-                            hx-include="closest form" hx-target="body" hx-swap="none" hx-on::after-request="
-                                        if(event.detail.successful) {
-                                            document.getElementById('analyze-button-container').classList.add('htmx-request');
-                                            htmx.ajax('POST', 
-                                                '{{ url_for('ui_analyze_mappings', logical_channel_id=channel.logical_channel_id) }}', 
-                                                {
-                                                    target: 'body', 
-                                                    swap: 'none',
-                                                    complete: function() {
-                                                        document.getElementById('analyze-button-container').classList.remove('htmx-request');
-                                                    }
-                                                }
-                                            );
-                                        }
-                                    " hx-indicator="#analyze-spinner, #analyze-button-container" data-bs-toggle="tooltip"
-                            title="Performs a single run of Quality Monitor for this channel's mappings ahead of schedule.">
+                            hx-include="closest form" hx-target="#analysis-status" hx-swap="outerHTML"
+                            hx-vals='{"analyze_mappings": "1"}'
+                            hx-indicator="#analyze-spinner, #analyze-button-container" data-bs-toggle="tooltip"
+                            title="Save mappings and analyze quality and audio offsets in the background. This can take several minutes."
+                            {% if analysis_status and analysis_status.state == 'running' %}disabled{% endif %}>
                             <i class="fas fa-microscope"></i>
                             Save & Analyze Mappings
                         </button>
@@ -129,6 +118,9 @@
                     </button>
                 {% endif %}
             </div>
+            {% if channel.logical_channel_id %}
+                {% include '_analysis_status.html' %}
+            {% endif %}
         </div>
 
         <div class="col-md-6">

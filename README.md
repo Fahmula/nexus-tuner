@@ -152,7 +152,8 @@ Schedule `NexusTuner` to run on startup using your system's service manager (e.g
   * As you type in the channel name or number, `NexusTuner` will display suggestions to prefill the channel data.
   * You can map as many sources as you like. You can also preview each source to ensure they are correct.
   * If a source is mapped to another logical channel, it will be marked as `In Use` or `Duplicated` if it's also mapped to the current channel.
-  * You can optionally trigger an early run of `Quality Monitor` for this channel only if you'd like to start using it immediately.
+  * **Save & Analyze Mappings** probes quality and measures relative audio offsets for this channel. Audio analysis runs only when requested manually, usually takes about five minutes, and continues after leaving the page. Reopen the channel to see its status and results. The fastest measured source has offset zero; unmatched sources keep their existing values.
+  * Audio offset measurement needs overlapping programme audio and available provider slots. Each direct comparison searches up to two minutes apart. Unreliable sources are retried with changing references for up to 30 minutes; confirmed results are saved as sources join the measured group.
 
 ### Configuring Your Media Clients
 

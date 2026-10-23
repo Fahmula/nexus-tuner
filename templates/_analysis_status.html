@@ -1,0 +1,11 @@
+<div id="analysis-status" role="status" aria-live="polite"
+    {% if analysis_status.state == 'running' %}
+    hx-get="{{ url_for('ui_analysis_status', logical_channel_id=channel.logical_channel_id) }}"
+    hx-trigger="every 3s" hx-swap="outerHTML"
+    {% endif %}>
+    {% if analysis_status.message %}
+    <div class="alert {{ 'alert-info' if analysis_status.state == 'running' else 'alert-success' if analysis_status.state == 'complete' else 'alert-warning' }}">
+        {{ analysis_status.message }}
+    </div>
+    {% endif %}
+</div>
