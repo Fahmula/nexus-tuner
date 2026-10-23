@@ -308,7 +308,6 @@ class SettingsInfo(TypedDict):
     ffmpeg_path: ReadOnly[str]
     vlc_path: ReadOnly[str]  # Empty when VLC is not installed
     stream_engine: ReadOnly[StreamEngine]
-    tls_verify: ReadOnly[bool]
     remove_captions_and_subtitles: ReadOnly[bool]
     process_inactivity_timeout: ReadOnly[int]
     process_logs_retention_seconds: ReadOnly[int]
@@ -739,7 +738,6 @@ def default_settings() -> SettingsInfo:
         "ffmpeg_path": shutil.which("ffmpeg") or "/usr/bin/ffmpeg",
         "vlc_path": "",
         "stream_engine": StreamEngine.FFMPEG,
-        "tls_verify": True,
         "remove_captions_and_subtitles": False,
         "process_inactivity_timeout": 900,
         "process_logs_retention_seconds": 86400,

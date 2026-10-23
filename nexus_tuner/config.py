@@ -116,9 +116,8 @@ def validate_settings(data: Any) -> SettingsInfo:
     if settings["stream_engine"] == StreamEngine.VLC and not settings["vlc_path"]:
         raise ValueError("Stream engine: VLC requires a VLC path.")
 
-    for key, display_name in (("tls_verify", "Verify HTTPS certificates"), ("remove_captions_and_subtitles", "Remove captions and subtitles")):
-        if type(settings[key]) is not bool:
-            raise ValueError(f'{display_name}: expected true or false, got {settings[key]}')
+    if type(settings["remove_captions_and_subtitles"]) is not bool:
+        raise ValueError(f'Remove captions and subtitles: expected true or false, got {settings["remove_captions_and_subtitles"]}')
 
     for key, (display_name, minimum) in SETTINGS_INT_FIELDS.items():
         if type(settings[key]) is not int or settings[key] < minimum:
@@ -310,10 +309,6 @@ class Config:
     @property
     def stream_engine(self) -> StreamEngine:
         return self._settings["stream_engine"]
-
-    @property
-    def tls_verify(self) -> bool:
-        return self._settings["tls_verify"]
 
     @property
     def remove_captions_and_subtitles(self) -> bool:
