@@ -1022,6 +1022,7 @@ async def ui_settings() -> Response | WerkzeugResponse | str:
             "ffmpeg_path": form_data.get("ffmpeg_path", ""),
             "vlc_path": form_data.get("vlc_path", ""),
             "stream_engine": form_data.get("stream_engine", ""),
+            "tls_verify": "tls_verify" in form_data,
             "remove_captions_and_subtitles": "remove_captions_and_subtitles" in form_data,
         }
         for key in SETTINGS_INT_FIELDS:

@@ -21,7 +21,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN apt-get update -qq && apt-get install --no-install-recommends -y autoconf \
     automake build-essential cmake git-core libass-dev libfreetype6-dev \
     libgnutls28-dev libmp3lame-dev libtool libvorbis-dev libunistring-dev \
-    meson ninja-build pkg-config texinfo wget yasm zlib1g-dev nasm \
+    meson ninja-build patch pkg-config texinfo wget yasm zlib1g-dev nasm \
     libx264-dev libx265-dev libnuma-dev libvpx-dev libopus-dev \
     libdav1d-dev librist-dev libssl-dev && apt-get clean && rm -rf /var/lib/apt/lists/*
 RUN mkdir -p "$HOME/ffmpeg_sources"
@@ -54,10 +54,12 @@ RUN cd "$HOME/ffmpeg_sources" && \
     make -j$(nproc) && \
     make install
 RUN mkdir -p "$HOME/bin"
+COPY patches/ffmpeg-hls-tls.patch /tmp/ffmpeg-hls-tls.patch
 RUN cd "$HOME/ffmpeg_sources" && \
     wget https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz && \
     tar xJvf ffmpeg-9.0.2.tar.xz && \
     cd ffmpeg-9.0.2 && \
+    patch --batch --forward -p1 < /tmp/ffmpeg-hls-tls.patch && \
     PATH="$HOME/bin:$PATH" PKG_CONFIG_PATH="$HOME/ffmpeg_build/lib/pkgconfig" ./configure \
     --prefix="$HOME/ffmpeg_build" \
     --pkg-config-flags="--static" \
