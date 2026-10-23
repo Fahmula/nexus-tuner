@@ -2,27 +2,28 @@ FROM ubuntu:24.04 AS base-image
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-RUN apt update && apt install --no-install-recommends -y software-properties-common && add-apt-repository ppa:deadsnakes/ppa && apt update
-RUN apt install --no-install-recommends -y python3.13
+RUN apt-get update && apt-get install --no-install-recommends -y ca-certificates software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa && apt-get update
+RUN apt-get install --no-install-recommends -y python3.13
 ENV PATH="/app/venv/bin:$PATH"
 
 FROM base-image AS builder-image
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-RUN apt update && apt install --no-install-recommends -y python3.13-venv python3.13-dev build-essential
+RUN apt-get update && apt-get install --no-install-recommends -y python3.13-venv python3.13-dev build-essential
 RUN python3.13 -m venv /app/venv
 COPY requirements.txt .
 RUN pip install --no-cache-dir setuptools
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Build FFmpeg from source: https://trac.ffmpeg.org/wiki/CompilationGuide/Ubuntu
-RUN apt update -qq && apt install --no-install-recommends -y autoconf \
+RUN apt-get update -qq && apt-get install --no-install-recommends -y autoconf \
     automake build-essential cmake git-core libass-dev libfreetype6-dev \
     libgnutls28-dev libmp3lame-dev libtool libvorbis-dev libunistring-dev \
     meson ninja-build pkg-config texinfo wget yasm zlib1g-dev nasm \
     libx264-dev libx265-dev libnuma-dev libvpx-dev libopus-dev \
-    libdav1d-dev librist-dev libssl-dev && apt clean && rm -rf /var/lib/apt/lists/*
+    libdav1d-dev librist-dev libssl-dev && apt-get clean && rm -rf /var/lib/apt/lists/*
 RUN mkdir -p "$HOME/ffmpeg_sources"
 RUN cd "$HOME/ffmpeg_sources" && \
     git -C aom pull 2> /dev/null || git clone --depth 1 https://aomedia.googlesource.com/aom && \
@@ -54,10 +55,9 @@ RUN cd "$HOME/ffmpeg_sources" && \
     make install
 RUN mkdir -p "$HOME/bin"
 RUN cd "$HOME/ffmpeg_sources" && \
-    wget https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz && \
-    tar xJvf ffmpeg-8.1.2.tar.xz && \
-    cd ffmpeg-8.1.2 && \
-    perl -0777 -pe "s/param->enable_adaptive_quantization = 0;/#if SVT_AV1_CHECK_VERSION(4, 0, 0)\\n        param->aq_mode = 0;\\n#else\\n        param->enable_adaptive_quantization = 0;\\n#endif/" -i libavcodec/libsvtav1.c && \
+    wget https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz && \
+    tar xJvf ffmpeg-9.0.2.tar.xz && \
+    cd ffmpeg-9.0.2 && \
     PATH="$HOME/bin:$PATH" PKG_CONFIG_PATH="$HOME/ffmpeg_build/lib/pkgconfig" ./configure \
     --prefix="$HOME/ffmpeg_build" \
     --pkg-config-flags="--static" \
@@ -76,14 +76,14 @@ RUN cd "$HOME/ffmpeg_sources" && \
 
 FROM base-image AS runner-image
 
-RUN apt update && apt install --no-install-recommends -y iputils-ping curl
+RUN apt-get update && apt-get install --no-install-recommends -y iputils-ping curl
 
 # FFmpeg binaries and libraries
 COPY --from=builder-image /root/bin/ /usr/bin/
-RUN apt install --no-install-recommends -y libass9 libmp3lame0 libvorbis0a \
+RUN apt-get install --no-install-recommends -y libass9 libmp3lame0 libvorbis0a \
     libvorbisenc2 libvpx9 libdav1d7 libopus0 libx264-164 libx265-199 librist4
     
-RUN apt install --no-install-recommends -y vlc && apt clean && rm -rf /var/lib/apt/lists/*
+RUN apt-get install --no-install-recommends -y vlc && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN userdel -r ubuntu
 RUN useradd app
