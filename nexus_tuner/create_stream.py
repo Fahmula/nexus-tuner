@@ -32,6 +32,7 @@ async def create_hls_ffmpeg_command(stream_manager: StreamManager, config: Confi
         str(config.ffmpeg_path),
         "-hide_banner", "-loglevel", "info",
         "-user_agent", NEXUS_TUNER_USER_AGENT,
+        "-tls_verify", "1" if config.tls_verify else "0",
         "-fflags", "+genpts", "-copyts",
         "-analyzeduration", "1M", "-probesize", "1M", "-reconnect", "1",
         "-reconnect_delay_max", "3", "-reconnect_streamed", "1", "-reconnect_at_eof", "1",
@@ -62,6 +63,7 @@ def create_mpegts_ffmpeg_command(config: Config, input_url: str) -> list[str]:
         str(config.ffmpeg_path),
         "-hide_banner", "-loglevel", "info",
         "-user_agent", NEXUS_TUNER_USER_AGENT,
+        "-tls_verify", "1" if config.tls_verify else "0",
         "-fflags", "+genpts",
         "-analyzeduration", "1000000", "-probesize", "1000000", "-reconnect", "1",
         "-reconnect_delay_max", "3", "-reconnect_streamed", "1", "-reconnect_at_eof", "1",
@@ -89,7 +91,7 @@ async def create_hls_vlc_command(stream_manager: StreamManager, config: Config, 
     Log.debug(Label.STREAM, f"{video_name} {stream_info}: Starting HLS stream at segment number {start_number} in directory '{channel_hls_dir}'", (VideoType.HLS, StreamEngine.VLC))
 
     segment_format = "segment_#####.ts"
-    command = [str(config.vlc_path)]
+    command = [str(config.vlc_path), "--gnutls-system-trust"]
     if config.remove_captions_and_subtitles:
         command.extend(["--no-sout-spu"])
     else:
@@ -108,7 +110,7 @@ async def create_hls_vlc_command(stream_manager: StreamManager, config: Config, 
 
 def create_mpegts_vlc_command(config: Config, input_url: str) -> list[str]:
     """Constructs the VLC command list to output a continuous MPEGTS stream using VLC."""
-    command = [str(config.vlc_path)]
+    command = [str(config.vlc_path), "--gnutls-system-trust"]
     if config.remove_captions_and_subtitles:
         command.extend(["--no-sout-spu"])
     else:

@@ -1,0 +1,42 @@
+--- a/libavformat/http.c
++++ b/libavformat/http.c
+@@ -84,6 +84,7 @@
+     HTTPAuthState auth_state;
+     HTTPAuthState proxy_auth_state;
+     char *http_proxy;
++    int tls_verify;
+     char *headers;
+     char *mime_type;
+     char *http_version;
+@@ -169,6 +170,7 @@
+     { "seekable", "control seekability of connection", OFFSET(seekable), AV_OPT_TYPE_BOOL, { .i64 = -1 }, -1, 1, D },
+     { "chunked_post", "use chunked transfer-encoding for posts", OFFSET(chunked_post), AV_OPT_TYPE_BOOL, { .i64 = 1 }, 0, 1, E },
+     { "http_proxy", "set HTTP proxy to tunnel through", OFFSET(http_proxy), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, D | E },
++    { "tls_verify", "verify the peer certificate", OFFSET(tls_verify), AV_OPT_TYPE_BOOL, { .i64 = 1 }, 0, 1, D | E },
+     { "headers", "set custom HTTP headers, can override built in default headers", OFFSET(headers), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, D | E },
+     { "content_type", "set a specific content type for the POST messages", OFFSET(content_type), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, D | E },
+     { "user_agent", "override User-Agent header", OFFSET(user_agent), AV_OPT_TYPE_STRING, { .str = DEFAULT_USER_AGENT }, 0, 0, D },
+@@ -791,6 +793,10 @@
+-
++
+     if (options)
+         av_dict_copy(&s->chained_options, *options, 0);
++
++    ret = av_dict_set_int(&s->chained_options, "tls_verify", s->tls_verify, 0);
++    if (ret < 0)
++        goto bail_out;
+-
++
+     if (s->headers) {
+         int len = strlen(s->headers);
+--- a/libavformat/aviobuf.c
++++ b/libavformat/aviobuf.c
+@@ -994,7 +994,7 @@
+ int ffio_copy_url_options(AVIOContext* pb, AVDictionary** avio_opts)
+ {
+     const char *opts[] = {
+-        "headers", "user_agent", "cookies", "http_proxy", "referer", "rw_timeout", "icy", NULL };
++        "headers", "user_agent", "cookies", "http_proxy", "referer", "rw_timeout", "icy", "tls_verify", NULL };
+     const char **opt = opts;
+     uint8_t *buf = NULL;
+     int ret = 0;

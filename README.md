@@ -83,6 +83,7 @@ config directory and copy [env.example](env.example) to `config/.env`.
 | Stream Engine                 | The stream processing engine to use, `FFmpeg` or `VLC`.                                                 | `FFmpeg`           |
 | FFmpeg Path                   | The path to the FFmpeg executable, ffprobe must be in the same folder.                                  | `/usr/bin/ffmpeg`  |
 | VLC Path                      | The path to the VLC executable (optional).                                                              | (empty)            |
+| Verify HTTPS certificates     | Verifies server certificates for FFmpeg streams and quality analysis. VLC always verifies certificates. | On                 |
 | Remove captions and subtitles | Removes subtitles from the processed streams.                                                           | Off                |
 | Inactivity Timeout            | Seconds of inactivity before a stream is stopped. Inactive streams will be pruned earlier when needed.  | `900`              |
 | Stream Log Retention          | How long to keep process logs in seconds.                                                               | `86400`            |
