@@ -1,22 +1,16 @@
 import asyncio
 import json
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import TYPE_CHECKING, Coroutine, Final, Any, Literal, Self, cast
-
-import math
-import numpy as np
-import random
-import soundfile as sf  # type: ignore
-from scipy.signal import butter, fftconvolve, sosfiltfilt, stft  # type: ignore
 
 from nexus_tuner.config import Config
 from nexus_tuner.handler import ChannelHandler
+from nexus_tuner.offset_measurement import OffsetMeasurement
 from nexus_tuner.slots import ProviderSlots
 from nexus_tuner.utils import (FAILED_STOP_REASONS, PROCESS_TERMINATE_INTERVAL, PROCESS_TERMINATE_TIMEOUT, NEXUS_TUNER_USER_AGENT, Bitrate, BitrateScore, ChannelNum, DateTimeISO, Framerate, FramerateScore, Height,
-                                Label, Log, LogicalChannelId, Offset, ProbeInfo, ProbeSuccess, ProviderAlias, QualityInfoImpl, QualityProcessInfos, QualityProcessInfosImpl, QualityScore, QualityScores,
-                                QualityScoresImpl, ResolutionScore, QualityCacheData, QualityCacheDataImpl, Runtime, RuntimeInfo, RuntimeScore, SourceId, SourceMappingInfoMutable, StopReason, StreamEngine, StreamName,
-                                StreamURL, TVGDisplayTitle, TVGLogo, TVGName, TotalScore, Uptime, UptimeScore, VideoKey, VideoName, Width, create_stream_name, create_video_name, run_bg)
+                                Label, Log, LogicalChannelId, ProbeInfo, ProbeSuccess, ProviderAlias, QualityInfoImpl, QualityProcessInfos, QualityProcessInfosImpl, QualityScore, QualityScores,
+                                QualityScoresImpl, ResolutionScore, QualityCacheData, QualityCacheDataImpl, Runtime, RuntimeInfo, RuntimeScore, SourceId, StopReason, StreamEngine, StreamName,
+                                StreamURL, TVGDisplayTitle, TVGLogo, TVGName, TotalScore, Uptime, UptimeScore, VideoName, Width, create_stream_name, create_video_name, run_bg)
 
 if TYPE_CHECKING:
     from nexus_tuner.stream import StreamManager
@@ -41,27 +35,10 @@ MAX_HISTORY_PER_SOURCE: Final[int] = 10
 MIN_DAYS_AT_MAX_HISTORY: Final[int] = 7
 MIN_DAYS_AT_NON_MAX_HISTORY: Final[int] = 1
 
-OFFSET_SR: Final[int] = 16000
-OFFSET_HOP: Final[int] = 256
-OFFSET_FRAME_LEN = 1024
-OFFSET_CLIP_DURATION = 5
-OFFSET_GRACE = 1
-OFFSET_WAIT_INTERVAL = 120
-OFFSET_CONF_THRESH: Final[float] = 0.8  # Should equate to a few seconds off the true value
-OFFSET_ROUND_VARIANCE_WARN: Final[float] = 2.0
-OFFSET_ANALYSIS_WINDOW: Final[float] = 2.5
-OFFSET_ANALYSIS_STEP: Final[float] = 0.5
-OFFSET_MATCH_CLUSTER_TOLERANCE: Final[float] = 0.125
-OFFSET_FINE_SEARCH_PAD: Final[float] = 3.0
-OFFSET_RETRY_INTERVAL: Final[int] = 5
-OFFSET_RETRY_TIMEOUT: Final[int] = 60 * 60
-
-OFFSET_BANDPASS_SOS: np.ndarray = cast(np.ndarray, butter(4, (80, 3500), btype="bandpass", fs=OFFSET_SR, output="sos"))
-
 
 class QualityMonitor:
     __slots__ = ('config', 'handler', 'stream_manager', 'processes', '_running', '_rate_limited',
-                 '_full_providers', '_mutex', 'quality_process_lock', '_quality_scores')
+                 '_full_providers', '_mutex', 'quality_process_lock', '_quality_scores', '_manual_task', '_analysis_status')
     
     def __init__(self, config: Config, handler: ChannelHandler) -> None:
         self.config: Config = config
@@ -74,6 +51,8 @@ class QualityMonitor:
         self._mutex: asyncio.Lock = asyncio.Lock()
         self.quality_process_lock: asyncio.Lock = asyncio.Lock()
         self._quality_scores: QualityScores = QualityScoresImpl({})
+        self._manual_task: asyncio.Task[Any] | None = None
+        self._analysis_status: dict[LogicalChannelId, dict[str, str]] = {}
 
     @classmethod
     async def create(cls, config: Config, handler: ChannelHandler) -> Self:
@@ -330,7 +309,55 @@ class QualityMonitor:
             Log.error(Label.QUALITY, f"{video_name}: Unexpected error during probe - {e}")
             return source_id, {"status": "offline", "reason": f"Probe failed: {e}"}, video_name
     
+    def get_analysis_status(self, logical_channel_id: LogicalChannelId) -> dict[str, str]:
+        return self._analysis_status.get(logical_channel_id, {"state": "idle", "message": ""}).copy()
+
+    def _report_analysis_progress(self, logical_channel_id: LogicalChannelId, message: str) -> None:
+        status = self._analysis_status.get(logical_channel_id)
+        if status and status["state"] == "running":
+            status["message"] = message
+
+    def start_manual_analysis(self, logical_channel_id: LogicalChannelId) -> bool:
+        """Reserve one server-owned job before returning to the browser."""
+        if self._running or (self._manual_task and not self._manual_task.done()):
+            return False
+        self._analysis_status[logical_channel_id] = {
+            "state": "running", "message": "Analyzing quality and audio offsets (you can leave this page).",
+        }
+        self._manual_task = run_bg(self._run_manual_analysis(logical_channel_id))
+        return True
+
+    async def _run_manual_analysis(self, logical_channel_id: LogicalChannelId) -> None:
+        state, message = "failed", "Analysis failed. See logs for details."
+        try:
+            result = await self._analyze_mapped_sources(logical_channel_id)
+            state = "complete" if result == 2 else "partial" if result == 1 else "failed"
+            message = {
+                "complete": "Quality and relative offset analysis completed. Reload to see updated values.",
+                "partial": "Quality analysis completed; some offsets could not be measured. See logs for details.",
+                "failed": "Analysis failed. See logs for details.",
+            }[state]
+        except asyncio.CancelledError:
+            state, message = "failed", "Analysis stopped during server shutdown."
+            raise
+        except Exception as exc:
+            state, message = "failed", "Analysis failed. See logs for details."
+            Log.error(Label.QUALITY, f"Manual analysis failed: {exc}")
+        finally:
+            self._analysis_status[logical_channel_id] = {"state": state, "message": message}
+
+    async def shutdown(self) -> None:
+        if self._manual_task and not self._manual_task.done():
+            self._manual_task.cancel()
+            await asyncio.gather(self._manual_task, return_exceptions=True)
+
     async def analyze_mapped_sources(self, input_lc_id: LogicalChannelId | None = None) -> int | str:
+        """Scheduled quality probes never start audio offset measurements."""
+        if self._running or (self._manual_task and not self._manual_task.done()):
+            return self._running or "manual analysis"
+        return await self._analyze_mapped_sources(input_lc_id)
+
+    async def _analyze_mapped_sources(self, input_lc_id: LogicalChannelId | None = None) -> int | str:
         """Finds and probes all mapped sources concurrently."""
         if (problem := self.config.get_engine_problem(StreamEngine.FFMPEG)):
             # Without FFprobe every source would be recorded as offline
@@ -342,7 +369,6 @@ class QualityMonitor:
             return self._running
         try:
             self._running = input_lc_id or "scheduler"
-            loop = asyncio.get_running_loop()
             success_count = 0
             valid_mappings: list[tuple[DateTimeISO, LogicalChannelId, list[SourceId], StreamName, TVGLogo, ChannelNum]] = []
             if input_lc_id:
@@ -477,23 +503,15 @@ class QualityMonitor:
             success_count += 1
             if input_lc_id:
                 Log.debug(Label.QUALITY, f"{valid_mappings[0][3]}: Measuring relative source offsets...")
-                end_time = loop.time() + OFFSET_RETRY_TIMEOUT
-                while loop.time() < end_time:
-                    res = await self.measure_relative_offset_for_channel(input_lc_id)
-                    if res:
-                        success_count += 1
-                        Log.info(Label.QUALITY, f"{valid_mappings[0][3]}: Completed analysis for {len(valid_mappings[0][2])} mappings(s).")
-                        break
-                    if all(self._full_providers.values()):
-                        Log.warn(Label.QUALITY, f"{valid_mappings[0][3]}: Cannot measure offsets because all providers are full of active streams.")
-                        break
-                    if res is None:
-                        break
-                    Log.warn(Label.QUALITY, f"{valid_mappings[0][3]}: Retrying offset measurement... ({int(end_time - loop.time())}s until timeout)")
-                    await asyncio.sleep(OFFSET_RETRY_INTERVAL)
-                else:
-                    Log.error(Label.QUALITY, f"{valid_mappings[0][3]}: Failed to measure relative source offsets within {OFFSET_RETRY_TIMEOUT}s.")
-                    return success_count
+                measurement = OffsetMeasurement(
+                    self.config, self.handler, self.stream_manager,
+                    processes=self.processes, process_lock=self.quality_process_lock,
+                    cleanup_process=self._cleanup_process,
+                    report_progress=lambda message: self._report_analysis_progress(input_lc_id, message),
+                )
+                if await measurement.measure(input_lc_id):
+                    success_count += 1
+                    Log.info(Label.QUALITY, f"{valid_mappings[0][3]}: Quality and offset analysis completed.")
             return success_count
         finally:
             self._running = None
@@ -569,580 +587,3 @@ class QualityMonitor:
                 "total_score": TotalScore(height_score + bitrate_score + framerate_score + uptime_score + runtime_score),
             }
         self._quality_scores = new_quality_scores
-
-    def _load_audio(self, path: Path) -> np.ndarray:
-        data, sr = sf.read(path, dtype='float32')  # type: ignore
-        if sr != OFFSET_SR:
-            raise ValueError(f"Expected {OFFSET_SR}Hz audio, got {sr}Hz")
-        y = np.asarray(data, dtype=np.float32)
-        if y.ndim > 1:
-            y = np.mean(y, axis=1, dtype=np.float32)
-        return cast(np.ndarray, np.atleast_1d(np.nan_to_num(y, nan=0.0, posinf=0.0, neginf=0.0)).astype(np.float32, copy=False))
-
-    def _prepare_alignment_audio(self, samples: np.ndarray) -> np.ndarray:
-        y = np.asarray(samples, dtype=np.float32)
-        if y.size == 0:
-            return y
-        y = y - float(np.mean(y))
-        if y.size >= OFFSET_FRAME_LEN * 2:
-            y = sosfiltfilt(OFFSET_BANDPASS_SOS, y).astype(np.float32)
-        y = np.diff(y, prepend=y[0]).astype(np.float32)
-        norm = float(np.sqrt(np.mean(y * y) + 1e-12))
-        if norm <= 1e-9:
-            return y
-        return y / norm
-
-    def _build_alignment_features(self, samples: np.ndarray) -> np.ndarray:
-        if samples.size < OFFSET_FRAME_LEN:
-            value = float(np.sqrt(np.mean(samples * samples) + 1e-12)) if samples.size else 0.0
-            return np.array([[value]], dtype=np.float32)
-        freqs, _, spectrum = cast(
-            tuple[np.ndarray, np.ndarray, np.ndarray],
-            stft(
-                samples,
-                fs=OFFSET_SR,
-                window='hann',
-                nperseg=OFFSET_FRAME_LEN * 2,
-                noverlap=(OFFSET_FRAME_LEN * 2) - OFFSET_HOP,
-                boundary='zeros',
-                padded=False,
-            )
-        )
-        if spectrum.size == 0:
-            value = float(np.sqrt(np.mean(samples * samples) + 1e-12))
-            return np.array([[value]], dtype=np.float32)
-        magnitude = np.abs(spectrum).astype(np.float32)
-        log_magnitude = np.log1p(magnitude)
-
-        features: list[np.ndarray] = []
-        for low_hz, high_hz in ((80, 250), (250, 500), (500, 1000), (1000, 2000), (2000, 3500)):
-            band_mask = (freqs >= low_hz) & (freqs < high_hz)
-            if np.any(band_mask):
-                features.append(np.mean(log_magnitude[band_mask], axis=0).astype(np.float32))
-            else:
-                features.append(cast(np.ndarray, np.zeros(log_magnitude.shape[1], dtype=np.float32)))
-
-        flux = np.zeros(log_magnitude.shape[1], dtype=np.float32)
-        if log_magnitude.shape[1] > 1:
-            flux[1:] = np.mean(np.maximum(np.diff(log_magnitude, axis=1), 0.0), axis=0).astype(np.float32)
-        centroid_den = np.sum(magnitude, axis=0) + 1e-12
-        centroid = (np.sum(freqs[:, None] * magnitude, axis=0) / centroid_den).astype(np.float32)
-        energy = np.sqrt(np.mean(magnitude * magnitude, axis=0) + 1e-12).astype(np.float32)
-        features.extend((flux, centroid, energy))
-
-        feature_matrix = np.vstack(features).astype(np.float32)
-        for idx in range(feature_matrix.shape[0]):
-            row = cast(np.ndarray, feature_matrix[idx])
-            mean = float(np.mean(row))
-            std = float(np.std(row))
-            if std > 1e-6:
-                feature_matrix[idx] = (row - mean) / (std + 1e-12)
-            else:
-                feature_matrix[idx].fill(0.0)
-        return feature_matrix
-
-    def _normalized_cross_correlation(self, template: np.ndarray, reference: np.ndarray) -> np.ndarray:
-        template = np.asarray(template, dtype=np.float32)
-        reference = np.asarray(reference, dtype=np.float32)
-        template_len = len(template)
-        reference_len = len(reference)
-        if template_len == 0 or reference_len == 0 or reference_len < template_len:
-            return np.zeros(0, dtype=np.float32)
-        template_energy = float(np.sum(template * template))
-        if template_energy < 1e-12:
-            return np.zeros(reference_len - template_len + 1, dtype=np.float32)
-        corr = fftconvolve(reference, template[::-1], mode='valid')
-        reference_sq = reference * reference
-        reference_cumsum = np.concatenate((np.array([0.0], dtype=np.float64), np.cumsum(reference_sq, dtype=np.float64)))
-        reference_window_energy = reference_cumsum[template_len:] - reference_cumsum[:-template_len]
-        denom = np.sqrt(template_energy * np.maximum(reference_window_energy, 1e-12))
-        return np.nan_to_num(corr / denom, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
-
-    def _second_peak(self, values: np.ndarray, peak_idx: int, exclusion_radius: int) -> float:
-        if values.size == 0:
-            return 0.0
-        keep = np.ones(values.shape[0], dtype=bool)
-        start = max(0, peak_idx - exclusion_radius)
-        end = min(values.shape[0], peak_idx + exclusion_radius + 1)
-        keep[start:end] = False
-        if not np.any(keep):
-            return 0.0
-        return float(np.max(values[keep]))
-
-    def _match_feature_sequence(self, clip_features: np.ndarray, reference_features: np.ndarray) -> tuple[float, float]:
-        if clip_features.size == 0 or reference_features.size == 0:
-            return float("nan"), 0.0
-        max_rows = min(clip_features.shape[0], reference_features.shape[0])
-        correlations = [
-            self._normalized_cross_correlation(clip_features[row_idx], reference_features[row_idx])
-            for row_idx in range(max_rows)
-        ]
-        correlations = [corr for corr in correlations if corr.size > 0]
-        if not correlations:
-            return float("nan"), 0.0
-        min_len = min(len(corr) for corr in correlations)
-        composite = np.mean(np.vstack([corr[:min_len] for corr in correlations]), axis=0)
-        peak_idx = int(np.argmax(composite))
-        peak_val = float(composite[peak_idx])
-        second_peak = self._second_peak(composite, peak_idx, max(1, int(1.0 / (OFFSET_HOP / OFFSET_SR))))
-        prominence = max(0.0, peak_val - second_peak)
-        confidence = min(1.0, max(0.0, peak_val) * (1.0 + prominence))
-        return (peak_idx * OFFSET_HOP) / float(OFFSET_SR), confidence
-
-    def _refine_match_time(self, clip: np.ndarray, reference: np.ndarray, coarse_time: float) -> tuple[float, float]:
-        clip_len = len(clip)
-        reference_len = len(reference)
-        if clip_len == 0 or reference_len < clip_len:
-            return float("nan"), 0.0
-        coarse_index = int(round(coarse_time * OFFSET_SR))
-        pad_samples = int(round(OFFSET_FINE_SEARCH_PAD * OFFSET_SR))
-        search_start = max(0, coarse_index - pad_samples)
-        search_end = min(reference_len, coarse_index + clip_len + pad_samples)
-        local_reference = reference[search_start:search_end]
-        corr = self._normalized_cross_correlation(clip, local_reference)
-        if corr.size == 0:
-            return float("nan"), 0.0
-        peak_idx = int(np.argmax(corr))
-        peak_val = float(corr[peak_idx])
-        if 0 < peak_idx < (len(corr) - 1):
-            y0 = float(corr[peak_idx - 1])
-            y1 = float(corr[peak_idx])
-            y2 = float(corr[peak_idx + 1])
-            denom = y0 - (2.0 * y1) + y2
-            delta = 0.5 * (y0 - y2) / denom if abs(denom) > 1e-12 else 0.0
-        else:
-            delta = 0.0
-        refined_index = search_start + peak_idx + delta
-        second_peak = self._second_peak(corr, peak_idx, max(1, int(0.5 * OFFSET_SR)))
-        prominence = max(0.0, peak_val - second_peak)
-        confidence = min(1.0, max(0.0, peak_val) * (1.0 + prominence))
-        return refined_index / float(OFFSET_SR), confidence
-
-    def _match_clip_in_reference(self, clip: np.ndarray, reference: np.ndarray) -> tuple[float, float]:
-        """Returns (clip_start_time_seconds_in_reference, confidence) or (nan, 0.0) if no match found."""
-        clip_wave = self._prepare_alignment_audio(clip)
-        reference_wave = self._prepare_alignment_audio(reference)
-        if clip_wave.size == 0 or reference_wave.size < clip_wave.size:
-            return float("nan"), 0.0
-
-        reference_features = self._build_alignment_features(reference_wave)
-        window_samples = min(len(clip_wave), max(int(round(OFFSET_ANALYSIS_WINDOW * OFFSET_SR)), OFFSET_FRAME_LEN * 2))
-        step_samples = max(1, int(round(OFFSET_ANALYSIS_STEP * OFFSET_SR)))
-        if len(clip_wave) <= window_samples:
-            window_starts = [0]
-        else:
-            window_starts = list(range(0, len(clip_wave) - window_samples + 1, step_samples))
-            last_start = len(clip_wave) - window_samples
-            if window_starts[-1] != last_start:
-                window_starts.append(last_start)
-
-        estimates: list[tuple[float, float]] = []
-        for window_start in window_starts:
-            window_end = window_start + window_samples
-            clip_window = clip_wave[window_start:window_end]
-            if clip_window.size < OFFSET_FRAME_LEN:
-                continue
-            clip_features = self._build_alignment_features(clip_window)
-            coarse_time, coarse_confidence = self._match_feature_sequence(clip_features, reference_features)
-            if not math.isfinite(coarse_time) or coarse_confidence <= 0.0:
-                continue
-            refined_time, fine_confidence = self._refine_match_time(clip_window, reference_wave, coarse_time)
-            if not math.isfinite(refined_time) or fine_confidence <= 0.0:
-                continue
-            clip_start_estimate = refined_time - (window_start / float(OFFSET_SR))
-            combined_confidence = min(1.0, coarse_confidence * fine_confidence)
-            estimates.append((clip_start_estimate, combined_confidence))
-
-        if not estimates:
-            return float("nan"), 0.0
-
-        best_group: list[tuple[float, float]] = []
-        best_weight = -1.0
-        for center_time, _ in estimates:
-            group = [(time, confidence) for time, confidence in estimates if abs(time - center_time) <= OFFSET_MATCH_CLUSTER_TOLERANCE]
-            weight = sum(confidence for _, confidence in group)
-            if weight > best_weight:
-                best_group = group
-                best_weight = weight
-        if not best_group:
-            return float("nan"), 0.0
-
-        total_weight = sum(confidence for _, confidence in best_group)
-        if total_weight <= 0.0:
-            return float("nan"), 0.0
-        match_time = sum(time * confidence for time, confidence in best_group) / total_weight
-        match_confidence = min(1.0, max(confidence for _, confidence in best_group) * (0.75 + (0.25 * len(best_group) / len(estimates))))
-        return match_time, match_confidence
-
-    async def measure_relative_offset_for_channel(self, logical_channel_id: LogicalChannelId) -> bool | None:
-        """Measures relative delay between sources mapped to a logical channel."""
-        if (problem := self.config.get_engine_problem(StreamEngine.FFMPEG)):
-            Log.error(Label.QUALITY, f"Skipping offset measurement: {problem}")
-            return
-        loop = asyncio.get_running_loop()
-        logical_channel = await self.handler.get_logical_channel_by_id(logical_channel_id)
-        if not logical_channel:
-            Log.error(Label.QUALITY, f"Logical Channel ID {logical_channel_id} not found for offset measurement.")
-            return
-        channel_num = logical_channel["channel_num"]
-        stream_name = create_stream_name(logical_channel["logical_channel_title"], channel_num)
-        tvg_logo = logical_channel["tvg_logo"]
-        mappings = await self.handler.get_channel_mappings_for_ui(logical_channel_id)
-        if len(mappings) < 2:
-            Log.error(Label.QUALITY, f"{stream_name}: At least two mapped sources are required for offset measurement.")
-            return
-        missing_offset_source_ids = {mapping["source_id"] for mapping in mappings if mapping["offset"] is None}
-
-        def get_ffmpeg_cmd(url: StreamURL, out_path: Path, duration: float = 0, realtime: bool = False) -> list[str]:
-            cmd: list[str] = [
-                str(self.config.ffmpeg_path),
-                "-hide_banner", "-loglevel", "info",
-                "-user_agent", NEXUS_TUNER_USER_AGENT,
-                "-fflags", "+genpts", "-copyts",
-                "-probesize", "1M", "-analyzeduration", "1M", "-reconnect", "1",
-                "-reconnect_delay_max", "3", "-reconnect_streamed", "1", "-reconnect_at_eof", "1",
-                "-reconnect_on_network_error", "1", "-reconnect_on_http_error", "5xx",
-            ]
-            if realtime:
-                cmd.append("-re")
-            if duration > 0:
-                cmd.extend(["-t", str(duration)])
-            cmd.extend([
-                "-i", url, "-vn",
-                "-af", "aresample=async=1:first_pts=0",
-                "-ac", "1", "-ar", str(OFFSET_SR),
-                "-c:a", "pcm_s16le",
-            ])
-            cmd.extend(["-y", str(out_path)])
-            return cmd
-
-        audio_files: list[Path] = []
-        video_names: dict[SourceId, VideoName] = {}
-        try:
-            discovered_sources = {m["source_id"]: ds for m in mappings if (ds := await self.handler.get_discovered_source(m["source_id"]))}
-            valid_source_ids: list[SourceId] = []
-            for source_id, ds in discovered_sources.items():
-                provider_alias = ds["provider_alias"]
-                if await self.stream_manager.is_provider_available_soon(provider_alias):
-                    valid_source_ids.append(source_id)
-                    self._full_providers[provider_alias] = False
-                else:
-                    self._full_providers[provider_alias] = True
-            offset_source_ids = {m["source_id"]: m["offset"] for m in mappings if m["offset"] is not None}
-            if offset_source_ids:
-                if all(source_id not in offset_source_ids for source_id in valid_source_ids):
-                    if not missing_offset_source_ids:
-                        Log.debug(Label.QUALITY, f"{stream_name}: Keeping existing offsets because no anchored source is currently available to remeasure against.")
-                        return True
-                    Log.warn(Label.QUALITY, f"{stream_name}: No currently available source has an existing offset measurement to anchor new sources against, retrying later.")
-                    return False
-            else:
-                if len(valid_source_ids) < 2:
-                    Log.warn(Label.QUALITY, f"{stream_name}: Not enough sources with available provider slots for initial offset measurement, retrying later.")
-                    return False
-            if len(valid_source_ids) < 2:
-                if not missing_offset_source_ids:
-                    Log.debug(Label.QUALITY, f"{stream_name}: Keeping existing offsets because fewer than two sources are currently available.")
-                    return True
-                Log.warn(Label.QUALITY, f"{stream_name}: Fewer than two sources are currently available for offset measurement, retrying later.")
-                return False
-            ref_source_id = random.choice(valid_source_ids)
-            other_source_ids = [source_id for source_id in valid_source_ids if source_id != ref_source_id]
-            if not other_source_ids:
-                if not missing_offset_source_ids:
-                    Log.debug(Label.QUALITY, f"{stream_name}: Keeping existing offsets because no additional available sources need measuring.")
-                    return True
-                Log.warn(Label.QUALITY, f"{stream_name}: No unmeasured sources are currently available to compare against the reference, retrying later.")
-                return False
-            ref_discovered_source = discovered_sources[ref_source_id]
-            ref_provider_alias = ref_discovered_source["provider_alias"]
-            ref_source_title = ref_discovered_source['display_title'] or ref_discovered_source['tvg_name']
-            ref_video_name = create_video_name(stream_name, ref_source_title, ref_source_id)
-            video_names[ref_source_id] = ref_video_name
-
-            async def capture_short_clip(source_id: SourceId, round: int) -> dict[tuple[SourceId, int], tuple[VideoName, Path, float]] | None:
-                discovered_source = discovered_sources[source_id]
-                source_title = discovered_source['display_title'] or discovered_source['tvg_name']
-                video_name = create_video_name(stream_name, source_title, source_id)
-                video_names[source_id] = video_name
-                provider_alias = discovered_source["provider_alias"]
-                while True:
-                    if self.handler.get_pending_stream_count() > 0:
-                        return
-                    provider_slots = await self.handler.get_provider_slots(provider_alias)
-                    if not provider_slots:
-                        Log.error(Label.QUALITY, f"{video_name}: Provider slots not found for {provider_alias}, skipping.")
-                        self._full_providers[provider_alias] = True
-                        return
-                    if provider_slots.get_total_slots() <= 0:
-                        Log.warn(Label.QUALITY, f"{video_name}: Provider {provider_slots.get_alias()} configured with 0 slots, skipping.")
-                        self._full_providers[provider_alias] = True
-                        return
-
-                    if await provider_slots.try_acquire():
-                        break
-                    await self.stream_manager.prune_processes(provider_alias)
-                    soon = await self.stream_manager.is_provider_available_soon(provider_alias, 1 if provider_alias == ref_provider_alias else 0)
-                    if not soon:
-                        if soon is False or all(v for k, v in self._full_providers.items() if k != provider_alias):
-                            self._full_providers[provider_alias] = True
-                        return
-                    await asyncio.sleep(BACKGROUND_SLOT_WAIT_INTERVAL)
-                process: asyncio.subprocess.Process | None = None
-                try:
-                    Log.debug(Label.QUALITY, f"{video_name}: Capturing {OFFSET_CLIP_DURATION}s clip...")
-                    audio_path = self.config.get_offset_path(VideoKey(f"{logical_channel_id}_{source_id}_round{round}"))
-                    audio_files.append(audio_path)
-
-                    process = await asyncio.create_subprocess_exec(*get_ffmpeg_cmd(discovered_source["stream_url"], audio_path, OFFSET_CLIP_DURATION), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-                    clip_start = loop.time()
-                    async with self.quality_process_lock:
-                        cast(QualityProcessInfosImpl, self.processes)[source_id] = {
-                            "provider_alias": provider_alias,
-                            "tvg_logo": discovered_source["tvg_logo"] or tvg_logo,
-                            "source_title": source_title,
-                            "logical_channel_id": logical_channel_id,
-                            "channel_num": channel_num,
-                            "type": "Offset",
-                            "started_at": datetime.now(),
-                        }
-                    task = asyncio.create_task(asyncio.wait_for(process.communicate(), timeout=OFFSET_CLIP_DURATION + OFFSET_GRACE))
-                    try:
-                        provider_slots.add_background_task(task)
-                        _, stderr = await task
-                    except asyncio.CancelledError:
-                        Log.debug(Label.QUALITY, f"{video_name}: ffmpeg task was cancelled.")
-                        if provider_slots.pop_cancelled_task(task):
-                            return  # Cancelled for user stream
-                        raise
-                    if process.returncode != 0:
-                        Log.debug(Label.QUALITY, f"{video_name}: ffmpeg failed with code {process.returncode} - {stderr.decode()}".replace(discovered_source["stream_url"], "{{stream_url}}").strip())
-                        return
-                    return {(source_id, round): (video_name, audio_path, clip_start)}
-                except BaseException as e:
-                    Log.error(Label.QUALITY, f"{video_name}: Error capturing clip - {e}")
-                    if isinstance(e, Exception):
-                        return
-                    raise
-                finally:
-                    await run_bg(self._cleanup_process(process, provider_slots, source_id, video_name))
-
-            while True:
-                if self.handler.get_pending_stream_count() > 0:
-                    return False
-                ref_provider_slots = await self.handler.get_provider_slots(ref_provider_alias)
-                if not ref_provider_slots:
-                    Log.error(Label.QUALITY, f"{ref_video_name}: Provider slots not found for {ref_provider_alias}.")
-                    self._full_providers[ref_provider_alias] = True
-                    return False
-                if ref_provider_slots.get_total_slots() <= 0:
-                    Log.warn(Label.QUALITY, f"{ref_video_name}: Provider {ref_provider_slots.get_alias()} configured with 0 slots, cannot measure offset.")
-                    self._full_providers[ref_provider_alias] = True
-                    return False
-
-                if await ref_provider_slots.try_acquire():
-                    break
-                await self.stream_manager.prune_processes(ref_provider_alias)
-                if not await self.stream_manager.is_provider_available_soon(ref_provider_alias):
-                    self._full_providers[ref_provider_alias] = True
-                    return False
-                await asyncio.sleep(BACKGROUND_SLOT_WAIT_INTERVAL)
-
-            clip_infos: dict[tuple[SourceId, int], tuple[VideoName, Path, float]] = {}
-            ref_process: asyncio.subprocess.Process | None = None
-            try:
-                Log.debug(Label.QUALITY, f"{ref_video_name}: Capturing as reference...")
-                ref_audio_path = self.config.get_offset_path(VideoKey(f"{logical_channel_id}_{ref_source_id}_reference"))
-                audio_files.append(ref_audio_path)
-                ref_process = await asyncio.create_subprocess_exec(*get_ffmpeg_cmd(ref_discovered_source["stream_url"], ref_audio_path, 0, realtime=True), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-                t0 = loop.time()
-                async with self.quality_process_lock:
-                    cast(QualityProcessInfosImpl, self.processes)[ref_source_id] = {
-                        "provider_alias": ref_provider_alias,
-                        "tvg_logo": ref_discovered_source["tvg_logo"] or tvg_logo,
-                        "source_title": ref_source_title,
-                        "logical_channel_id": logical_channel_id,
-                        "channel_num": channel_num,
-                        "type": "Offset",
-                        "started_at": datetime.now(),
-                    }
-
-                results = await asyncio.gather(*(capture_short_clip(source_id, 1) for source_id in other_source_ids), return_exceptions=True)
-                for res in results:
-                    if not res:
-                        continue
-                    if isinstance(res, Exception):
-                        continue
-                    if isinstance(res, BaseException):
-                        raise res
-                    clip_infos |= res
-                if not clip_infos:
-                    Log.error(Label.QUALITY, f"{stream_name}: No valid clips captured, cannot measure offset.")
-                    return False  # Since the first round failed, just retry instead of only doing the second round
-                if ref_process.returncode is not None:
-                    stderr = (await ref_process.stderr.read()).decode().replace(ref_discovered_source["stream_url"], "{{stream_url}}").strip() if ref_process.stderr else ""
-                    raise RuntimeError(f"reference ffmpeg {ref_video_name} exited prematurely with code {ref_process.returncode} - {stderr}")
-
-                Log.debug(Label.QUALITY, f"{stream_name}: Waiting {OFFSET_WAIT_INTERVAL}s between rounds.")
-                task = asyncio.create_task(asyncio.sleep(OFFSET_WAIT_INTERVAL))
-                try:
-                    ref_provider_slots.add_background_task(task)
-                    await task
-                except asyncio.CancelledError:
-                    Log.debug(Label.QUALITY, f"{ref_video_name}: ffmpeg task was cancelled.")
-                    if ref_provider_slots.pop_cancelled_task(task):
-                        return False  # Cancelled for user stream
-                    raise
-
-                if ref_process.returncode is not None:
-                    stderr = (await ref_process.stderr.read()).decode().replace(ref_discovered_source["stream_url"], "{{stream_url}}").strip() if ref_process.stderr else ""
-                    raise RuntimeError(f"reference ffmpeg {ref_video_name} exited prematurely with code {ref_process.returncode} - {stderr}")
-                results = await asyncio.gather(*(capture_short_clip(source_id, 2) for source_id in other_source_ids), return_exceptions=True)
-                for res in results:
-                    if not res:
-                        continue
-                    if isinstance(res, Exception):
-                        continue
-                    if isinstance(res, BaseException):
-                        raise res
-                    clip_infos |= res
-                if ref_process.returncode is not None:
-                    stderr = (await ref_process.stderr.read()).decode().replace(ref_discovered_source["stream_url"], "{{stream_url}}").strip() if ref_process.stderr else ""
-                    raise RuntimeError(f"reference ffmpeg {ref_video_name} exited prematurely with code {ref_process.returncode} - {stderr}")
-
-                task = asyncio.create_task(ref_process.wait())
-                try:
-                    ref_provider_slots.add_background_task(task)
-                    try:
-                        await asyncio.wait_for(task, timeout=OFFSET_GRACE)
-                    except asyncio.TimeoutError:
-                        pass
-                except asyncio.CancelledError:
-                    Log.debug(Label.QUALITY, f"{ref_video_name}: ffmpeg task was cancelled.")
-                    if not ref_provider_slots.pop_cancelled_task(task):
-                        raise  # Cancel wasn't for user stream
-            except BaseException as e:
-                Log.error(Label.QUALITY, f"{stream_name}: Error during offset measurement - {e}")
-                if isinstance(e, Exception):
-                    return False
-                raise
-            finally:
-                await run_bg(self._cleanup_process(ref_process, ref_provider_slots, ref_source_id, ref_video_name))
-            max_offset = (loop.time() - t0) + ((OFFSET_CLIP_DURATION + OFFSET_GRACE) * len(other_source_ids))
-
-            try:
-                ref_envelope = await asyncio.to_thread(self._load_audio, ref_audio_path)
-            except Exception as e:
-                Log.error(Label.QUALITY, f"{ref_video_name}: Failed to load reference audio - {e}")
-                return False
-
-            raw_offsets: dict[tuple[SourceId, int], Offset] = {}
-            raw_confidences: dict[tuple[SourceId, int], float] = {}
-            raw_match_times: dict[tuple[SourceId, int], float] = {}
-            for (source_id, round), (video_name, audio_path, start_offset) in clip_infos.items():
-                try:
-                    clip_envelope = await asyncio.to_thread(self._load_audio, audio_path)
-                except Exception as e:
-                    Log.error(Label.QUALITY, f"{video_name}: Failed to load clip audio - {e}")
-                    continue
-                match_time, peak_val = await asyncio.to_thread(self._match_clip_in_reference, clip_envelope, ref_envelope)
-                if not math.isfinite(match_time):
-                    Log.warn(Label.QUALITY, f"{video_name}: Invalid match time computed - {match_time}")
-                    continue
-                raw_offset = Offset((start_offset - t0) - match_time)
-                if peak_val < OFFSET_CONF_THRESH:
-                    Log.warn(Label.QUALITY, f"{video_name}: Low confidence {peak_val:.3f} (min: {OFFSET_CONF_THRESH}) in offset measurement of {raw_offset:.3f}s for clip #{round}, skipping.")
-                    continue
-                if abs(raw_offset) > max_offset:
-                    Log.warn(Label.QUALITY, f"{video_name}: Unreasonable offset measurement of {raw_offset:.3f}s for clip #{round} (worst case should be ±{max_offset:.3f}s), skipping.")
-                    continue
-                raw_offsets[(source_id, round)] = raw_offset
-                raw_confidences[(source_id, round)] = peak_val
-                raw_match_times[(source_id, round)] = match_time
-
-            best_offsets: dict[SourceId, Offset] = {}
-            best_confidences: dict[SourceId, float] = {}
-            for source_id in other_source_ids:
-                source_measurements = [(round, raw_offsets[(source_id, round)], raw_confidences[(source_id, round)])
-                                       for round in (1, 2) if (source_id, round) in raw_offsets]
-                if not source_measurements:
-                    continue
-                if len(source_measurements) == 2:
-                    round_1_match_time = raw_match_times[(source_id, 1)]
-                    round_2_match_time = raw_match_times[(source_id, 2)]
-                    round_1_start = clip_infos[(source_id, 1)][2]
-                    round_2_start = clip_infos[(source_id, 2)][2]
-                    round_variance = abs((round_2_match_time - round_1_match_time) - (round_2_start - round_1_start))
-                    if round_2_match_time <= round_1_match_time:
-                        Log.warn(Label.QUALITY, f"{video_names[source_id]}: Clip #2 matched before clip #1 in the reference timeline, using the later-matching result only.")
-                    elif round_variance > OFFSET_ROUND_VARIANCE_WARN:
-                        Log.warn(Label.QUALITY, f"{video_names[source_id]}: Clip matches differ by {round_variance:.3f}s between rounds, using the least delayed measurement.")
-                # Probe startup can only make a short capture appear earlier in the reference, so keep the
-                # largest surviving offset across rounds rather than whichever round had the higher confidence.
-                best_round, best_offset, best_confidence = max(source_measurements, key=lambda measurement: (measurement[1], measurement[2]))
-                if len(source_measurements) == 1:
-                    Log.debug(Label.QUALITY, f"{video_names[source_id]}: Only clip #{best_round} produced a usable offset measurement.")
-                best_offsets[source_id] = best_offset
-                best_confidences[source_id] = best_confidence
-            if not best_offsets:
-                if not missing_offset_source_ids:
-                    Log.warn(Label.QUALITY, f"{stream_name}: No new high confidence offset measurements computed, keeping existing offsets.")
-                    return True
-                Log.error(Label.QUALITY, f"{stream_name}: No high confidence offset measurements computed.")
-                return False
-          
-            if offset_source_ids:
-                if ref_source_id in offset_source_ids:
-                    anchor = (ref_source_id, offset_source_ids[ref_source_id])
-                    Log.debug(Label.QUALITY, f"{stream_name}: Using reference source {ref_video_name} with existing offset as anchor for new measurements.")
-                else:
-                    for source_id in best_offsets:
-                        if source_id in offset_source_ids:
-                            anchor = (source_id, offset_source_ids[source_id])
-                            Log.debug(Label.QUALITY, f"{stream_name}: Using source {video_names[source_id]} with existing offset as anchor for new measurements.")
-                            break
-                    else:
-                        Log.error(Label.QUALITY, f"{stream_name}: No recorded sources have existing offset measurements to use as an anchor for new measurements.")
-                        return False
-            else:
-                anchor = None
-                Log.debug(Label.QUALITY, f"{stream_name}: No existing offset measurements to use as an anchor for new measurements.")
-
-            best_offsets[ref_source_id] = Offset(0)
-            best_confidences[ref_source_id] = 1.0
-            if not anchor:
-                real_offsets = best_offsets.copy()
-            else:
-                real_offsets = {source_id: Offset(anchor[1] + (offset - best_offsets[anchor[0]])) for source_id, offset in best_offsets.items()}
-
-            for mapping in mappings:
-                if mapping["source_id"] in real_offsets:
-                    offset = real_offsets[mapping["source_id"]]
-                    cast(SourceMappingInfoMutable, mapping)["offset"] = offset
-                    Log.debug(Label.QUALITY, f"{video_names[mapping['source_id']]}: Assigned offset {offset:.3f}s with confidence {best_confidences[mapping['source_id']]:.2%}")
-            min_offset = min((m["offset"] for m in mappings if m["offset"] is not None))
-            if min_offset:
-                for mapping in mappings:
-                    if mapping["offset"] is not None:
-                        cast(SourceMappingInfoMutable, mapping)["offset"] = Offset(mapping["offset"] - min_offset)
-                Log.debug(Label.QUALITY, f"{stream_name}: Normalized offsets so minimum is zero based on minimum measured offset {min_offset:.3f}s.")
-            
-            if not await self.handler.update_mappings_for_logical_channel(logical_channel_id, mappings):
-                Log.error(Label.QUALITY, f"{stream_name}: Failed to update mappings with new offsets.")
-                return False
-            if any(mapping["offset"] is None for mapping in mappings):
-                Log.warn(Label.QUALITY, f"{stream_name}: Some mappings are still missing offset values after measurement.")
-                return False
-            return True
-        except BaseException as e:
-            Log.error(Label.QUALITY, f"{stream_name}: Unexpected error during offset measurement - {e}")
-            if isinstance(e, Exception):
-                return False
-            raise
-        finally:
-            for audio_file in audio_files:
-                try:
-                    if audio_file.exists():
-                        audio_file.unlink()
-                except Exception as e:
-                    Log.error(Label.QUALITY, f"{stream_name}: Failed to delete temporary file {audio_file} - {e}")

@@ -123,6 +123,8 @@ async def shutdown() -> None:
     """Handles graceful shutdown of the application."""
     if "scheduler" in globals():
         scheduler.shutdown()
+    if "quality_monitor" in globals():
+        await quality_monitor.shutdown()
     if "stream_manager" in globals():
         await stream_manager.stop_processes(StopReason.SHUTDOWN)
     if "config" in globals():
@@ -801,7 +803,11 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
                 msg = f"{stream_name}: Updated info but failed to update {len(mappings_to_save)} mappings."
                 Log.warn(Label.SERVER, msg)
                 await flash(msg, "warning")
+                if form_data.get("analyze_mappings") == "1":
+                    return Response("Failed to save mappings; analysis was not started.", 500)
             await handler.reload_handler_config()
+            if form_data.get("analyze_mappings") == "1":
+                return await ui_analyze_mappings(logical_channel_id)
             return redirect(url_for('ui_logical_channel_form', logical_channel_id=logical_channel_id))
         else:
             lc_data: LogicalChannelInfo = {
@@ -860,6 +866,7 @@ async def ui_logical_channel_form(logical_channel_id: LogicalChannelId | None = 
     return await render_template(
         template_to_render,
         channel=channel,
+        analysis_status=quality_monitor.get_analysis_status(logical_channel_id) if logical_channel_id else None,
         channel_metrics=logical_channel_form_details["channel_metrics"],
         all_source_metrics=logical_channel_form_details["all_source_metrics"],
         unmapped_sources_for_page=logical_channel_form_details["unmapped_sources_for_page"],
@@ -1230,37 +1237,22 @@ async def ui_analyze_mappings(logical_channel_id: LogicalChannelId) -> Response:
         response.headers["HX-Trigger"] = "flashMessagesUpdated"
         return response
 
-    res = await quality_monitor.analyze_mapped_sources(logical_channel_id)
-    if res == 1:
-        msg = f"{stream_name}: Quality analysis completed for {len(sources)} mapping(s) but failed to measure relative offset."
-        Log.warn(Label.SERVER, msg)
-        await flash(msg, "warning")
-        response = Response("", 202)
-        response.headers["HX-Refresh"] = "true"
-        response.headers["HX-Trigger"] = "flashMessagesUpdated"
-        return response
-    elif res == 0:
-        msg = f"{stream_name}: Failed to analyze mappings."
-        Log.error(Label.SERVER, msg)
-        await flash(msg, "error")
-        response = Response("", 500)
-        response.headers["HX-Refresh"] = "true"
-        response.headers["HX-Trigger"] = "flashMessagesUpdated"
-        return response
-    elif isinstance(res, str):
-        msg = f"{stream_name}: Quality analysis already in progress for {res}."
-        Log.warn(Label.SERVER, msg)
-        await flash(msg, "warning")
-        response = Response("", 409)
-        response.headers["HX-Refresh"] = "true"
-        response.headers["HX-Trigger"] = "flashMessagesUpdated"
-        return response
+    if not quality_monitor.start_manual_analysis(logical_channel_id):
+        await flash("Analysis is already running. Please wait for it to finish.", "warning")
+        return Response("", 409, headers={"HX-Trigger": "flashMessagesUpdated"})
+    return Response(await render_template(
+        "_analysis_status.html", channel={**channel, "logical_channel_id": logical_channel_id},
+        analysis_status=quality_monitor.get_analysis_status(logical_channel_id),
+    ), 202)
 
-    await flash(f"{stream_name}: Quality analysis completed for {len(sources)} mapping(s)", "success")
-    response = Response("", 200)
-    response.headers["HX-Refresh"] = "true"
-    response.headers["HX-Trigger"] = "flashMessagesUpdated"
-    return response
+
+@app.get("/ui/logical-channels/analysis-status/<string:logical_channel_id>")
+async def ui_analysis_status(logical_channel_id: LogicalChannelId) -> str:
+    channel = await handler.get_logical_channel_with_id(logical_channel_id)
+    if channel is None:
+        abort(404)
+    return await render_template("_analysis_status.html", channel=channel,
+                                 analysis_status=quality_monitor.get_analysis_status(logical_channel_id))
 
 
 @app.route("/ui/logical-channels/remove-dead-mappings/<string:logical_channel_id>", methods=["DELETE"])

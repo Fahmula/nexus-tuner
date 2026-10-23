@@ -3,6 +3,7 @@ import re
 import html
 import hashlib
 import asyncio
+import math
 from typing import TYPE_CHECKING, Any, Final, Self
 
 import aiohttp
@@ -12,7 +13,7 @@ from nexus_tuner.utils import (M3UURL, NEXUS_TUNER_USER_AGENT, ClientChannelInfo
                                 ChannelListGroup, ChannelListInfo, ChannelMappings, ChannelMappingsImpl, ChannelMappingsData, ChannelMappingsDataImpl, ChannelNum, DateTimeISO,
                                 DiscoveredSource, DiscoveredSourceWithId, DiscoveredSourcesData, DiscoveredSourcesDataImpl, Log, LogicalChannelInfo, LogicalChannelInfoWithId, LogicalChannelTitle, LogicalChannelsDataImpl, Priority, ProviderInfo,
                                 ProviderStatuses, SourceInfo, SourceMappingInfoWithId, SourceId, StreamURL, TVGGroupTitle, Label, LogicalChannelId,
-                                LogicalChannelsData, M3USource, MaxStreams, ProviderAlias, ProvidersData, ProvidersDataImpl,
+                                LogicalChannelsData, M3USource, MaxStreams, Offset, ProviderAlias, ProvidersData, ProvidersDataImpl,
                                 StreamKey, TVGDisplayTitle, TVGId, TVGLogo, TVGName, VideoType, create_stream_name, create_video_name, run_bg,
                                 DEFAULT_PRIORITY, MAIN_PLAYLIST_ID, GroupKey, LCGroupInfo, LCGroupMode, PlaylistChannelCounts, PlaylistEntry, PlaylistId, PlaylistInfo,
                                 PlaylistInfoWithId, PlaylistLineupEntry, PlaylistsData, PlaylistsDataImpl, SourceChannelId, SourceChannelInfo, SourceGroupInfo,
@@ -839,6 +840,36 @@ class ChannelHandler:
                 return False
             self._channel_mappings_data = new_mappings_data
             return True
+
+    async def update_mapping_offsets(self, logical_channel_id: LogicalChannelId,
+                                     expected_sources: set[SourceId], offsets: dict[SourceId, Offset]) -> bool | None:
+        """Merge offsets; return completeness, or None when nothing was saved."""
+        if len(offsets) < 2 or not set(offsets) <= expected_sources or any(not math.isfinite(v) for v in offsets.values()):
+            return None
+        async with self._mutex:
+            current = self._channel_mappings_data.get(logical_channel_id)
+            if (logical_channel_id not in self._logical_channels_data or current is None or
+                    set(current) != expected_sources):
+                Log.warn(self.label, "Mappings changed during audio analysis; discarded offset results. Run Analyze again.")
+                return None
+            old = {sid: m["offset"] for sid, m in current.items() if m["offset"] is not None}
+            anchors = [sid for sid in offsets if sid in old]
+            if old and not anchors:
+                return None
+            shift = float(old[anchors[0]]) - offsets[anchors[0]] if anchors else 0.0
+            values = {sid: offsets[sid] + shift if sid in offsets else m["offset"]
+                      for sid, m in current.items()}
+            minimum = min(value for value in values.values() if value is not None)
+            merged = ChannelMappingsImpl({sid: {"priority": current[sid]["priority"],
+                                               "offset": Offset(value - minimum) if value is not None else None}
+                                          for sid, value in values.items()})
+            new_data = ChannelMappingsDataImpl({sid: ChannelMappingsImpl(dict(data))
+                                               for sid, data in self._channel_mappings_data.items()})
+            new_data[logical_channel_id] = merged
+            if not await self.config.save_channel_mappings_config(new_data):
+                return None
+            self._channel_mappings_data = new_data
+            return all(m["offset"] is not None for m in merged.values())
 
     def copy_channel_list_data(self) -> ChannelListData:
         """Returns a copy of the channel list data."""
