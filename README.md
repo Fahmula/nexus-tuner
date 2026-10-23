@@ -46,12 +46,12 @@ Use the compose file and instructions provided here: [docker-compose.yml](docker
 
 #### Without Docker
 
-For non-docker users, install python 3.13 or later and run the following commands:
+For non-docker users, install Python 3.14 or later and run the following commands:
 
 ```bash
 git clone https://github.com/Fahmula/nexus-tuner.git
 cd nexus-tuner
-python3.13 -m venv venv
+python3.14 -m venv venv
 
 venv/bin/pip install -r requirements.txt      # Linux/macOS
 venv\Scripts\pip install -r requirements.txt  # Windows

@@ -4,15 +4,15 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install --no-install-recommends -y ca-certificates software-properties-common \
     && add-apt-repository ppa:deadsnakes/ppa && apt-get update
-RUN apt-get install --no-install-recommends -y python3.13
+RUN apt-get install --no-install-recommends -y python3.14
 ENV PATH="/app/venv/bin:$PATH"
 
 FROM base-image AS builder-image
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install --no-install-recommends -y python3.13-venv python3.13-dev build-essential
-RUN python3.13 -m venv /app/venv
+RUN apt-get update && apt-get install --no-install-recommends -y python3.14-venv python3.14-dev build-essential
+RUN python3.14 -m venv /app/venv
 COPY requirements.txt .
 RUN pip install --no-cache-dir setuptools
 RUN pip install --no-cache-dir -r requirements.txt

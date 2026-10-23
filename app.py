@@ -14,8 +14,8 @@ from collections import deque
 import signal
 import sys
 from types import FrameType
-if sys.version_info < (3, 13):
-    raise RuntimeError("NexusTuner requires Python 3.13 or higher.")
+if sys.version_info < (3, 14):
+    raise RuntimeError("NexusTuner requires Python 3.14 or higher.")
 
 import asyncio
 import aiofiles.os
