@@ -7,6 +7,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nexus-tuner"
 version = "0.0.1"  # placeholder for local installation
+requires-python = ">=3.14"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
 
