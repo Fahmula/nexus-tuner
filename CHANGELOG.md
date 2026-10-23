@@ -1,11 +1,34 @@
 # [3.2.0](https://github.com/Fahmula/nexus-tuner/compare/v3.1.0...v3.2.0) (2026-10-23)
 
+### Features
+
+* **quality:** improve relative offset measurements ([6af9b37](https://github.com/Fahmula/nexus-tuner/commit/6af9b3727f56c1196946eaa47e795a70c519a908))
+
+### Bug Fixes
+
+* **config:** fix url validation on single label hostname ([ed08d7e](https://github.com/Fahmula/nexus-tuner/commit/ed08d7e1ccf19a6a0d7168dc7922682e8a338e81))
+
+### Chore
+
+* **ffmpeg:** bump ffmpeg `8.1.2` -> `9.0.2` ([1c3f247](https://github.com/Fahmula/nexus-tuner/commit/1c3f247772e256ce38beff3ef1ec010e16f82a2f))
+* **python:** bump python `3.13` -> `3.14` and bump deps ([9d76b5c](https://github.com/Fahmula/nexus-tuner/commit/9d76b5cc94e85fe7649838630900bdfa666c9c70))
+
 # [3.1.0](https://github.com/Fahmula/nexus-tuner/compare/v3.0.1...v3.1.0) (2026-10-22)
 
 
 ### Features
 
 * **ui:** add settings page and support multiple media servers for ghost sessions ([07b7474](https://github.com/Fahmula/nexus-tuner/commit/07b747416d6355c02f4414516149b924ab6dc3cf))
+* **ffmpeg:** add option to remove captions and subtitles from live streams ([61cbae5](https://github.com/Fahmula/nexus-tuner/commit/61cbae517ee0a1a4dff110bcf4e771e1b21d1a4e))
+
+### Bug Fixes
+
+* **quality:** improve relative offset measurement ([8a0474e](https://github.com/Fahmula/nexus-tuner/commit/8a0474e47ee2e4c640f3ffbf4d8b7e2de891470a))
+* **mpegts:** improve mpegts reliability ([5d8d5ea](https://github.com/Fahmula/nexus-tuner/commit/5d8d5eac3b7e9c29cf7806d8d934901f212dede6))
+
+### Chore
+
+* **ffmpeg:** bump ffmpeg `8.0` -> `8.1.2` ([5eeab74](https://github.com/Fahmula/nexus-tuner/commit/5eeab74329ee6937fd8ffff602458341a6469de3))
 
 ## [3.0.1](https://github.com/Fahmula/nexus-tuner/compare/v3.0.0...v3.0.1) (2026-01-18)
 
